@@ -110,7 +110,7 @@
 
 .chat-ai-welcome-copy > strong {
   color: #263d5b;
-  font-family: "HarmonyOS Sans SC", "Noto Sans SC Variable", "Microsoft YaHei", sans-serif;
+  font-family: var(--sg-font-family);
   font-size: 16px;
   font-weight: 500;
   letter-spacing: 0.01em;

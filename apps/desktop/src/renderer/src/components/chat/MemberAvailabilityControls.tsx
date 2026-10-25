@@ -117,17 +117,15 @@ export const MemberAvailabilityControls = ({
           {label}
         </button>
       ))}
-      {status ? (
-        <button
-          type="button"
-          disabled={!canSend || busy}
-          onClick={() => void select()}
-          title="清除状态"
-        >
-          <Undo2 aria-hidden="true" />
-          回来
-        </button>
-      ) : null}
+      <button
+        type="button"
+        disabled={!canSend || busy || !status}
+        onClick={() => void select()}
+        title={status ? "清除状态" : "当前在线"}
+      >
+        <Undo2 aria-hidden="true" />
+        回来
+      </button>
     </div>
   );
 };

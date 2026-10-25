@@ -3,6 +3,7 @@ import type { ScreenShareEncodingProfile } from "@private-voice/webrtc";
 
 import { shanghaoCore } from "../../core/shanghaoCore";
 import { DetachedScreenSharePublisher } from "./DetachedScreenSharePublisher";
+import { observeCaptureFrames } from "./observeCaptureFrames";
 import {
   DEFAULT_SCREEN_SHARE_QUALITY,
   SCREEN_SHARE_PROFILES,
@@ -52,6 +53,7 @@ export const isRetryableDisplayCaptureError = (error: unknown): boolean =>
         error.message.includes("Could not start video source"));
 
 export class ScreenShareManager {
+  private stopControlFrames?: () => void;
   private options: ScreenShareManagerOptions;
   private snapshot: ScreenShareManagerSnapshot = initialSnapshot;
   private readonly listeners = new Set<ScreenShareListener>();
@@ -322,7 +324,11 @@ export class ScreenShareManager {
     this.detachedSessionId = sessionId;
     this.patch({ displayMode: "detached", detachedItemId: item.id });
     try {
-      await window.desktopApi.screenShareViewer.open({ title: item.title, sessionId });
+      await window.desktopApi.screenShareViewer.open({
+        title: item.title,
+        sessionId,
+        peerId: item.isLocal ? undefined : item.id,
+      });
     } catch (error) {
       if (this.detachedSessionId === sessionId) this.closeDetachedViewer();
       throw error;
@@ -581,6 +587,12 @@ export class ScreenShareManager {
   }
 
   private patch(patch: Partial<ScreenShareManagerSnapshot>): void {
+    if (Object.hasOwn(patch, "localStream") && patch.localStream !== this.snapshot.localStream) {
+      this.stopControlFrames?.();
+      this.stopControlFrames = patch.localStream
+        ? observeCaptureFrames(patch.localStream)
+        : undefined;
+    }
     this.snapshot = { ...this.snapshot, ...patch };
     for (const listener of this.listeners) listener(this.snapshot);
   }

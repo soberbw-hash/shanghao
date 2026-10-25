@@ -43,6 +43,7 @@ type LocalPresencePatch = {
   sceneZone?: SceneZoneId;
   gameName?: string;
   gameIconDataUrl?: string;
+  gameSession?: RoomMember["gameSession"];
   musicActivity?: MusicActivity;
 };
 

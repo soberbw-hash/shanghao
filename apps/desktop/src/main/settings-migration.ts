@@ -8,6 +8,8 @@ import {
   DEFAULT_QUICK_MESSAGE_SLOTS,
   DEFAULT_QUICK_MESSAGE_VOLUME,
   DEFAULT_AI_ASR_MODEL_ID,
+  DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
+  AI_ASR_MODEL_NAMES,
   normalizeQuickMessageSlots,
   PROFILE_SCHEMA_VERSION,
   SETTINGS_SCHEMA_VERSION,
@@ -63,6 +65,8 @@ export const defaultSettings: AppSettings = {
   isRecordingWasteAutoCleanupEnabled: true,
   aiAsrModel: DEFAULT_AI_ASR_MODEL_ID,
   aiTranscriptionProvider: "cloud",
+  isAiCloudLocalAssistEnabled: true,
+  aiCloudLocalAsrModel: DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
   aiOrganizerProvider: "custom",
   aiRoomAskProvider: "custom",
   aiTextModelPreset: "glm",
@@ -75,6 +79,7 @@ export const defaultSettings: AppSettings = {
   isAutoGainControlEnabled: true,
   isVoiceEnhancementEnabled: true,
   isPushToTalkEnabled: false,
+  isMutedSpeechReminderEnabled: true,
   isAutoRecordOnJoinEnabled: true,
   isRecordingAutoGameMarkerEnabled: true,
   micMonitorMode: "processed",
@@ -352,6 +357,12 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
       raw.aiTranscriptionProvider === "local" || raw.aiTranscriptionProvider === "custom"
         ? raw.aiTranscriptionProvider
         : "cloud",
+    isAiCloudLocalAssistEnabled: normalizeBoolean(raw.isAiCloudLocalAssistEnabled, true),
+    aiCloudLocalAsrModel:
+      typeof raw.aiCloudLocalAsrModel === "string" &&
+      Object.hasOwn(AI_ASR_MODEL_NAMES, raw.aiCloudLocalAsrModel)
+        ? raw.aiCloudLocalAsrModel
+        : DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
     // Room Ask is a shared cloud capability. Legacy local/custom selections
     // must not make friends download Qwen before they can ask a question.
     aiRoomAskProvider: raw.aiOrganizerProvider === "cloud" ? "cloud" : "custom",
@@ -367,8 +378,8 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
           ? raw.aiProcessingMode
           : defaultSettings.aiProcessingMode,
     isAiAutoTranscribeEnabled: normalizeBoolean(raw.isAiAutoTranscribeEnabled, true),
-    isAiAutoOrganizeEnabled: normalizeBoolean(raw.isAiAutoOrganizeEnabled, true),
-    isAiAutoUploadEnabled: normalizeBoolean(raw.isAiAutoUploadEnabled, false),
+    isAiAutoOrganizeEnabled: true,
+    isAiAutoUploadEnabled: false,
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ??
       defaultSettings.relayServerUrl,
@@ -407,6 +418,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isAutoGainControlEnabled: raw.isAutoGainControlEnabled !== false,
     isVoiceEnhancementEnabled: raw.isVoiceEnhancementEnabled !== false,
     isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
+    isMutedSpeechReminderEnabled: normalizeBoolean(raw.isMutedSpeechReminderEnabled, true),
     isAutoRecordOnJoinEnabled: normalizeBoolean(raw.isAutoRecordOnJoinEnabled, true),
     isRecordingAutoGameMarkerEnabled: normalizeBoolean(raw.isRecordingAutoGameMarkerEnabled, true),
     isUiSoundEnabled: true,

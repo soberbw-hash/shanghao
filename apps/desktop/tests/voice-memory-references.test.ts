@@ -13,3 +13,21 @@ test("IPC progress retains unchanged transcript, but never hides word timestamp 
   clone.transcript[0]!.words![0]!.startMs = 2;
   assert.notEqual(reuseVoiceMemoryReferences(previous, clone)?.transcript, previous.transcript);
 });
+
+test("a late queued IPC acknowledgement cannot replace newer processing or ready events", () => {
+  const queued = {
+    recordingId: "one",
+    updatedAt: "2026-10-19T00:00:00.001Z",
+    phase: "idle",
+    transcript: [],
+    speakers: [],
+  } as unknown as VoiceMemoryRecord;
+  for (const phase of ["transcribing", "ready"] as const) {
+    const current = { ...queued, updatedAt: "2026-10-19T00:00:00.002Z", phase };
+    assert.equal(reuseVoiceMemoryReferences(current, queued), current);
+    assert.equal(
+      reuseVoiceMemoryReferences(current, { ...queued, recordingId: "two" })?.recordingId,
+      "two",
+    );
+  }
+});

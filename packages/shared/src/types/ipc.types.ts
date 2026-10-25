@@ -172,6 +172,7 @@ export interface ScreenCaptureSourceDescriptor {
 export interface ScreenShareViewerOpenRequest {
   title: string;
   sessionId: string;
+  peerId?: string;
 }
 
 export interface ScreenShareViewerSignal {
@@ -187,6 +188,7 @@ export interface ScreenShareViewerSignal {
 }
 
 export interface ScreenShareViewerApi {
+  control?: import("./remote-control-api.types").DetachedRemoteControlApi;
   sendSignal: (signal: ScreenShareViewerSignal) => Promise<boolean>;
   close: () => Promise<void>;
   onSignal: (listener: (signal: ScreenShareViewerSignal) => void) => () => void;
@@ -256,11 +258,34 @@ export interface GameDetectionSnapshot {
     | "R.E.P.O.";
   gameIconDataUrl?: string;
   detectedAt?: string;
+  gameSession?: import("./game-session.types").GameSessionActivity;
   musicActivity?: import("./room.types").MusicActivity;
   checkedAt: string;
 }
 
 export interface DesktopApi {
+  remoteControl: import("./remote-control-api.types").RemoteControlApi;
+  applicationAudio: import("./application-audio.types").ApplicationAudioApi;
+  temporaryRooms: {
+    prepareAvatar: (dataUrl: string) => Promise<string>;
+    getProfile: () => Promise<
+      import("./temporary-room-client.types").TemporaryPublicIdentity | undefined
+    >;
+    saveProfile: (
+      profile: import("./temporary-room.types").TemporaryRoomProfile,
+    ) => Promise<import("./temporary-room-client.types").TemporaryPublicIdentity>;
+    create: () => Promise<import("./temporary-room-client.types").TemporaryRoomDescriptor>;
+    join: (
+      code: string,
+    ) => Promise<import("./temporary-room-client.types").TemporaryRoomDescriptor>;
+    manage: (
+      request: import("./temporary-room-client.types").TemporaryRoomManageRequest,
+    ) => Promise<import("./temporary-room.types").TemporaryRoomSnapshot>;
+    release: (contextId: string) => Promise<void>;
+    onChanged: (
+      listener: (state: import("./temporary-room-client.types").TemporaryRoomClientState) => void,
+    ) => () => void;
+  };
   storage: import("./storage.types").StorageApi;
   rooms: import("./private-room.types").PrivateRoomsApi;
   roomMemory: import("./room-memory.types").RoomMemoryApi;
@@ -298,6 +323,7 @@ export interface DesktopApi {
       attention?: boolean;
       shakeWindow?: boolean;
       showNotification?: boolean;
+      silent?: boolean;
     }) => Promise<void>;
     onLifecycleRecovery: (listener: (notice: { reason: string; at: string }) => void) => () => void;
     onNotificationFailed: (listener: (reason: "blocked" | "failed") => void) => () => void;

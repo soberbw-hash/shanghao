@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 
 import {
   isStoredRoomId,
-  privateRoomInvitationUrl,
+  isTemporaryRoomSessionId,
+  type TemporaryRoomDescriptor,
   isPrivateRoomId,
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
@@ -17,7 +18,6 @@ import {
   type RoomMember,
   type RealtimeFaultCommand,
   type SceneZoneId,
-  type SignalingEventPayload,
 } from "@private-voice/shared";
 import { createSpeakingDetector, type ScreenShareEncodingProfile } from "@private-voice/webrtc";
 import { randomRoomAvatar } from "../features/room/randomRoomAvatar";
@@ -74,6 +74,12 @@ import { useDailyRoomReportStore } from "../store/dailyRoomReportStore";
 import { writeRendererLog } from "../utils/logger";
 import { shanghaoCore } from "../core/shanghaoCore";
 import { privateRoomErrorMessage } from "../features/room/privateRoomMessages";
+import { loadCurrentRoomReports } from "../features/room/roomDailyReports";
+import {
+  buildChannelInviteText,
+  summarizeSignalingEvent,
+} from "../features/room/roomSessionPresentation";
+export { buildChannelInviteText } from "../features/room/roomSessionPresentation";
 import { finishRoomRecordingBeforeRelease } from "../features/recording/roomRecordingOwnership";
 import { retainRoomRuntime, type RoomRuntimeHotState } from "../features/room/roomRuntimeHotState";
 
@@ -218,55 +224,6 @@ const normalizeRoomError = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
-export const buildChannelInviteText = ({
-  channelId,
-  channelCode,
-  roomName,
-  serverUrl,
-}: {
-  channelId: string;
-  channelCode: string;
-  roomName: string;
-  serverUrl?: string;
-}) => {
-  const link = privateRoomInvitationUrl({ roomId: channelId, channelCode, roomName, serverUrl });
-  const title = roomName.replace(/[\r\n]/g, " ");
-  return `来「${title}」一起上号\n频道号：${channelCode}\n点击加入：${link}\n也可在上号中输入频道号加入。`;
-};
-
-const summarizeSignalingEvent = (payload: SignalingEventPayload): Record<string, unknown> => {
-  const summary: Record<string, unknown> = {
-    bridgeEventType: payload.type,
-    code: payload.code,
-    reason: payload.reason,
-    wasClean: payload.wasClean,
-    message: payload.message,
-  };
-
-  if (payload.type !== "message" || !payload.data) {
-    return summary;
-  }
-
-  summary.payloadBytes = new TextEncoder().encode(payload.data).byteLength;
-  try {
-    const message = JSON.parse(payload.data) as Record<string, unknown>;
-    summary.messageType = message.type;
-    summary.roomId = message.roomId;
-    summary.peerId = message.peerId;
-    summary.targetPeerId = message.targetPeerId;
-    summary.revision = message.revision;
-    summary.memberCount = Array.isArray(message.members) ? message.members.length : undefined;
-    if (message.type === "error") {
-      summary.serverErrorCode = message.code;
-      summary.serverErrorMessage =
-        typeof message.message === "string" ? message.message.slice(0, 240) : undefined;
-    }
-  } catch {
-    summary.messageType = "invalid_json";
-  }
-  return summary;
-};
-
 export const useRoomState = () => {
   const runtimeInfo = useSettingsStore((state) => state.runtimeInfo);
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
@@ -331,6 +288,7 @@ export const useRoomState = () => {
       localMember?.musicActivity,
       localMember?.gameIconDataUrl,
       callModeActive,
+      localMember?.gameSession,
     );
   }, [isDeafened, isMuted, callModeActive, updateLocalPresence]);
 
@@ -339,7 +297,7 @@ export const useRoomState = () => {
   );
   const profileAvatarId = useSettingsStore((state) => state.settings?.avatarId);
   useEffect(() => {
-    if (!profileNickname) return;
+    if (!profileNickname || useRoomStore.getState().room.temporaryRoom) return;
 
     activeClient?.updateProfile(
       profileNickname,
@@ -418,6 +376,7 @@ export const useRoomState = () => {
     });
     const generation = roomSessionOwnership.current();
     const client = activeClient;
+    const temporaryContextId = useRoomStore.getState().room.temporaryRoom?.contextId;
     activeClient = null;
     activePeerId = undefined;
     if (client) roomSessionOwnership.record("disconnect_started", generation);
@@ -426,6 +385,8 @@ export const useRoomState = () => {
       generation,
       async () => {
         if (client) await client.disconnect().catch(() => undefined);
+        if (temporaryContextId)
+          await window.desktopApi.temporaryRooms.release(temporaryContextId).catch(() => undefined);
       },
       () => {
         stopQuickMessageMusic();
@@ -532,18 +493,21 @@ export const useRoomState = () => {
   const connectToRoom = async (
     serverUrl: string,
     channelId: ChannelId,
-    { reuseLocalMedia = false }: { reuseLocalMedia?: boolean } = {},
+    {
+      reuseLocalMedia = false,
+      temporary,
+    }: { reuseLocalMedia?: boolean; temporary?: TemporaryRoomDescriptor } = {},
   ) => {
     const generation = roomSessionOwnership.current();
     const currentSettings = useSettingsStore.getState().settings;
     roomSessionOwnership.record("microphone_acquire_started", generation);
     const stream = await ensureLocalStream(undefined, { reuseExisting: reuseLocalMedia });
     roomSessionOwnership.record("microphone_acquired", generation);
-    const peerId = crypto.randomUUID();
+    const peerId = temporary?.peerId ?? crypto.randomUUID();
     activePeerId = peerId;
     const isCurrentSession = () => roomSessionOwnership.ownsPeer(generation, peerId, activePeerId);
     const localProfileId = currentSettings?.profileId || crypto.randomUUID();
-    if (currentSettings && !currentSettings.profileId) {
+    if (!temporary && currentSettings && !currentSettings.profileId) {
       await useSettingsStore.getState().saveSettings({ profileId: localProfileId });
     }
     const accountSnapshot = useAccountStore.getState().snapshot;
@@ -551,7 +515,8 @@ export const useRoomState = () => {
     // provider-specific id keeps current clients compatible with older relays
     // that only accepted UUID-shaped profile ids. Guests still send the stable
     // local profile id because they have no authenticated server identity.
-    const signalingProfileId = accountSnapshot.status === "signed_in" ? undefined : localProfileId;
+    const signalingProfileId =
+      temporary || accountSnapshot.status === "signed_in" ? undefined : localProfileId;
     const roomName = useRoomStore.getState().room.roomName;
     const memberPresence = new MemberPresenceTracker();
 
@@ -560,9 +525,13 @@ export const useRoomState = () => {
       roomId: channelId,
       peerId,
       profileId: signalingProfileId,
-      nickname: accountSnapshot.profile?.displayName || currentSettings?.nickname || "访客",
-      avatarDataUrl: undefined,
-      avatarId: randomRoomAvatar(currentSettings?.avatarId),
+      nickname:
+        temporary?.nickname ||
+        accountSnapshot.profile?.displayName ||
+        currentSettings?.nickname ||
+        "访客",
+      avatarDataUrl: temporary?.avatarDataUrl,
+      avatarId: temporary?.avatarId ?? randomRoomAvatar(currentSettings?.avatarId),
       localStream: stream,
       appVersion: runtimeInfo?.version ?? "0.0.0",
       protocolVersion: runtimeInfo?.protocolVersion ?? APP_PROTOCOL_VERSION,
@@ -576,7 +545,7 @@ export const useRoomState = () => {
         const membersWithVolume = projectRoomMembers(members, {
           savedVolumes,
           audioState,
-          profile: useAccountStore.getState().snapshot.profile,
+          profile: temporary ? undefined : useAccountStore.getState().snapshot.profile,
           settings: useSettingsStore.getState().settings,
           runtimeMemberVolumes,
           saveLegacyVolume: scheduleMemberVolumeSave,
@@ -872,20 +841,7 @@ export const useRoomState = () => {
     roomSessionOwnership.record("connect_started", generation);
     await activeClient.connect();
     roomSessionOwnership.record("connected", generation);
-    useDailyRoomReportStore.getState().beginLoading([channelId]);
-    const reportClient = activeClient;
-    void Promise.allSettled([reportClient.requestDailyRoomReports(channelId)]).then(
-      (reportRequests) => {
-        if (activeClient !== reportClient) return;
-        const unavailableRooms = [channelId].filter((_, index) => {
-          const result = reportRequests[index];
-          return result?.status === "rejected" || result?.value === false;
-        });
-        if (unavailableRooms.length) {
-          useDailyRoomReportStore.getState().setUnavailable([...unavailableRooms]);
-        }
-      },
-    );
+    if (!temporary) loadCurrentRoomReports(activeClient, channelId, () => activeClient);
     const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
     activeClient.updateMuteState(useAudioStore.getState().isMuted, false);
     activeClient.updatePresenceState(
@@ -896,6 +852,7 @@ export const useRoomState = () => {
       localMember?.musicActivity,
       localMember?.gameIconDataUrl,
       useAudioStore.getState().phoneModeActive,
+      localMember?.gameSession,
     );
     playUiSound("enter-room");
     setRoom({
@@ -913,11 +870,14 @@ export const useRoomState = () => {
   const joinChannel = (
     serverUrlOverride: string | undefined,
     requestedChannelId: ChannelId,
+    temporary?: TemporaryRoomDescriptor,
   ): Promise<void> => {
     // A fast rejoin waits for the preceding leave to release its own client and
     // media before the next room begins acquiring them.
     if (activeLeavePromise) {
-      return activeLeavePromise.then(() => joinChannel(serverUrlOverride, requestedChannelId));
+      return activeLeavePromise.then(() =>
+        joinChannel(serverUrlOverride, requestedChannelId, temporary),
+      );
     }
     if (activeJoinPromise) {
       void writeRendererLog("signaling", "info", "Ignored duplicate fixed channel join request");
@@ -931,12 +891,18 @@ export const useRoomState = () => {
         useAppStore.getState().enterUpdateGate();
         return;
       }
-      if (!isStoredRoomId(requestedChannelId)) throw new Error("room_not_found");
+      if (
+        !isStoredRoomId(requestedChannelId) &&
+        !(temporary?.roomId === requestedChannelId && isTemporaryRoomSessionId(requestedChannelId))
+      )
+        throw new Error("room_not_found");
       const channelId = requestedChannelId;
 
       let serverUrl: string;
       try {
-        serverUrl = normalizeServerUrl(serverUrlOverride || currentSettings.relayServerUrl);
+        serverUrl =
+          temporary?.signalingUrl ??
+          normalizeServerUrl(serverUrlOverride || currentSettings.relayServerUrl);
       } catch (error) {
         const description = normalizeRoomError(error, copy.joinTitle);
         pushToast({ tone: "warning", title: copy.joinTitle, description });
@@ -959,8 +925,9 @@ export const useRoomState = () => {
         clearChannelContent();
         setRoom({
           roomId: channelId,
-          roomName: "私人房间",
+          roomName: temporary?.roomName ?? "私人房间",
           privateRoom: undefined,
+          temporaryRoom: temporary,
           lifecycleState: RoomLifecycleState.Opening,
           signalingUrl: serverUrl,
         });
@@ -971,7 +938,7 @@ export const useRoomState = () => {
         }
         const readChatHistory = window.desktopApi?.app?.readChatHistory;
         const chatHistoryPromise =
-          typeof readChatHistory === "function"
+          !temporary && typeof readChatHistory === "function"
             ? readChatHistory({ serverUrl, channelId }).catch((error) => {
                 void writeRendererLog("app", "warn", "Failed to restore local chat history", {
                   channelId,
@@ -984,7 +951,7 @@ export const useRoomState = () => {
           serverUrl,
           channelId,
         });
-        await connectToRoom(serverUrl, channelId, { reuseLocalMedia });
+        await connectToRoom(serverUrl, channelId, { reuseLocalMedia, temporary });
         const joinedRoom = useRoomStore.getState().room.privateRoom;
         if (joinedRoom && joiningUserId === useAccountStore.getState().snapshot.profile?.userId)
           rememberRoomDirectory(joiningUserId, serverUrl, joinedRoom);
@@ -1217,6 +1184,13 @@ export const useRoomState = () => {
 
   const copyInviteLink = async () => {
     try {
+      if (room.temporaryRoom) {
+        await window.desktopApi.clipboard.writeText(
+          `来上号临时联机\n房间码：${room.temporaryRoom.room.code}\n在上号中选择「临时联机」，输入八位房间码。`,
+        );
+        pushToast({ tone: "success", title: "临时房间码已复制" });
+        return;
+      }
       if (!room.privateRoom) throw new Error("room_not_found");
       const inviteText = buildChannelInviteText({
         channelId: room.roomId,
@@ -1501,6 +1475,7 @@ export const useRoomState = () => {
     gameName?: string,
     musicActivity?: RoomMember["musicActivity"],
     gameIconDataUrl?: string,
+    gameSession?: RoomMember["gameSession"] | null,
   ) => {
     const currentLocalMember = useRoomStore
       .getState()
@@ -1510,12 +1485,19 @@ export const useRoomState = () => {
       currentLocalMember?.musicActivity?.providerName === musicActivity?.providerName &&
       currentLocalMember?.musicActivity?.trackTitle === musicActivity?.trackTitle &&
       currentLocalMember?.musicActivity?.artist === musicActivity?.artist;
+    const session =
+      gameName === "英雄联盟"
+        ? gameSession === null
+          ? undefined
+          : (gameSession ?? currentLocalMember?.gameSession)
+        : undefined;
     if (
       currentLocalMember &&
       currentLocalMember.sceneZone === sceneZone &&
       currentLocalMember.activity === activity &&
       currentLocalMember.gameName === gameName &&
       currentLocalMember.gameIconDataUrl === gameIconDataUrl &&
+      JSON.stringify(currentLocalMember.gameSession) === JSON.stringify(session) &&
       sameMusicActivity
     ) {
       return;
@@ -1530,6 +1512,7 @@ export const useRoomState = () => {
       gameName,
       gameIconDataUrl,
       musicActivity,
+      gameSession: session,
     });
     activeClient?.updatePresenceState(
       isDeafened,
@@ -1538,6 +1521,8 @@ export const useRoomState = () => {
       gameName,
       musicActivity,
       gameIconDataUrl,
+      useAudioStore.getState().phoneModeActive,
+      session,
     );
     void writeRendererLog("app", "info", "Local member moved in scene", {
       sceneZone,
@@ -1599,6 +1584,10 @@ export const useRoomState = () => {
     stopSharedQuickMessageMusic,
     startScreenShare,
     stopScreenShare,
+    setApplicationAudioTrack: async (track?: MediaStreamTrack, sourceName?: string) => {
+      if (!activeClient) throw Error("room_not_connected");
+      await activeClient.setApplicationAudioTrack(track, sourceName);
+    },
     setScreenShareViewingActive,
     moveLocalMember,
     setMemberVolume,

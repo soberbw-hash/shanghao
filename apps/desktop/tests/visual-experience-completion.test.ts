@@ -40,7 +40,11 @@ test("character life is coordinated and includes expressive and connection feedb
   assert.match(character, /room-character-update-device/);
   assert.doesNotMatch(visualStyles, /\.desk-animal-speaking \.desk-animal-art/);
   assert.match(characterStyles, /\.desk-animal-speaking \.desk-animal-body-rig/);
-  assert.match(visualStyles, /\.walking-animal-shadow \{[^}]*transform: scaleX\(1\.12\)/s);
+  assert.match(
+    visualStyles,
+    /\.walking-animal-shadow\s*\{[^}]*opacity:\s*1;[^}]*transform:\s*none;/s,
+  );
+  assert.match(characterStyles, /\.walking-animal-shadow\s*\{[^}]*radial-gradient/s);
 });
 
 test("glass highlights follow the pointer without a perpetual sweep", () => {
@@ -81,10 +85,13 @@ test("recording, markers, speaker closure and AI work all expose visible state f
   assert.match(topbar, /room-recording-live/);
   assert.match(topbar, /room-recording-marker-pulse/);
   assert.match(room, /is-speaker-closed/);
-  assert.match(voiceMemory, /voice-memory-audio-trajectory/);
-  assert.match(visualStyles, /\.voice-memory-audio-trajectory\s*\{[^}]*width: min\(100%, 520px\)/s);
-  assert.doesNotMatch(visualStyles, /\.voice-memory-audio-trajectory\s*\{[^}]*border-radius:/s);
+  assert.match(voiceMemory, /className=\{`voice-memory-working is-\$\{record\.phase\}`\}/);
+  assert.match(voiceMemory, /role="status"/);
+  assert.match(voiceMemory, /record\.diagnostic\?\.runtimeMessage/);
+  assert.match(voiceMemory, /role="progressbar"/);
+  assert.match(voiceMemory, /aria-valuenow=\{displayProgress\}/);
+  assert.match(voiceMemory, /pauseTask\(record\.recordingId\)/);
+  assert.doesNotMatch(voiceMemory, /voice-memory-audio-trajectory/);
   assert.match(visualStyles, /@keyframes room-recording-breathe/);
   assert.match(visualStyles, /@keyframes room-recording-marker-confirm/);
-  assert.match(visualStyles, /@keyframes voice-memory-wave/);
 });

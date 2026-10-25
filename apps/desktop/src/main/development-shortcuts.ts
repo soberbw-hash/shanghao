@@ -1,4 +1,15 @@
-import { copyFileSync, existsSync, mkdirSync, realpathSync, watch } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  watch,
+  writeFileSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { app, shell } from "electron";
 import { APP_ID, APP_NAME } from "@private-voice/shared";
@@ -16,14 +27,20 @@ const launcherPath = () =>
     process.env.LOCALAPPDATA ?? app.getPath("appData"),
     "Programs",
     "ShangHaoDev",
-    "launch-dev.vbs",
+    "launch-dev.ps1",
   );
 
 const developmentLaunch = () =>
   existsSync(launcherPath())
     ? {
-        target: path.join(process.env.SystemRoot ?? "C:/Windows", "System32", "wscript.exe"),
-        args: `"${launcherPath()}"`,
+        target: path.join(
+          process.env.SystemRoot ?? "C:/Windows",
+          "System32",
+          "WindowsPowerShell",
+          "v1.0",
+          "powershell.exe",
+        ),
+        args: `-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${readFileSync(launcherPath()).subarray(2).toString("base64")}`,
       }
     : { target: process.execPath, args: `"${app.getAppPath()}"` };
 
@@ -44,8 +61,8 @@ export const repairDevelopmentShortcuts = (): void => {
   );
   const electronLink = path.join(programs, "Electron.lnk");
   const targets = [
-    path.join(app.getPath("desktop"), `${APP_NAME}（开发版）.lnk`),
-    path.join(programs, `${APP_NAME}（开发版）.lnk`),
+    path.join(app.getPath("desktop"), `${APP_NAME}开发版.lnk`),
+    path.join(programs, `${APP_NAME}开发版.lnk`),
   ];
   if (existsSync(electronLink)) {
     const link = shell.readShortcutLink(electronLink);
@@ -66,7 +83,18 @@ export const repairDevelopmentShortcuts = (): void => {
     }
   }
   const launch = developmentLaunch();
-  const icon = path.join(app.getAppPath(), "build", "shanghao-icon-v4.ico");
+  // Shell shortcuts outlive development build directories. Keep their icon in
+  // the same persistent location as the launcher, rather than in build output.
+  const sourceIcon = path.join(app.getAppPath(), "build", "shanghao-icon-v4.ico");
+  const iconBytes = readFileSync(sourceIcon);
+  const iconHash = createHash("sha256").update(iconBytes).digest("hex").slice(0, 12);
+  const icon = path.join(path.dirname(launcherPath()), `shanghao-dev-${iconHash}.ico`);
+  mkdirSync(path.dirname(icon), { recursive: true });
+  if (!existsSync(icon) || !readFileSync(icon).equals(iconBytes)) {
+    const pendingIcon = `${icon}.${process.pid}.tmp`;
+    writeFileSync(pendingIcon, iconBytes);
+    renameSync(pendingIcon, icon);
+  }
   for (const shortcut of targets) {
     mkdirSync(path.dirname(shortcut), { recursive: true });
     if (existsSync(shortcut)) {
@@ -90,6 +118,25 @@ export const repairDevelopmentShortcuts = (): void => {
       })
     )
       throw new Error("development_shortcut_write_failed");
+  }
+  // Retire the displayed old Shell item only after the replacement is written.
+  for (const folder of [app.getPath("desktop"), programs]) {
+    const previous = path.join(folder, `${APP_NAME}（开发版）.lnk`);
+    if (!existsSync(previous)) continue;
+    const current = shell.readShortcutLink(previous);
+    if (
+      current.appUserModelId !== `${APP_ID}.dev` ||
+      !/wscript\.exe$/i.test(current.target) ||
+      !/ShangHaoDev[\\/]?launch-dev\.vbs/i.test(current.args ?? "")
+    )
+      continue;
+    const backup = path.join(path.dirname(launcherPath()), "shortcut-backups", String(Date.now()));
+    mkdirSync(backup, { recursive: true });
+    copyFileSync(
+      previous,
+      path.join(backup, folder === programs ? "start-menu.lnk" : "desktop.lnk"),
+    );
+    unlinkSync(previous);
   }
 };
 

@@ -760,6 +760,7 @@ export const createProcessedMicrophoneStream = async (
     let activeProcessor: DeepFilterNodeResult | undefined;
     let processedGain: GainNode | undefined;
     let protectionWorklet: AudioWorkletNode | undefined;
+    let protectionMonitorSilence: GainNode | undefined;
     let currentSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
     let lastAppliedSuppressionLevel = DEEPFILTER_BASE_SUPPRESSION_LEVEL;
     const rawInputSamples = new Float32Array(rawInputAnalyser.fftSize);
@@ -838,11 +839,17 @@ export const createProcessedMicrophoneStream = async (
       resolveReady = resolve;
     });
 
-    if (settings.isNoiseSuppressionEnabled) {
+    {
       try {
         protectionWorklet = await createProtectionWorkletNode(context);
         rawGain.connect(protectionWorklet, 0, 0);
-        protectionWorklet.connect(blendBus);
+        if (settings.isNoiseSuppressionEnabled) protectionWorklet.connect(blendBus);
+        // A disabled send Track may stop pulling its destination. Keep only the
+        // existing local analysis alive through an exactly silent local branch.
+        protectionMonitorSilence = context.createGain();
+        protectionMonitorSilence.gain.value = 0;
+        protectionWorklet.connect(protectionMonitorSilence);
+        protectionMonitorSilence.connect(context.destination);
         protectionWorklet.port.postMessage({
           type: "mix",
           raw: 1,
@@ -907,9 +914,10 @@ export const createProcessedMicrophoneStream = async (
         // Chromium/Electron versions without AudioWorklet keep the established
         // direct graph; the DeepFilter failure path still preserves raw audio.
         protectionWorklet = undefined;
-        rawGain.connect(blendBus);
+        if (settings.isNoiseSuppressionEnabled) rawGain.connect(blendBus);
       }
-
+    }
+    if (settings.isNoiseSuppressionEnabled) {
       void createDeepFilterNode(context)
         .then((processor) => {
           if (disposed) {
@@ -983,6 +991,7 @@ export const createProcessedMicrophoneStream = async (
         }
         processedGain?.disconnect();
         protectionWorklet?.disconnect();
+        protectionMonitorSilence?.disconnect();
         rawDelay?.disconnect();
         rawGain.disconnect();
         rawInputAnalyser.disconnect();

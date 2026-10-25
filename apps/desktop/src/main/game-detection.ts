@@ -13,6 +13,7 @@ import { AppIdentityResolver, appIdentityMatches, type AppIdentity } from "./app
 import { AppIconResolver } from "./app-icon-resolver";
 import { platformService } from "./platform/PlatformService";
 import { rustCoreClient } from "./rust-core-client";
+import { LeagueActivityMonitor } from "./league-activity";
 import {
   GAME_RULES,
   KK_PLATFORM_GAME_NAME,
@@ -466,6 +467,7 @@ export const buildFastGameProbeCommand = (): string =>
   ].join("; ");
 
 interface DetectedActivities {
+  processes?: ProcessSnapshot[];
   game?: MatchedActivity<NonNullable<GameDetectionSnapshot["gameName"]>>;
   musicActivity?: MusicActivity;
   processProbeFailed?: boolean;
@@ -576,6 +578,7 @@ const detectActivities = async (): Promise<DetectedActivities> => {
   const game = matchKnownGameActivity(processes);
   return {
     game,
+    processes,
     processProbeFailed: processes.length === 0,
     musicActivity:
       matchMediaSessionMusicActivity(mediaSessionResult.stdout) ?? matchMusicActivity(processes),
@@ -592,6 +595,11 @@ export const resolveStableGameActivity = (
 };
 
 export class GameDetectionController {
+  private readonly league = new LeagueActivityMonitor((gameSession) => {
+    if (!this.enabled || this.snapshot.gameName !== "英雄联盟") return;
+    this.snapshot = { ...this.snapshot, gameSession, checkedAt: new Date().toISOString() };
+    this.notifyListeners();
+  });
   private timer: NodeJS.Timeout | undefined;
   private enabled = false;
   private checkInFlight = false;
@@ -615,6 +623,7 @@ export class GameDetectionController {
     this.generation += 1;
 
     if (!enabled) {
+      this.league.stop();
       if (this.timer) clearInterval(this.timer);
       this.timer = undefined;
       this.gameActivityMisses = 0;
@@ -655,6 +664,7 @@ export class GameDetectionController {
 
   stop(): void {
     this.enabled = false;
+    this.league.stop();
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     this.generation += 1;
@@ -708,6 +718,7 @@ export class GameDetectionController {
       game,
       musicActivity: detectedMusicActivity,
       processProbeFailed,
+      processes,
     } = await detectActivities();
     if (!this.enabled || generation !== this.generation) {
       return;
@@ -739,6 +750,7 @@ export class GameDetectionController {
       gameName === previousGame && !gameIcon ? previousGameIconDataUrl : gameIcon?.dataUrl;
     this.snapshot = {
       gameName,
+      gameSession: gameName === "英雄联盟" ? this.snapshot.gameSession : undefined,
       gameIconDataUrl,
       musicActivity,
       detectedAt: gameName
@@ -748,6 +760,7 @@ export class GameDetectionController {
         : undefined,
       checkedAt: new Date().toISOString(),
     };
+    this.league.watch(gameName === "英雄联盟" ? (processes ?? []) : []);
 
     const musicKey = JSON.stringify(musicActivity ?? null);
     if (

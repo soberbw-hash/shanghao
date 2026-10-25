@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { BrainCircuit, Download, MoreHorizontal, Pause, Play, Trash2 } from "lucide-react";
+import {
+  BrainCircuit,
+  ChevronDown,
+  Download,
+  MoreHorizontal,
+  Pause,
+  Play,
+  Trash2,
+} from "lucide-react";
 
 import type {
   AiAsrModelId,
@@ -24,6 +32,8 @@ import { DialogCloseButton } from "../base/DialogCloseButton";
 import { Switch } from "../base/Switch";
 import { SettingsItemRow } from "./SettingsItemRow";
 import { SettingsSection } from "./SettingsSection";
+import { CloudLocalAssistControl } from "./CloudLocalAssistControl";
+import { TranscriptionDataNotice } from "./TranscriptionDataNotice";
 import type { ToastMessage } from "../../store/appStore";
 import { toUserFacingError } from "../../utils/userFacingError";
 import {
@@ -220,6 +230,7 @@ export const AiVoiceMemorySettingsCard = ({
     cachedAiVoiceMemorySnapshot,
   );
   const [busyModel, setBusyModel] = useState<AiModelId>();
+  const modelInUse = !snapshot || Boolean(snapshot.modelConfigurationBusy);
   const [pendingDeleteModel, setPendingDeleteModel] = useState<AiModelStatus>();
   const [runtimeStatus, setRuntimeStatus] = useState<AiRuntimeStatus>();
   const [customProvider, setCustomProvider] = useState<AiCustomProviderStatus>();
@@ -238,7 +249,6 @@ export const AiVoiceMemorySettingsCard = ({
   const textPresetEdited = useRef(false);
   const [savingCustomProvider, setSavingCustomProvider] = useState(false);
   const [modelFilter, setModelFilter] = useState<"all" | "installed" | "available">("all");
-  const modelManagementRef = useRef<HTMLElement>(null);
   const previousModelPhasesRef = useRef<Map<AiModelId, AiModelStatus["phase"]>>(new Map());
 
   useRenderProfiler("AiVoiceMemorySettingsCard", {
@@ -323,7 +333,6 @@ export const AiVoiceMemorySettingsCard = ({
       ) {
         await onChange({
           isAiAutoTranscribeEnabled: false,
-          isAiAutoOrganizeEnabled: false,
         });
       }
       if (action === "delete") pushToast({ tone: "success", title: `${model.name} 已删除` });
@@ -338,10 +347,11 @@ export const AiVoiceMemorySettingsCard = ({
   };
 
   const selectAsrModel = async (model: AiModelStatus) => {
+    if (modelInUse) return;
     if (model.category !== "asr" || !model.activeRevision || !model.runtimeReady) return;
     setBusyModel(model.id);
     try {
-      await onChange({ aiAsrModel: model.id as AiAsrModelId });
+      await onChange({ aiAsrModel: model.id as AiAsrModelId, aiTranscriptionProvider: "local" });
       pushToast({
         tone: "success",
         title: `已切换到 ${model.name}`,
@@ -358,8 +368,18 @@ export const AiVoiceMemorySettingsCard = ({
   };
 
   const saveCustomProvider = async () => {
+    if (modelInUse) return;
     setSavingCustomProvider(true);
     try {
+      if (textPreset === "cloud") {
+        await onChange({
+          aiOrganizerProvider: "cloud",
+          aiRoomAskProvider: "cloud",
+          aiTextModelPreset: "cloud",
+        });
+        pushToast({ tone: "success", title: "房间云端模型已生效" });
+        return;
+      }
       const status = await window.desktopApi.ai.saveCustomProvider({
         baseUrl: customBaseUrl,
         model: customModel,
@@ -382,10 +402,12 @@ export const AiVoiceMemorySettingsCard = ({
         );
       pushToast({
         tone: "danger",
-        title: "自定义 API 保存失败",
+        title: "文本模型保存失败",
         description: existingConfigUnreadable
           ? "原配置无法读取，已保留原文件。请检查系统加密存储或磁盘权限。"
-          : "请检查 API 地址、模型名称和密钥是否填写正确，然后重试。",
+          : textPreset === "cloud"
+            ? "模型没有切换，请重试保存。"
+            : "请检查 API 地址、模型名称和密钥是否填写正确，然后重试。",
       });
     } finally {
       setSavingCustomProvider(false);
@@ -393,6 +415,7 @@ export const AiVoiceMemorySettingsCard = ({
   };
 
   const saveTranscriptionProvider = async (provider: "cloud" | "custom") => {
+    if (modelInUse) return;
     setSavingTranscriptionProvider(true);
     try {
       const status = await window.desktopApi.ai.saveTranscriptionProvider({
@@ -429,8 +452,9 @@ export const AiVoiceMemorySettingsCard = ({
       });
       return;
     }
+    let observedStatus = false;
     void preloadAiVoiceMemorySnapshot()
-      .then((next) => active && setSnapshot(next))
+      .then((next) => active && !observedStatus && setSnapshot(next))
       .catch(() =>
         pushToast({
           tone: "danger",
@@ -439,6 +463,7 @@ export const AiVoiceMemorySettingsCard = ({
         }),
       );
     const unsubscribe = aiApi.onStatus((next) => {
+      observedStatus = true;
       cachedAiVoiceMemorySnapshot = next;
       if (active) setSnapshot(next);
     });
@@ -539,8 +564,6 @@ export const AiVoiceMemorySettingsCard = ({
       : transcriptionProvider === "cloud"
         ? Boolean(transcriptionStatus?.cloudConfigured)
         : Boolean(transcriptionStatus?.customConfigured);
-  const organizerReady =
-    settings.aiOrganizerProvider === "custom" ? Boolean(customProvider?.configured) : true;
   const installedAsrCount = asrModels.filter((model) => model.activeRevision).length;
   const transcriptionName =
     transcriptionProvider === "cloud"
@@ -554,7 +577,7 @@ export const AiVoiceMemorySettingsCard = ({
       : "房间云端 AI";
 
   const chooseAsrModel = (model: AiModelStatus) => {
-    if (model.id === settings.aiAsrModel) return;
+    if (settings.aiTranscriptionProvider === "local" && model.id === settings.aiAsrModel) return;
     if (!model.activeRevision) {
       pushToast({
         tone: "neutral",
@@ -584,7 +607,8 @@ export const AiVoiceMemorySettingsCard = ({
 
   const renderModel = (model: AiModelStatus) => {
     const selectable = model.category === "asr";
-    const selected = model.id === settings.aiAsrModel;
+    const selected =
+      settings.aiTranscriptionProvider === "local" && model.id === settings.aiAsrModel;
     const recommended = model.id === DEFAULT_AI_ASR_MODEL_ID;
     const tags = MODEL_TAGS[model.id] ?? [];
     const dependencyPending = Boolean(
@@ -681,7 +705,7 @@ export const AiVoiceMemorySettingsCard = ({
             className="ai-model-select-hit"
             aria-label={selected ? `${model.name}，当前使用` : `切换为 ${model.name}`}
             aria-pressed={selected}
-            disabled={busyModel === model.id || selected}
+            disabled={modelInUse || busyModel === model.id || selected}
             onClick={() => chooseAsrModel(model)}
           />
         ) : null}
@@ -853,50 +877,34 @@ export const AiVoiceMemorySettingsCard = ({
           >
             <Switch
               isChecked={settings.isAiAutoTranscribeEnabled}
-              isDisabled={!activeTranscriptionReady && !settings.isAiAutoTranscribeEnabled}
               ariaLabel="自动转录"
               onChange={(checked) => void onChange({ isAiAutoTranscribeEnabled: checked })}
             />
           </SettingsItemRow>
+          <TranscriptionDataNotice
+            provider={transcriptionProvider}
+            automatic={settings.isAiAutoTranscribeEnabled}
+          />
+          <CloudLocalAssistControl
+            settings={settings}
+            disabled={modelInUse}
+            models={snapshot.models}
+            onChange={(patch) => void onChange(patch)}
+          />
         </div>
       </section>
 
-      <section className="ai-model-group mt-3" aria-labelledby="ai-analysis-title">
-        <div className="ai-model-group-heading">
-          <h3 id="ai-analysis-title">整理与问答</h3>
-        </div>
-        <div className="mt-3 space-y-3">
-          <SettingsItemRow
-            label="自动整理"
-            description={organizerReady ? undefined : "请先保存自定义 API。"}
-          >
-            <Switch
-              isChecked={settings.isAiAutoOrganizeEnabled}
-              isDisabled={
-                (!organizerReady || !activeTranscriptionReady) && !settings.isAiAutoOrganizeEnabled
-              }
-              ariaLabel="自动整理"
-              onChange={(checked) => void onChange({ isAiAutoOrganizeEnabled: checked })}
-            />
-          </SettingsItemRow>
-          <SettingsItemRow
-            label="整理后自动上传"
-            description="完成后分享摘要到录音所属房间，用于每日总结；需进入对应房间。"
-          >
-            <Switch
-              isChecked={settings.isAiAutoUploadEnabled === true}
-              ariaLabel="整理后自动上传"
-              onChange={(checked) => void onChange({ isAiAutoUploadEnabled: checked })}
-            />
-          </SettingsItemRow>
-        </div>
-      </section>
-      <section
-        ref={modelManagementRef}
+      <details
         id="ai-model-management"
-        className="ai-model-group mt-3 scroll-mt-4"
-        aria-labelledby="model-management-title"
+        className="ai-model-group ai-advanced-settings mt-3 scroll-mt-4"
       >
+        <summary className="ai-advanced-summary" aria-label="模型与 API 配置">
+          <span>
+            <strong>模型与 API 配置</strong>
+            <small>按需更改 API、下载或管理本地模型</small>
+          </span>
+          <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
+        </summary>
         <div className="ai-model-group-heading">
           <h3 id="model-management-title">模型</h3>
           {transcriptionProvider === "local" ? (
@@ -921,25 +929,25 @@ export const AiVoiceMemorySettingsCard = ({
           ) : null}
         </div>
         <div className="ai-model-provider-grid mt-3">
-          <section className="ai-model-provider-panel" aria-label="文本整理与问答模型">
+          <fieldset
+            className="ai-model-provider-panel disabled:opacity-50"
+            disabled={modelInUse}
+            aria-label="文本整理与问答模型"
+            title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
+          >
             <h4>文本整理与问答</h4>
-            <p>用于总结转录、整理内容和回答问题。</p>
+            <p>录音整理与房间问答共用此模型。当前使用：{textModelName}。</p>
             <select
               className="ai-processing-select"
               aria-label="文本整理与问答模型"
               value={textPreset}
+              disabled={savingCustomProvider}
               onChange={(event) => {
                 const value = event.target.value as NonNullable<AppSettings["aiTextModelPreset"]>;
                 textPresetEdited.current = true;
                 setTextPreset(value);
                 setCustomApiKey("");
-                if (value === "cloud")
-                  void onChange({
-                    aiOrganizerProvider: value,
-                    aiRoomAskProvider: value,
-                    aiTextModelPreset: value,
-                  });
-                else {
+                if (value !== "cloud") {
                   const preset =
                     value === "deepseek"
                       ? { baseUrl: "https://api.deepseek.com", model: "deepseek-flash" }
@@ -961,7 +969,21 @@ export const AiVoiceMemorySettingsCard = ({
               <option value="glm">GLM-4-Flash-250414（免费）</option>
               <option value="custom">自定义 API</option>
             </select>
-            {textPreset !== "cloud" ? (
+            {textPreset === "cloud" ? (
+              <div className="ai-provider-config-note">
+                <p>
+                  正在编辑房间云端模型，保存后同时用于录音整理和房间问答。使用时需进入对应房间；无需填写
+                  API 密钥。
+                </p>
+                <Button
+                  aria-label="保存文本模型配置"
+                  disabled={savingCustomProvider}
+                  onClick={() => void saveCustomProvider()}
+                >
+                  保存
+                </Button>
+              </div>
+            ) : (
               <div className="ai-provider-config-note">
                 <div className="ai-provider-fields">
                   <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
@@ -969,6 +991,7 @@ export const AiVoiceMemorySettingsCard = ({
                     <input
                       className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
                       value={customBaseUrl}
+                      disabled={savingCustomProvider}
                       onChange={(event) => {
                         setCustomBaseUrl(event.target.value);
                         setTextPreset("custom");
@@ -981,6 +1004,7 @@ export const AiVoiceMemorySettingsCard = ({
                     <input
                       className="mt-1 w-full rounded-xl border border-[#d7e4f4] bg-white px-3 py-2 text-sm"
                       value={customModel}
+                      disabled={savingCustomProvider}
                       onChange={(event) => {
                         setCustomModel(event.target.value);
                         setTextPreset("custom");
@@ -995,6 +1019,7 @@ export const AiVoiceMemorySettingsCard = ({
                       type="password"
                       autoComplete="off"
                       value={customApiKey}
+                      disabled={savingCustomProvider}
                       onChange={(event) => setCustomApiKey(event.target.value)}
                       placeholder={
                         canReuseTextProviderKey(customProvider, customBaseUrl)
@@ -1005,6 +1030,7 @@ export const AiVoiceMemorySettingsCard = ({
                   </label>
                   <div className="ai-provider-form-actions">
                     <Button
+                      aria-label="保存文本模型配置"
                       disabled={
                         savingCustomProvider ||
                         (!customApiKey.trim() &&
@@ -1035,9 +1061,14 @@ export const AiVoiceMemorySettingsCard = ({
                   HTTPS 地址。
                 </p>
               </div>
-            ) : null}
-          </section>
-          <section className="ai-model-provider-panel" aria-label="语音转录模型">
+            )}
+          </fieldset>
+          <fieldset
+            className="ai-model-provider-panel disabled:opacity-50"
+            disabled={modelInUse}
+            aria-label="语音转录模型"
+            title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
+          >
             <h4>语音转录</h4>
             <p>选择云端 SenseVoice、本地模型或兼容的自定义转录 API。</p>
             <select
@@ -1144,7 +1175,7 @@ export const AiVoiceMemorySettingsCard = ({
                 <p>密钥经 Windows 加密，仅保存在本机。仅支持 HTTPS 地址。</p>
               </div>
             ) : null}
-          </section>
+          </fieldset>
         </div>
         {transcriptionProvider === "local" ? (
           <>
@@ -1179,7 +1210,7 @@ export const AiVoiceMemorySettingsCard = ({
             </div>
           </>
         ) : null}
-      </section>
+      </details>
 
       {pendingDeleteModel
         ? createPortal(

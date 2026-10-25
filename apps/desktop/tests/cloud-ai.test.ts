@@ -143,7 +143,7 @@ test("cloud response size is bounded while reading the stream", async () => {
   await assert.rejects(service.execute(request), /cloud_ai_response_too_large/);
 });
 
-test("organization and room questions share the configured text provider", () => {
+test("legacy local text settings recover summaries through cloud HTTPS while room questions keep their route", () => {
   for (const legacyProvider of ["cloud", "local", "custom"] as const) {
     assert.equal(
       resolveAiTextProvider("question", legacyProvider),
@@ -151,7 +151,7 @@ test("organization and room questions share the configured text provider", () =>
     );
     assert.equal(
       resolveAiTextProvider("organize", legacyProvider),
-      legacyProvider === "custom" ? "custom" : "cloud",
+      legacyProvider === "cloud" ? "cloud" : "custom",
     );
   }
 });

@@ -101,6 +101,7 @@ test("user settings survive save and a fresh store load", async () => {
       preferredInputDeviceId: "test-input",
       preferredOutputDeviceId: "test-output",
       recordingSaveDirectory: "D:/上号录音",
+      aiCloudLocalAsrModel: "qwen3-asr-1.7b-force",
       isBackgroundUpdateCheckEnabled: false,
       isFriendOnlineNotificationEnabled: true,
       hasSeenTrayNotice: true,
@@ -136,6 +137,7 @@ test("user settings survive save and a fresh store load", async () => {
     const reloaded = await new SettingsStore(undefined, directory).load();
     assert.deepEqual(reloaded, saved);
     assert.equal(reloaded.recordingSaveDirectory, "D:/上号录音");
+    assert.equal(reloaded.aiCloudLocalAsrModel, "qwen3-asr-1.7b-force");
     assert.equal(reloaded.isFriendOnlineNotificationEnabled, true);
     assert.equal(reloaded.hasSeenTrayNotice, true);
     assert.equal(reloaded.hasDismissedRecordingClipConsent, true);

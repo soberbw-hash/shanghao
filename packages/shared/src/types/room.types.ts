@@ -95,6 +95,9 @@ export interface MusicActivity {
 }
 
 export interface RoomMember {
+  memberSessionId?: string;
+  memberGeneration?: number;
+  applicationAudioName?: string;
   id: string;
   /** Permanent Supabase Auth identity for signed-in members, or guest:<peerId> for guests. */
   userId?: string;
@@ -120,6 +123,7 @@ export interface RoomMember {
   sceneZone?: SceneZoneId;
   gameName?: string;
   gameIconDataUrl?: string;
+  gameSession?: import("./game-session.types").GameSessionActivity;
   musicActivity?: MusicActivity;
   latencyMs?: number;
   presenceState: MemberPresenceState;
@@ -142,6 +146,7 @@ export interface RoomSummary {
   roomId: string;
   roomName: string;
   privateRoom?: import("./private-room.types").PrivateRoomInfo;
+  temporaryRoom?: import("./temporary-room-client.types").TemporaryRoomDescriptor;
   memberCount: number;
   members: RoomMember[];
   signalingUrl?: string;

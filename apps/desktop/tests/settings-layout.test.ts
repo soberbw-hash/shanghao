@@ -118,6 +118,10 @@ test("settings keep short lists visible and model actions above neighboring card
   const settingsSource =
     readFileSync(settingsPagePath, "utf8") +
     readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/SettingsNavigation.tsx"),
+      "utf8",
+    ) +
+    readFileSync(
       path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
       "utf8",
     );
@@ -394,6 +398,10 @@ test("settings keep only everyday voice controls and remove advanced connection"
   const source =
     readFileSync(settingsPagePath, "utf8") +
     readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/SettingsNavigation.tsx"),
+      "utf8",
+    ) +
+    readFileSync(
       path.resolve(process.cwd(), "src/renderer/src/components/settings/GeneralSettingsCard.tsx"),
       "utf8",
     );
@@ -417,14 +425,20 @@ test("settings keep only everyday voice controls and remove advanced connection"
   assert.equal(source.includes("useState(() => {"), true);
   assert.equal(source.includes("getInitialSettingsSection()"), true);
   assert.equal(sectionStateSource.includes('if (!import.meta.env.DEV) return "general"'), true);
-  for (const diagnostic of ["服务器连接", "网络速度", "房间连接", "Windows 网络权限"]) {
+  for (const diagnostic of [
+    "朋友听不到我",
+    "听不到朋友",
+    "进不去房间",
+    "录音转不出文字",
+    "共享画面异常",
+  ]) {
     assert.equal(diagnosticsSource.includes(diagnostic), true);
   }
   assert.equal(diagnosticsSource.includes("outputDeviceCount"), true);
   assert.equal(diagnosticsSource.includes("onOpenAudioSettings"), true);
   assert.equal(diagnosticsSource.includes("去语音设置"), true);
   assert.equal(diagnosticsSource.includes("需要看看"), true);
-  assert.equal(diagnosticsSource.includes("未检测"), true);
+  assert.equal(diagnosticsSource.includes("系统状态 · 连接与设备"), false);
   assert.equal(diagnosticsSource.includes("点击前往语音设置，检查输出设备和音量"), false);
   assert.equal(diagnosticsSource.includes("实时诊断 HUD"), false);
   assert.equal(diagnosticsSource.includes("技术参数"), false);
@@ -567,16 +581,16 @@ test("recording library uses one automatic cleanup control and retains individua
   assert.equal(source.includes("window.desktopApi.recording.scanWaste()"), false);
   assert.equal(source.includes("录音占用"), true);
   assert.equal(source.includes("自动清理"), true);
-  assert.equal(source.includes("上限"), true);
+  assert.equal(source.includes("容量提醒"), true);
   assert.equal(source.includes("立即清理"), false);
   assert.equal(source.includes("清理废弃录音"), false);
   assert.equal(source.includes("isRecordingWasteAutoCleanupEnabled"), true);
   assert.equal(cleanup.includes("清理废弃录音"), true);
-  assert.equal(source.includes("不足10分钟"), true);
+  assert.equal(source.includes("只自动清理整段静音录音"), true);
   assert.equal(cleanup.includes("不足10分钟"), true);
   assert.equal(source.includes("十秒以下"), false);
   assert.equal(cleanup.includes("不足10秒"), false);
-  assert.equal(source.includes("回收最旧的未收藏、无标记录音"), true);
+  assert.equal(source.includes("超过容量阈值时也不会自动回收有声录音"), true);
   assert.equal(roomSource.includes("录音已移至回收站"), true);
   assert.equal(cleanup.includes("收藏和带标记的录音不会被清理"), true);
   assert.equal(cleanup.includes('role="alertdialog"'), true);
@@ -665,7 +679,6 @@ test("recording library keeps both desktop columns useful while browsing long li
   assert.equal(cardSource.includes("safe / 3_600"), true);
   assert.equal(readFileSync(voiceMemoryDetailPath, "utf8").includes("hasMultipleSpeakers"), true);
   const voiceMemorySource = readFileSync(voiceMemoryDetailPath, "utf8");
-  assert.equal(voiceMemorySource.includes('className="voice-memory-title"'), true);
   assert.equal(voiceMemorySource.includes("转录模型 · {transcriptionModelLabel}"), false);
   assert.equal(voiceMemorySource.includes("转录耗时 ·"), false);
   assert.equal(voiceMemorySource.includes("<h4>转录</h4>"), false);
@@ -744,7 +757,7 @@ test("successful empty ASR units remain silence instead of failing the recording
   assert.equal(detailSource.includes('process("transcribe")'), true);
   assert.equal(detailSource.includes('process("organize")'), true);
   assert.equal(detailSource.includes('transcribe: action === "transcribe"'), true);
-  assert.equal(detailSource.includes('organize: action === "organize"'), true);
+  assert.equal(detailSource.includes("organize: true"), true);
   assert.equal(detailSource.includes("diagnostic?.taskId"), false);
 });
 
@@ -766,7 +779,8 @@ test("AI voice memory exposes provider readiness and recovers interrupted compar
   assert.equal(source.includes("高精度转录"), true);
   assert.equal(source.includes("极速转录"), true);
   assert.equal(source.includes("<strong>共享组件</strong>"), true);
-  assert.equal(source.includes('id="ai-analysis-title">整理与问答'), true);
+  assert.equal(source.includes('ariaLabel="自动整理"'), false);
+  assert.equal(source.includes('ariaLabel="整理后自动上传"'), false);
   assert.equal(source.includes("转录设置"), true);
   assert.equal(source.includes('className="ai-model-select-hit"'), true);
   assert.equal(source.includes("ai-asr-choice-grid"), false);
@@ -811,13 +825,10 @@ test("AI voice memory exposes provider readiness and recovers interrupted compar
   assert.equal(source.includes('label="房间问答模型"'), false);
   assert.ok(
     source.indexOf('aria-labelledby="transcription-settings-title"') <
-      source.indexOf("ref={modelManagementRef}"),
+      source.indexOf('id="ai-model-management"'),
   );
-  assert.ok(
-    source.indexOf('aria-labelledby="ai-analysis-title"') <
-      source.indexOf("ref={modelManagementRef}"),
-  );
-  assert.equal(source.includes('ariaLabel="整理后自动上传"'), true);
+  assert.equal(source.includes('aria-labelledby="ai-analysis-title"'), false);
+  assert.equal(source.includes('ariaLabel="整理后自动上传"'), false);
   assert.equal(source.includes("providerSelect(settings.aiRoomAskProvider"), false);
   assert.equal(source.includes("无需安装任何本地问答模型"), false);
   assert.equal(source.includes("密钥经 Windows 加密，仅保存在本机"), true);
@@ -826,8 +837,8 @@ test("AI voice memory exposes provider readiness and recovers interrupted compar
   assert.equal(source.includes("AI 处理状态"), false);
   assert.equal(source.includes("技术信息（排错时使用）"), false);
   const diagnosticsSource = readFileSync(diagnosticsCardPath, "utf8");
-  assert.equal(diagnosticsSource.includes("AI 转录"), true);
-  assert.equal(diagnosticsSource.includes("去 AI 设置"), true);
+  assert.equal(diagnosticsSource.includes("检查转录设置"), true);
+  assert.equal(diagnosticsSource.includes("onOpenAiSettings"), true);
   assert.equal(diagnosticsSource.includes("AI 运行诊断"), false);
   assert.equal(diagnosticsSource.includes("技术参数"), false);
   assert.equal(diagnosticsSource.includes("模型位置"), false);
@@ -836,7 +847,13 @@ test("AI voice memory exposes provider readiness and recovers interrupted compar
   assert.equal(source.includes("AI Runtime Diagnostics"), false);
   assert.equal(source.includes("ASR Model:"), false);
   assert.equal(source.includes("Recent task:"), false);
-  assert.equal(settingsSource.includes('{ id: "ai", label: "AI 功能"'), true);
+  assert.equal(
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/settings/SettingsNavigation.tsx"),
+      "utf8",
+    ).includes('{ id: "ai", label: "AI 功能"'),
+    true,
+  );
   assert.equal(settingsSource.includes("<AiVoiceMemorySettingsCard"), true);
   assert.equal(recordingSource.includes("AiVoiceMemorySettingsCard"), false);
   assert.equal(recordingSource.includes("listVoiceMemories"), true);

@@ -9,7 +9,7 @@ import type {
   DailyRoomRecordingRecap,
   SceneZoneId,
 } from "@private-voice/shared";
-import { isAllowedNickname, isBuiltInAvatarId } from "@private-voice/shared";
+import { isAllowedNickname, isBuiltInAvatarId, isGameSessionActivity } from "@private-voice/shared";
 import {
   isStoredRoomId,
   MAX_ROOM_COLLECTION_IMAGE_LENGTH,
@@ -193,6 +193,7 @@ export interface IceCandidateMessage extends BaseMessage {
 }
 
 export interface MemberStateMessage extends BaseMessage {
+  applicationAudioName?: string;
   callModeActive?: boolean;
   type: "member_state";
   roomId: string;
@@ -204,6 +205,7 @@ export interface MemberStateMessage extends BaseMessage {
   sceneZone?: SceneZoneId;
   gameName?: string;
   gameIconDataUrl?: string | null;
+  gameSession?: import("@private-voice/shared").GameSessionActivity | null;
   musicActivity?: MusicActivity | null;
   nickname?: string;
   avatarDataUrl?: string;
@@ -723,9 +725,14 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         // v0.1.50 sent an empty game name when no game was detected. Accept it on the
         // wire for backwards compatibility; the server normalizes it to undefined.
         (value.gameName === undefined || isText(value.gameName, 64, true)) &&
+        (value.gameSession === undefined ||
+          value.gameSession === null ||
+          isGameSessionActivity(value.gameSession)) &&
         (value.gameIconDataUrl === undefined ||
           value.gameIconDataUrl === null ||
           isActivityIconDataUrl(value.gameIconDataUrl)) &&
+        (value.applicationAudioName === undefined ||
+          isText(value.applicationAudioName, 64, true)) &&
         (value.musicActivity === undefined ||
           value.musicActivity === null ||
           (isRecord(value.musicActivity) &&

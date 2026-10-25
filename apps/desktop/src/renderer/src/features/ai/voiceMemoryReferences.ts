@@ -19,6 +19,7 @@ export function reuseVoiceMemoryReferences(
   next: VoiceMemoryRecord | undefined,
 ) {
   if (!previous || !next || previous.recordingId !== next.recordingId) return next;
+  if (previous.updatedAt > next.updatedAt) return previous;
   return {
     ...next,
     transcript: equal(previous.transcript, next.transcript) ? previous.transcript : next.transcript,

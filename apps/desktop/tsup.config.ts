@@ -28,7 +28,9 @@ export default defineConfig({
       "tests/electron-phone-input-smoke.ts",
     ),
   },
-  clean: true,
+  // A watched rebuild must not remove preloads while the running app opens a window.
+  // Standalone builds still clean obsolete output before producing a fresh bundle.
+  clean: !process.argv.includes("--watch"),
   dts: false,
   format: ["cjs"],
   outDir: "dist-electron",

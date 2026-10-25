@@ -10,7 +10,9 @@ export const MicrophoneLevelFill = ({ muted }: { muted: boolean }) => {
       const visible = document.visibilityState === "visible";
       const value =
         muted || !visible || !Number.isFinite(level) ? 0 : Math.min(1, Math.max(0, level));
-      fill.current.style.transform = `translateY(${100 - Math.sqrt(value) * 100}%)`;
+      const height = Math.sqrt(value);
+      fill.current.style.transform = `translateY(${100 - height * 100}%)`;
+      fill.current.dataset.band = height >= 0.88 ? "red" : height >= 0.65 ? "yellow" : "green";
       fill.current.dataset.active = String(value > 0.005);
     };
     const onLevel = (event: Event) => {
@@ -26,5 +28,9 @@ export const MicrophoneLevelFill = ({ muted }: { muted: boolean }) => {
       document.removeEventListener("visibilitychange", hide);
     };
   }, [muted]);
-  return <span ref={fill} className="microphone-level-fill" aria-hidden="true" />;
+  return (
+    <span className="microphone-level-viewport" aria-hidden="true">
+      <span ref={fill} className="microphone-level-fill" />
+    </span>
+  );
 };

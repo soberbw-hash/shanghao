@@ -24,7 +24,7 @@ export const RecordingCardMeta = ({
     <time dateTime={dateTime}>录制时间 {recordedAt}</time>
     <span>
       <span>{durationLabel(duration)}</span>
-      <span>· {formatRecordingBytes(bytes)}</span>
+      <span>{formatRecordingBytes(bytes)}</span>
     </span>
   </span>
 );

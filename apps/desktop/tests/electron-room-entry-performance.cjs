@@ -11,8 +11,10 @@ app.whenReady().then(async () => {
   const view = new BrowserWindow({
     width: 1000,
     height: 900,
-    webPreferences: { backgroundThrottling: false },
+    show: false,
+    webPreferences: { backgroundThrottling: false, offscreen: true },
   });
+  view.webContents.setAudioMuted(true);
   try {
     const file = path.join(__dirname, "fixtures/room-entry-performance.html").replaceAll("\\", "/");
     await view.loadURL(
@@ -22,6 +24,9 @@ app.whenReady().then(async () => {
       `(async () => {
       const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
       for (let i=0;i<100&&!window.performanceFixture;i++) await pause(40);
+      // Exercise visual scheduling inside the isolated page without taking desktop focus.
+      document.hasFocus = () => true;
+      window.dispatchEvent(new Event('focus'));
       await window.performanceFixture.unlockUiSounds();
       await pause(1000);
       const fixture = window.performanceFixture;

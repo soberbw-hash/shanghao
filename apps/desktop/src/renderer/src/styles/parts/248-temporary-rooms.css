@@ -1,0 +1,123 @@
+.temporary-entry {
+  margin-top: 16px;
+  border-top: 1px solid #dbe7f4;
+  padding-top: 14px;
+  color: #405572;
+}
+.temporary-entry > summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  font-size: 14px;
+}
+.temporary-entry-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+.temporary-entry label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.temporary-entry input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid #cddff2;
+  border-radius: 12px;
+  background: #ffffffbf;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+}
+.temporary-entry input:focus-visible,
+.temporary-room-controls summary:focus-visible {
+  outline: 2px solid #4b98eb;
+  outline-offset: 2px;
+}
+.temporary-create-action,
+.temporary-join-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+.temporary-create-action {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+.temporary-create-action > span {
+  color: #7a8ba2;
+  font-size: 12px;
+}
+.temporary-create-action > button,
+.temporary-join-action > button {
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.temporary-entry p,
+.temporary-management-body p {
+  color: #b84b58;
+  font-size: 13px;
+}
+.temporary-room-controls {
+  position: relative;
+  font-size: 12px;
+  color: #5d7593;
+}
+.temporary-room-controls > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  border: 1px solid #cddced;
+  border-radius: 9px;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+.temporary-management-body {
+  position: absolute;
+  z-index: 100;
+  top: 36px;
+  left: 0;
+  width: min(290px, 75vw);
+  padding: 16px;
+  border: 1px solid #cfdded;
+  border-radius: 16px;
+  background: #f8fcff;
+  box-shadow: 0 12px 35px #304d7224;
+  display: grid;
+  gap: 12px;
+}
+.temporary-management-body ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.temporary-management-body li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.temporary-management-actions {
+  display: flex;
+  gap: 8px;
+}
+.temporary-management-body button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid #d3e1ef;
+  border-radius: 8px;
+  background: white;
+}
+.temporary-management-body button:disabled {
+  opacity: 0.5;
+}

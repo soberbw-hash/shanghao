@@ -12,6 +12,47 @@ import {
 
 import { defaultSettings, migrateSettings } from "../src/main/settings-migration";
 
+test("cloud assistance defaults on and preserves explicit choices across provider switches", () => {
+  const fresh = migrateSettings({}).settings;
+  assert.equal(defaultSettings.aiTranscriptionProvider, "cloud");
+  assert.equal(defaultSettings.isAiCloudLocalAssistEnabled, true);
+  assert.equal(fresh.aiTranscriptionProvider, "cloud");
+  assert.equal(fresh.isAiCloudLocalAssistEnabled, true);
+  assert.equal(fresh.aiCloudLocalAsrModel, "qwen3-asr-0.6b-force");
+  assert.equal(fresh.isAiAutoTranscribeEnabled, true);
+  const chosen = migrateSettings({
+    ...defaultSettings,
+    isAiCloudLocalAssistEnabled: true,
+  }).settings;
+  assert.equal(chosen.isAiCloudLocalAssistEnabled, true);
+  assert.equal(
+    migrateSettings({ ...chosen, aiTranscriptionProvider: "local" }).settings
+      .isAiCloudLocalAssistEnabled,
+    true,
+  );
+  const returnedToCloud = migrateSettings({ ...chosen, aiTranscriptionProvider: "cloud" }).settings;
+  assert.equal(returnedToCloud.isAiCloudLocalAssistEnabled, true);
+  assert.equal(
+    migrateSettings({ ...returnedToCloud, isAiCloudLocalAssistEnabled: false }).settings
+      .isAiCloudLocalAssistEnabled,
+    false,
+  );
+});
+
+test("assistance model is independent, persisted, and validated without replacing local-only selection", () => {
+  const chosen = migrateSettings({
+    aiCloudLocalAsrModel: "qwen3-asr-1.7b-force",
+    aiAsrModel: "paraformer-zh",
+  }).settings;
+  assert.equal(chosen.aiCloudLocalAsrModel, "qwen3-asr-1.7b-force");
+  assert.equal(chosen.aiAsrModel, "paraformer-zh");
+  assert.equal(migrateSettings(chosen).settings.aiCloudLocalAsrModel, "qwen3-asr-1.7b-force");
+  assert.equal(
+    migrateSettings({ aiCloudLocalAsrModel: "invalid" } as never).settings.aiCloudLocalAsrModel,
+    "qwen3-asr-0.6b-force",
+  );
+});
+
 test("all quick-message shortcuts require explicit opt-in without erasing saved bindings", () => {
   assert.equal(defaultSettings.quickMessages.shortcutsEnabled, false);
   const legacy = { ...defaultSettings.quickMessages };
@@ -79,8 +120,8 @@ test("clip and tray preferences use safe defaults and preserve customized profil
   assert.equal(saved.recordingClipAfterMs, 12_000);
 });
 
-test("new profiles recommend GLM without replacing an existing ASR choice", () => {
-  assert.equal(DEFAULT_AI_ASR_MODEL_ID, "glm-asr-nano-2512");
+test("new profiles recommend Qwen 0.6B without replacing an existing ASR choice", () => {
+  assert.equal(DEFAULT_AI_ASR_MODEL_ID, "qwen3-asr-0.6b-force");
   assert.equal(defaultSettings.aiAsrModel, DEFAULT_AI_ASR_MODEL_ID);
   assert.equal(migrateSettings(defaultSettings).settings.aiAsrModel, DEFAULT_AI_ASR_MODEL_ID);
   assert.equal(
@@ -491,7 +532,7 @@ test("legacy room question providers follow the unified text provider", () => {
   }
 });
 
-test("automatic organization defaults on and upload stays opt-in while explicit preferences survive", () => {
+test("recordings always summarize and legacy automatic upload is disabled", () => {
   const initial = migrateSettings({
     ...defaultSettings,
     isAiAutoUploadEnabled: undefined,
@@ -500,7 +541,7 @@ test("automatic organization defaults on and upload stays opt-in while explicit 
   assert.equal(initial.isAiAutoUploadEnabled, false);
   assert.equal(
     migrateSettings({ isAiAutoOrganizeEnabled: false }).settings.isAiAutoOrganizeEnabled,
-    false,
+    true,
   );
   assert.equal(migrateSettings({}).settings.isRecordingWasteAutoCleanupEnabled, true);
   assert.equal(
@@ -517,7 +558,7 @@ test("automatic organization defaults on and upload stays opt-in while explicit 
   }).settings;
   assert.equal(custom.aiRoomAskProvider, "custom");
   assert.equal(custom.isAiAutoOrganizeEnabled, true);
-  assert.equal(custom.isAiAutoUploadEnabled, true);
+  assert.equal(custom.isAiAutoUploadEnabled, false);
 });
 
 test("migrateSettings preserves the release notes version already shown", () => {

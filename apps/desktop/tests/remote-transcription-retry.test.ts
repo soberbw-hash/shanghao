@@ -3,6 +3,17 @@ import test from "node:test";
 import { transcribeRemoteWithRetry } from "../src/main/remote-transcription-retry";
 import { transcriptionProviderError } from "../src/renderer/src/features/ai/transcriptionProviderError";
 
+test("temporary upload disconnections retry while preserving the same part", async () => {
+  let attempts = 0;
+  const value = await transcribeRemoteWithRetry(async () => {
+    if (++attempts === 1) throw Error("cloud_asr_network_error");
+    return "completed part";
+  }, new AbortController().signal);
+  assert.equal(value, "completed part");
+  assert.equal(attempts, 2);
+  assert.match(transcriptionProviderError("cloud_asr_network_error")!, /网络|连接/);
+});
+
 test("transient cloud server failure retries the current part with a fixed attempt limit", async () => {
   let attempts = 0;
   const result = await transcribeRemoteWithRetry(async () => {

@@ -3,6 +3,7 @@ import { BrowserWindow, desktopCapturer, screen, type DesktopCapturerSource } fr
 import type { ScreenCaptureSourceDescriptor } from "@private-voice/shared";
 
 import { platformService } from "./platform/PlatformService";
+import { RemoteControlCapture } from "./remote-control-capture";
 
 type Log = (
   level: "info" | "warn" | "error",
@@ -13,6 +14,15 @@ type Log = (
 export class ScreenCaptureService {
   private pendingSourceId: string | undefined;
   private readonly sourceCache = new Map<string, DesktopCapturerSource>();
+  readonly remoteControl = new RemoteControlCapture(() =>
+    screen.getAllDisplays().map((display) => ({
+      id: String(display.id),
+      dip: display.bounds,
+      physical: platformService.isWindows
+        ? screen.dipToScreenRect(null, display.bounds)
+        : display.bounds,
+    })),
+  );
 
   constructor(private readonly log?: Log) {}
 

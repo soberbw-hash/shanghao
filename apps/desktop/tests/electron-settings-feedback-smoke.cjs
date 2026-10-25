@@ -8,9 +8,10 @@ require("./electron-isolated-profile.cjs").configureIsolatedProfile(app, "settin
 const deadline = setTimeout(() => app.exit(1), 30000);
 app.whenReady().then(async () => {
   const view = new BrowserWindow({
+    show: false,
     width: 1450,
     height: 1000,
-    webPreferences: { backgroundThrottling: false },
+    webPreferences: { backgroundThrottling: false, offscreen: true },
   });
   try {
     const file = path.join(__dirname, "visual/settings-feedback.html").replaceAll("\\", "/");
@@ -24,12 +25,14 @@ app.whenReady().then(async () => {
       for(let i=0;i<80&&!document.querySelector('[aria-label="文本整理与问答模型"]');i++)await pause(50);
       const select=document.querySelector('select[aria-label="文本整理与问答模型"]');
       check(select,'settings did not mount');
+      document.querySelector('#ai-model-management').querySelector('summary').click();await pause(40);
+      check(select.checkVisibility(),'advanced model configuration did not open');
       select.value='custom';select.dispatchEvent(new Event('change',{bubbles:true}));await pause(100);
       check(select.value==='custom','custom API selection snapped back to GLM');
       const forms=[...document.querySelectorAll('.ai-provider-fields')];
       check(forms.length===2,'provider forms are inconsistent');
       check(forms.every(el=>el.querySelectorAll('label').length===3),'missing provider field labels');
-      const textPanel=select.closest('section');
+      const textPanel=select.closest('.ai-model-provider-panel');
       select.value='deepseek';select.dispatchEvent(new Event('change',{bubbles:true}));await pause(80);
       check(textPanel.querySelectorAll('input')[0].value==='https://api.deepseek.com','DeepSeek endpoint did not follow preset');
       check(textPanel.querySelectorAll('input')[1].value==='deepseek-flash','DeepSeek model did not follow preset');
@@ -69,6 +72,23 @@ app.whenReady().then(async () => {
       path.join(os.tmpdir(), "shanghao-settings-feedback.png"),
       (await view.webContents.capturePage()).toPNG(),
     );
+    view.setContentSize(1120, 950);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const narrow = await view.webContents.executeJavaScript(`(()=>{
+      const panels=[...document.querySelectorAll('.ai-model-provider-panel')].map(p=>p.getBoundingClientRect());
+      const model=document.querySelector('[aria-label="本地辅助模型"]'),style=getComputedStyle(model);
+      const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');ctx.font=style.font;
+      return {noOverflow:document.documentElement.scrollWidth<=innerWidth,
+        equalHeight:Math.abs(panels[0].bottom-panels[1].bottom)<1&&Math.abs(panels[0].top-panels[1].top)<1,
+        modelLabelFits:ctx.measureText(model.selectedOptions[0].textContent).width<=model.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)-20};
+    })()`);
+    if (!Object.values(narrow).every(Boolean))
+      throw Error("narrow model layout: " + JSON.stringify(narrow));
+    await fs.writeFile(
+      path.join(os.tmpdir(), "shanghao-settings-feedback-narrow.png"),
+      (await view.webContents.capturePage()).toPNG(),
+    );
+    result.narrow = narrow;
     console.log(JSON.stringify(result));
     clearTimeout(deadline);
     view.destroy();

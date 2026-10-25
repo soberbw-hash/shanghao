@@ -135,9 +135,9 @@ test("firewall repair UI blocks repeated clicks while the serialized repair is r
   assert.match(settings, /if \(isRepairingFirewall\) return/);
   assert.match(settings, /\.finally\(\(\) => setIsRepairingFirewall\(false\)\)/);
   assert.match(settings, /TCP\/UDP 双向规则已正常启用。/);
-  assert.match(diagnosticsCard, /重试修复/);
+  assert.match(diagnosticsCard, /修复网络权限/);
   assert.doesNotMatch(diagnosticsCard, /actionLabel:.*"自动修复"/);
-  assert.match(diagnosticsCard, /disabled=\{isRepairingFirewall\}/);
+  assert.match(diagnosticsCard, /disabled=\{props\.isRepairingFirewall \|\| busy\}/);
   assert.match(diagnosticsCard, /修复中…/);
 });
 

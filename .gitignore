@@ -1,5 +1,8 @@
 node_modules/
 native/target/
+native/target-application-audio/
+native/target-application-audio-picker/
+native/target-remote-input/
 .turbo/
 dist/
 dist-electron/
@@ -55,6 +58,7 @@ windows_repair.done
 
 # Keep the curated product captures only; local visual-debug captures stay untracked.
 artifacts/*
+apps/desktop/artifacts/
 !artifacts/current-round-room.png
 !artifacts/room-1280.png
 !artifacts/room-1280-final.png

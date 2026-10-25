@@ -52,6 +52,8 @@ export interface AppSettings {
   isRecordingWasteAutoCleanupEnabled: boolean;
   aiAsrModel: AiAsrModelId;
   aiTranscriptionProvider?: AiTranscriptionProvider;
+  isAiCloudLocalAssistEnabled?: boolean;
+  aiCloudLocalAsrModel?: AiAsrModelId;
   aiTextModelPreset?: "cloud" | "glm" | "deepseek" | "custom";
   aiOrganizerProvider: AiTextProvider;
   aiRoomAskProvider: AiTextProvider;
@@ -65,6 +67,7 @@ export interface AppSettings {
   isAutoGainControlEnabled: boolean;
   isVoiceEnhancementEnabled: boolean;
   isPushToTalkEnabled: boolean;
+  isMutedSpeechReminderEnabled?: boolean;
   isAutoRecordOnJoinEnabled: boolean;
   isRecordingAutoGameMarkerEnabled?: boolean;
   micMonitorMode: MicMonitorMode;

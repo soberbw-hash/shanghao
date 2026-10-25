@@ -75,6 +75,9 @@ const [{ PrivateRoomBrowser }, { StorageSettingsCard }, { useAccountStore }, { u
     import("../../src/renderer/src/store/accountStore"),
     import("../../src/renderer/src/store/settingsStore"),
   ]);
+const { SettingsNavigation } =
+  await import("../../src/renderer/src/components/settings/SettingsNavigation");
+import type { SettingsSectionId } from "../../src/renderer/src/features/settings/settingsSectionState";
 useAccountStore.setState({
   snapshot: {
     configured: true,
@@ -86,6 +89,7 @@ useAccountStore.setState({
 useSettingsStore.setState({ settings: undefined });
 function Fixture() {
   const [joined, setJoined] = useState("");
+  const [section, setSection] = useState<SettingsSectionId>("general");
   return (
     <main className="mx-auto grid max-w-5xl gap-6 p-6 md:grid-cols-2">
       <section className="island-panel rounded-3xl p-6">
@@ -94,7 +98,10 @@ function Fixture() {
           {joined ? `已明确加入 ${joined}` : "尚未加入"}
         </p>
       </section>
-      <StorageSettingsCard isActive />
+      <section>
+        <SettingsNavigation activeSection={section} onSelect={setSection} />
+        <StorageSettingsCard isActive />
+      </section>
     </main>
   );
 }

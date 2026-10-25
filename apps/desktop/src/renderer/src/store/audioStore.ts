@@ -20,6 +20,7 @@ interface AudioStoreState {
   outputState: AudioDeviceState;
   localDiagnostics?: LocalAudioDiagnostics;
   isMuted: boolean;
+  isManuallyMuted: boolean;
   phoneModeActive: boolean;
   setPhoneMode: (active: boolean) => void;
   isDeafened: boolean;
@@ -40,7 +41,7 @@ interface AudioStoreState {
   setLocalDiagnostics: (diagnostics: LocalAudioDiagnostics) => void;
 }
 
-let beforePhone: { isMuted: boolean; isDeafened: boolean } | undefined;
+let beforePhone: { isMuted: boolean; isDeafened: boolean; isManuallyMuted: boolean } | undefined;
 const deviceRefreshVersion = createDeviceRefreshVersion();
 export const useAudioStore = create<AudioStoreState>((set) => ({
   phoneModeActive: false,
@@ -48,10 +49,14 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
     set((state) => {
       if (active === state.phoneModeActive) return state;
       if (active) {
-        beforePhone = { isMuted: state.isMuted, isDeafened: state.isDeafened };
-        return { phoneModeActive: true, isMuted: true, isDeafened: true };
+        beforePhone = {
+          isMuted: state.isMuted,
+          isDeafened: state.isDeafened,
+          isManuallyMuted: state.isManuallyMuted,
+        };
+        return { phoneModeActive: true, isMuted: true, isDeafened: true, isManuallyMuted: false };
       }
-      const restored = beforePhone ?? { isMuted: true, isDeafened: true };
+      const restored = beforePhone ?? { isMuted: true, isDeafened: true, isManuallyMuted: false };
       beforePhone = undefined;
       return { phoneModeActive: false, ...restored };
     }),
@@ -62,6 +67,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
   outputState: AudioDeviceState.Ready,
   localDiagnostics: undefined,
   isMuted: false,
+  isManuallyMuted: false,
   isDeafened: false,
   isNoiseSuppressionEnabled: true,
   isPushToTalkEnabled: false,
@@ -108,31 +114,40 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
   },
   toggleMicrophone: () =>
     set((state) =>
-      state.phoneModeActive || state.isDeafened ? state : { isMuted: !state.isMuted },
+      state.phoneModeActive || state.isDeafened
+        ? state
+        : { isMuted: !state.isMuted, isManuallyMuted: !state.isMuted },
     ),
   toggleDeafen: () =>
     set((state) =>
       state.phoneModeActive
         ? state
         : state.isDeafened
-          ? { isMuted: false, isDeafened: false }
-          : { isMuted: true, isDeafened: true },
+          ? { isMuted: false, isDeafened: false, isManuallyMuted: false }
+          : { isMuted: true, isDeafened: true, isManuallyMuted: false },
     ),
-  deafenAndMute: () => set({ isMuted: true, isDeafened: true }),
+  deafenAndMute: () => set({ isMuted: true, isDeafened: true, isManuallyMuted: false }),
   undeafenAndUnmute: () =>
-    set((state) => (state.phoneModeActive ? state : { isMuted: false, isDeafened: false })),
+    set((state) =>
+      state.phoneModeActive ? state : { isMuted: false, isDeafened: false, isManuallyMuted: false },
+    ),
   setAudioState: ({ isMuted, isDeafened }) =>
     set((state) =>
-      state.phoneModeActive ? state : { isDeafened, isMuted: isDeafened ? true : isMuted },
+      state.phoneModeActive
+        ? state
+        : { isDeafened, isMuted: isDeafened ? true : isMuted, isManuallyMuted: false },
     ),
   setMuted: (isMuted) =>
-    set((state) => ({ isMuted: state.phoneModeActive || state.isDeafened ? true : isMuted })),
+    set((state) => ({
+      isMuted: state.phoneModeActive || state.isDeafened ? true : isMuted,
+      isManuallyMuted: false,
+    })),
   setDeafened: (isDeafened) =>
     set((state) =>
       state.phoneModeActive
         ? state
         : isDeafened
-          ? { isMuted: true, isDeafened: true }
+          ? { isMuted: true, isDeafened: true, isManuallyMuted: false }
           : { isMuted: state.isMuted, isDeafened: false },
     ),
   setNoiseSuppressionEnabled: (isNoiseSuppressionEnabled) => set({ isNoiseSuppressionEnabled }),

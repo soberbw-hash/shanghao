@@ -3,7 +3,11 @@ import { motion } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { selectAppProfileSettings } from "../features/settings/settingsProjection";
 
-import { APPLE_MOTION_DURATION, APPLE_MOTION_EASE } from "@private-voice/shared";
+import {
+  APPLE_MOTION_DURATION,
+  APPLE_MOTION_EASE,
+  isTemporaryRoomSessionId,
+} from "@private-voice/shared";
 
 import { AppErrorBoundary } from "../components/layout/AppErrorBoundary";
 import { AppShell } from "../components/layout/AppShell";
@@ -20,6 +24,7 @@ import { useAppBootstrap } from "../hooks/useAppBootstrap";
 import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
 import { usePhoneModeSync } from "../hooks/usePhoneModeSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
+import { useMutedSpeechReminder } from "../hooks/useMutedSpeechReminder";
 import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
 import { useWeatherPreload } from "../hooks/useWeatherPreload";
 import { useTrayBackground } from "../hooks/useTrayBackground";
@@ -52,6 +57,7 @@ export const App = () => {
   useGlobalMuteSync();
   usePhoneModeSync();
   useLocalAudioTransport();
+  useMutedSpeechReminder();
   useWeatherPreload();
   useTrayBackground();
   useAppRoomInvites();
@@ -78,6 +84,7 @@ export const App = () => {
   }, []);
 
   const currentPage = useAppStore((state) => state.currentPage);
+  const temporaryRoomId = useRoomStore((state) => state.room.temporaryRoom?.roomId);
   useEffect(() => {
     const sync = () => {
       const state = useAppStore.getState();
@@ -183,7 +190,7 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (!settings || bootstrapPhase !== "ready") {
+    if (!settings || bootstrapPhase !== "ready" || useRoomStore.getState().room.temporaryRoom) {
       return;
     }
 
@@ -280,9 +287,13 @@ export const App = () => {
     }
 
     if (
-      accountSnapshot.status === "signed_out" ||
-      accountSnapshot.status === "verification_required" ||
-      accountSnapshot.status === "unavailable"
+      !(
+        isTemporaryRoomSessionId(temporaryRoomId) &&
+        (currentPage === "room" || (currentPage === "settings" && settingsReturnTo === "room"))
+      ) &&
+      (accountSnapshot.status === "signed_out" ||
+        accountSnapshot.status === "verification_required" ||
+        accountSnapshot.status === "unavailable")
     ) {
       return <AccountPage />;
     }

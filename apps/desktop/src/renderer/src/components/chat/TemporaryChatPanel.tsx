@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { ExternalLink, Link2, LoaderCircle, RotateCcw, Send } from "lucide-react";
+import { LoaderCircle, RotateCcw, Send } from "lucide-react";
 import { gsap } from "gsap";
 
 import {
@@ -20,12 +20,12 @@ import {
 } from "@private-voice/shared";
 
 import { ChatAccountAvatar } from "./ChatAccountAvatar";
+import { MessageLinkPreview } from "./MessageLinkPreview";
 import { chatDisplayName, isGameAssistantMessage } from "../../features/chat/gameAssistantMessage";
 import { QuickMessageRow } from "./QuickMessageRow";
 import {
   findFirstMessageUrl,
   formatCompactUrl,
-  getMessageUrlDetails,
   isMessageOnlyUrl,
 } from "../../features/chat/linkPreview";
 import { writeRoomCollectionDragPayload } from "../../features/chat/collectionDrag";
@@ -88,59 +88,6 @@ const renderMessageContent = (content: string, onCopyLink: (url: string) => void
 
   if (cursor < content.length) result.push(content.slice(cursor));
   return result.length > 0 ? result : content;
-};
-
-const MessageLinkPreview = ({ url, onCopy }: { url: string; onCopy: (url: string) => void }) => {
-  const details = getMessageUrlDetails(url);
-  const [preview, setPreview] = useState<{ title?: string; imageDataUrl?: string }>({});
-
-  useEffect(() => {
-    let active = true;
-    setPreview({});
-    void window.desktopApi.app
-      .getChatLinkPreview(url)
-      .then((result) => {
-        if (active) setPreview(result);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [url]);
-
-  if (!details) return null;
-  const compactUrl = formatCompactUrl(url);
-
-  return (
-    <button
-      type="button"
-      className="chat-link-preview"
-      draggable
-      aria-label={`在浏览器中打开 ${details.hostname}`}
-      title={url}
-      onClick={() => void window.desktopApi.app.openExternal(url)}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        onCopy(url);
-      }}
-      onDragStart={(event) => {
-        writeRoomCollectionDragPayload(event.dataTransfer, {
-          kind: "link",
-          title: details.hostname,
-          content: url,
-        });
-      }}
-    >
-      <span className="chat-link-preview-image" aria-hidden="true">
-        {preview.imageDataUrl ? <img src={preview.imageDataUrl} alt="" /> : <Link2 />}
-      </span>
-      <span className="chat-link-preview-copy">
-        <strong>{preview.title ?? details.hostname}</strong>
-        <small>{compactUrl === details.hostname ? "点击打开网页" : compactUrl}</small>
-      </span>
-      <ExternalLink className="chat-link-preview-open" aria-hidden="true" />
-    </button>
-  );
 };
 
 export const TemporaryChatPanel = ({

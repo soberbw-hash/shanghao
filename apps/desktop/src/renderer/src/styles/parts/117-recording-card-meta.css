@@ -8,8 +8,8 @@
 
 .recording-item-meta > span {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  flex-wrap: nowrap;
+  justify-content: space-between;
   gap: 0 5px;
 }
 

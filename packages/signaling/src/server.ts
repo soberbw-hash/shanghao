@@ -1,10 +1,13 @@
 import { IceConfigHttpController } from "./ice-config-http-controller";
+import { normalizeMemberActivity } from "./member-activity-update";
+import { TemporaryRoomRuntime } from "./temporary-room-runtime";
+import { temporaryRuntimeOptions } from "./temporary-runtime-options";
+import { createRoomSnapshot, createChannelCounts } from "./room-snapshot";
+import { createSignalingStorage } from "./signaling-storage";
+import { buildSignalingHealth } from "./signaling-health";
+import { isTemporaryRoomSessionId } from "../../shared/src/types/temporary-room.types";
 import { buildRoomCollectionSnapshots } from "./room-collection-snapshots";
-import {
-  buildIceServersForPeer,
-  getSupportedTurnTransports,
-  getTurnUrls,
-} from "./signaling-ice-config";
+import { buildIceServersForPeer } from "./signaling-ice-config";
 import { EventEmitter } from "node:events";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
@@ -37,7 +40,6 @@ import type {
   ChatRejectedMessage,
   ChatRecallMessage,
   ChatHistoryMessage,
-  ChannelCountsMessage,
   DailyRoomReportsMessage,
   RoomCollectionAddMessage,
   RoomCollectionRemoveMessage,
@@ -51,8 +53,6 @@ import type {
   PeerAnswerMessage,
   PeerOfferMessage,
   PeerRestartRequestMessage,
-  ChannelSnapshotMessage,
-  RoomSnapshotMessage,
   RequestSnapshotMessage,
   RequestDailyRoomReportsMessage,
   PublishRecordingRecapMessage,
@@ -72,7 +72,7 @@ import { DailyRoomReportStore } from "./daily-room-report-store";
 import { CloudAiRuntime } from "./cloud-ai-runtime";
 import { AccountHttpController } from "./account-http-controller";
 import { PhoneMicBridge } from "./phone-mic-bridge";
-import { compareVersions } from "./version-comparison";
+import { mediaClientCompatibilityError } from "./media-client-compatibility";
 import { PrivateRoomDirectory, PrivateRoomError } from "./private-room-directory";
 import { PrivateRoomHttpController } from "./private-room-http-controller";
 import { syncAccountProfileAcrossRooms } from "./account-room-profile-sync";
@@ -84,6 +84,13 @@ import {
 } from "./account-service";
 
 export interface SignalingServerOptions {
+  temporaryReplicaRequest?: ConstructorParameters<typeof TemporaryRoomRuntime>[0]["replicaRequest"];
+  temporaryCommit?: (sessionId: string) => Promise<void>;
+  temporaryIceServers?: () => import("./protocol").IceServerConfig[];
+  temporaryOnly?: boolean;
+  temporaryAuthorityId?: string;
+  httpServer?: HttpServer;
+  host?: string;
   port?: number;
   roomName: string;
   packageVersion?: string;
@@ -211,6 +218,8 @@ const normalizeAvatar = (
 };
 
 export class SignalingServer extends EventEmitter {
+  private readonly socketAddresses = new WeakMap<WebSocket, string>();
+  private readonly temporary: TemporaryRoomRuntime;
   private readonly roomManager = new RoomManager();
   private readonly httpServer: HttpServer;
   private readonly wss: WebSocketServer;
@@ -242,26 +251,19 @@ export class SignalingServer extends EventEmitter {
     super();
     this.roomName = options.roomName;
     this.logger = options.logger;
-    this.chatHistory = ChatHistoryStore.create(process.env.CHAT_HISTORY_FILE, this.logger);
-    this.roomCollection = RoomCollectionStore.create(
-      process.env.ROOM_COLLECTION_FILE ??
-        (process.env.CHAT_HISTORY_FILE
-          ? `${process.env.CHAT_HISTORY_FILE}.collection.json`
-          : undefined),
-      this.logger,
-    );
-    const dailyRoomReportFile =
-      options.dailyRoomReportFile?.trim() ||
-      process.env.DAILY_ROOM_REPORT_FILE ||
-      (process.env.CHAT_HISTORY_FILE
-        ? `${process.env.CHAT_HISTORY_FILE}.daily-reports.json`
-        : undefined);
-    if (process.env.NODE_ENV === "production" && !dailyRoomReportFile) {
-      this.logger?.("daily room reports are not using durable storage", {
-        action: "set DAILY_ROOM_REPORT_FILE or CHAT_HISTORY_FILE to a persistent volume",
-      });
-    }
-    this.dailyRoomReports = DailyRoomReportStore.create(dailyRoomReportFile, this.logger);
+    this.temporary = new TemporaryRoomRuntime({
+      ...temporaryRuntimeOptions(options),
+      evict: (roomId, peerId) => this.evictPeer(roomId, peerId, "temporary_room_ended"),
+      changed: (roomId, room) => {
+        this.temporary.synchronizeMedia(this.roomManager, roomId);
+        this.broadcastSnapshot(roomId);
+        this.emit("temporaryRoom", roomId, room);
+      },
+    });
+    const stores = createSignalingStorage(options, this.logger);
+    this.chatHistory = stores.chatHistory;
+    this.roomCollection = stores.roomCollection;
+    this.dailyRoomReports = stores.dailyRoomReports;
     const accountProvider = (process.env.SHANGHAO_ACCOUNT_PROVIDER ?? process.env.ACCOUNT_PROVIDER)
       ?.trim()
       .toLowerCase();
@@ -275,15 +277,7 @@ export class SignalingServer extends EventEmitter {
         this.broadcastSnapshot(roomId),
       ),
     );
-    const privateRoomFile =
-      options.privateRoomFile ??
-      process.env.ROOM_DIRECTORY_FILE ??
-      (process.env.CHAT_HISTORY_FILE
-        ? `${process.env.CHAT_HISTORY_FILE}.private-rooms.json`
-        : undefined);
-    if (process.env.NODE_ENV === "production" && !privateRoomFile) {
-      throw new Error("private_room_durable_storage_required");
-    }
+    const privateRoomFile = stores.privateRoomFile;
     this.roomDirectory = PrivateRoomDirectory.open(privateRoomFile).then((directory) => {
       this.directory = directory;
       return directory;
@@ -335,7 +329,9 @@ export class SignalingServer extends EventEmitter {
       (request) =>
         this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
     );
-    this.httpServer = createServer(
+    this.httpServer = options.httpServer ?? createServer();
+    this.httpServer.on(
+      "request",
       (request, response) => void this.handleHttpRequest(request, response),
     );
     this.phoneMicBridge = new PhoneMicBridge(
@@ -343,8 +339,11 @@ export class SignalingServer extends EventEmitter {
       async (token) =>
         !!(this.accountBackend.configured && (await this.accountBackend.verifyAccessToken(token))),
     );
-    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_SIGNALING_PAYLOAD_BYTES });
-    this.phoneMicBridge.attachToServer(this.httpServer, this.wss);
+    this.wss = new WebSocketServer({
+      noServer: true,
+      maxPayload: options.temporaryOnly ? 2 * 1024 * 1024 : MAX_SIGNALING_PAYLOAD_BYTES,
+    });
+    this.phoneMicBridge.attachToServer(this.httpServer, this.wss, !options.temporaryOnly);
     this.wss.on("connection", (socket, request) => {
       if (!this.isAuthorizedRequest(request.url)) {
         socket.close(4401, "unauthorized");
@@ -361,6 +360,10 @@ export class SignalingServer extends EventEmitter {
     request: IncomingMessage,
     response: import("node:http").ServerResponse,
   ): Promise<void> {
+    if (this.options.temporaryOnly) {
+      this.temporary.serveHttp(request, response);
+      return;
+    }
     if (await this.phoneMicBridge.serveHttpRequest(request, response)) return;
     if (await this.accountHttp.handle(request, response)) return;
     if (await this.roomMemories.handle(request, response)) return;
@@ -380,35 +383,21 @@ export class SignalingServer extends EventEmitter {
       ];
       response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       response.end(
-        JSON.stringify({
-          ok: true,
-          name: "shanghao-signaling",
-          roomName: this.roomName,
-          protocolVersion: APP_PROTOCOL_VERSION,
-          buildNumber: APP_BUILD_NUMBER,
-          packageVersion:
-            this.options.packageVersion ?? process.env.npm_package_version ?? "unknown",
-          uptime: process.uptime(),
-          activeRooms: stats.activeRooms,
-          connectedPeers: stats.connectedPeers,
-          phoneMicSessions: this.phoneMicBridge.activeSessions,
-          maxRoomMembers: this.roomManager.getMaxRoomMembers(),
-          currentOnlineCount: stats.connectedPeers,
-          occupiedAvatarIds,
-          droppedRealtimeMessages: this.droppedRealtimeMessages,
-          turnConfigured:
-            getTurnUrls().length > 0 &&
-            Boolean(
-              process.env.TURN_SHARED_SECRET?.trim() ||
-              (process.env.TURN_USERNAME?.trim() && process.env.TURN_CREDENTIAL?.trim()),
-            ),
-          supportedTurnTransports: getSupportedTurnTransports(),
-          cloudAiConfigured: this.cloudAi.isConfigured(),
-          accountConfigured: this.accountBackend.configured,
-          guestAllowed: this.accountHttp.guestAllowed,
-          now: new Date().toISOString(),
-          serverTime: Date.now(),
-        }),
+        JSON.stringify(
+          buildSignalingHealth({
+            roomName: this.roomName,
+            packageVersion: this.options.packageVersion,
+            activeRooms: stats.activeRooms,
+            connectedPeers: stats.connectedPeers,
+            phoneMicSessions: this.phoneMicBridge.activeSessions,
+            maxRoomMembers: this.roomManager.getMaxRoomMembers(),
+            occupiedAvatarIds,
+            droppedRealtimeMessages: this.droppedRealtimeMessages,
+            cloudAiConfigured: this.cloudAi.isConfigured(),
+            accountConfigured: this.accountBackend.configured,
+            guestAllowed: this.accountHttp.guestAllowed,
+          }),
+        ),
       );
       return;
     }
@@ -419,7 +408,30 @@ export class SignalingServer extends EventEmitter {
     response.end("ShangHao signaling server");
   }
 
+  /** Trusted host-only seam; never a socket command or renderer capability. */
+  get temporaryCoordinator() {
+    return this.temporary.coordinator;
+  }
+  refreshTemporaryRoom = (id: string): void => this.temporary.changed(id);
+
   private async authorizeSocket(socket: WebSocket, request: IncomingMessage): Promise<void> {
+    this.socketAddresses.set(socket, request.socket.remoteAddress ?? "unknown");
+    const connectionUrl = new URL(request.url ?? "/", "http://localhost");
+    const temporaryEndpoint = this.temporary.acceptsUrl(connectionUrl);
+    if (this.options.temporaryOnly && !temporaryEndpoint) {
+      socket.close(4403, "temporary_endpoint_required");
+      return;
+    }
+    if (temporaryEndpoint) {
+      if (!this.accountHttp.isSecure(request) && !this.accountHttp.insecureDevelopmentConnection) {
+        socket.close(4403, "temporary_secure_connection_required");
+        return;
+      }
+      this.temporary.markEndpoint(socket, connectionUrl, request.socket.remoteAddress);
+      this.socketIdentities.set(socket, { kind: "guest" });
+      this.handleConnection(socket);
+      return;
+    }
     const pendingMessages: RawData[] = [];
     let pendingPayloadBytes = 0;
     const queuePendingMessage = (raw: RawData): void => {
@@ -504,11 +516,12 @@ export class SignalingServer extends EventEmitter {
     }
 
     this.heartbeatTimer = setInterval(() => {
+      this.temporary.sweep();
       for (const stale of this.roomManager.collectStalePeers()) {
         const peer = this.roomManager.getRoom(stale.roomId)?.peers.getPeer(stale.peerId);
         this.sessionTokens.invalidate(stale.roomId, stale.peerId);
         this.roomManager.removePeer(stale.roomId, stale.peerId);
-        if (peer) {
+        if (peer && !isTemporaryRoomSessionId(stale.roomId)) {
           void this.dailyRoomReports.then((store) =>
             store.recordLeave(
               stale.roomId,
@@ -542,6 +555,7 @@ export class SignalingServer extends EventEmitter {
     await (await this.roomCollection).flush();
     await (await this.dailyRoomReports).flush();
     await (await this.roomDirectory).flush();
+    await this.temporary.flush();
     await this.roomMemories.close();
     this.sessionTokens.clear();
 
@@ -557,6 +571,7 @@ export class SignalingServer extends EventEmitter {
   }
 
   private async listenOnPort(port: number): Promise<void> {
+    if (this.options.host) return this.listenOnHost(port, this.options.host);
     try {
       await this.listenOnHost(port, "::");
       this.logger?.("signaling server bound on dual-stack host", { host: "::", port });
@@ -601,6 +616,7 @@ export class SignalingServer extends EventEmitter {
   }
 
   private isAuthorizedRequest(requestUrl?: string): boolean {
+    if (this.options.temporaryOnly) return true;
     const expectedToken = process.env.RELAY_ACCESS_TOKEN?.trim();
     if (!expectedToken) return true;
 
@@ -677,6 +693,7 @@ export class SignalingServer extends EventEmitter {
     socket.on("message", (raw) => this.handleSocketMessage(socket, raw));
 
     socket.on("close", (code, reason) => {
+      this.temporary.disconnect(socket);
       this.cloudAi.cancelSocket(socket);
       const session = this.sessions.get(socket);
       const roomId = session?.roomId;
@@ -700,8 +717,18 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleSocketMessage(socket: WebSocket, raw: RawData): void {
+    if (this.temporary.isBridge(socket)) return;
     try {
       const payloadText = raw.toString();
+      if (
+        this.options.temporaryOnly &&
+        this.temporary.handlePrivateReplica(
+          socket,
+          payloadText,
+          this.socketAddresses.get(socket) ?? "unknown",
+        )
+      )
+        return;
       if (Buffer.byteLength(payloadText, "utf8") > MAX_SIGNALING_PAYLOAD_BYTES) {
         this.rejectInvalid(
           socket,
@@ -711,6 +738,8 @@ export class SignalingServer extends EventEmitter {
         return;
       }
       const payload = JSON.parse(payloadText) as unknown;
+      if (this.temporary.handle(socket, payload, this.socketAddresses.get(socket) ?? "unknown"))
+        return;
       if (!isSignalEnvelope(payload)) {
         this.rejectInvalid(socket, "invalid_payload", "Invalid signaling message.");
         return;
@@ -780,6 +809,12 @@ export class SignalingServer extends EventEmitter {
         ? { sourcePeerId: session.peerId }
         : {}),
     } as SignalEnvelope;
+    if (
+      !this.temporary.authorizeMediaSignal(socket, session, message, (value) =>
+        this.safeSend(socket, value),
+      )
+    )
+      return;
     this.roomManager.getRoom(session.roomId)?.peers.updateHeartbeat(session.peerId);
     if (this.cloudAi.handleSignal(socket, authoritative, this.safeSend.bind(this, socket))) return;
 
@@ -854,37 +889,41 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleJoin(socket: WebSocket, message: JoinChannelMessage): void {
+    const temporaryRoom = isTemporaryRoomSessionId(message.roomId);
+    let temporaryAdmission;
+    try {
+      temporaryAdmission = this.temporary.authorizeMediaJoin(socket, message);
+    } catch {
+      this.rejectInvalid(socket, "temporary_membership_required", "请先验证临时房间身份。");
+      return;
+    }
     const socketIdentity = this.socketIdentities.get(socket);
     if (!socketIdentity) {
       socket.close(4401, "identity_required");
       return;
     }
     const accountIdentity = socketIdentity.kind === "account" ? socketIdentity : undefined;
-    const guestIdentity = `guest:${message.profileId?.trim() || message.peerId}`;
+    const guestIdentity =
+      temporaryAdmission?.member.deviceId ?? `guest:${message.profileId?.trim() || message.peerId}`;
     const authoritativeUserId = accountIdentity?.userId ?? guestIdentity;
     const authoritativeProfileId = accountIdentity?.userId ?? guestIdentity;
-    const authoritativeNickname = accountIdentity?.displayName ?? message.nickname;
-    const requiredClientVersion =
-      this.options.requiredClientVersion?.trim() || process.env.REQUIRED_CLIENT_VERSION?.trim();
-    if (
-      requiredClientVersion &&
-      (!message.appVersion ||
-        !Number.isFinite(compareVersions(message.appVersion, requiredClientVersion)) ||
-        compareVersions(message.appVersion, requiredClientVersion) < 0)
-    ) {
-      this.safeSend(socket, {
-        type: "error",
-        code: "CLIENT_UPDATE_REQUIRED",
-        roomId: message.roomId,
-        peerId: message.peerId,
-        requiredVersion: requiredClientVersion,
-        currentVersion: message.appVersion || "未知",
-        message: "当前版本已经不能进入频道，请更新后再试。",
-      });
+    const authoritativeNickname =
+      temporaryAdmission?.member.profile.nickname ??
+      accountIdentity?.displayName ??
+      message.nickname;
+    const compatibilityError = mediaClientCompatibilityError(
+      message,
+      this.options.requiredClientVersion?.trim() || process.env.REQUIRED_CLIENT_VERSION?.trim(),
+    );
+    if (compatibilityError) {
+      this.safeSend(socket, compatibilityError);
       return;
     }
     let metadata: import("@private-voice/shared").PrivateRoomInfo | undefined;
-    if (message.roomId.startsWith("room_") || process.env.NODE_ENV === "production") {
+    if (
+      !temporaryRoom &&
+      (message.roomId.startsWith("room_") || process.env.NODE_ENV === "production")
+    ) {
       try {
         if (!accountIdentity) {
           socket.close(4401, "account_required");
@@ -904,17 +943,6 @@ export class SignalingServer extends EventEmitter {
         });
         return;
       }
-    }
-    if (message.protocolVersion !== APP_PROTOCOL_VERSION) {
-      const mismatchMessage: ErrorMessage = {
-        type: "error",
-        code: "version_mismatch",
-        roomId: message.roomId,
-        peerId: message.peerId,
-        message: "当前版本太旧，请更新后再进入频道。",
-      };
-      this.safeSend(socket, mismatchMessage);
-      return;
     }
 
     let existingRoom = this.roomManager.getRoom(message.roomId);
@@ -959,7 +987,7 @@ export class SignalingServer extends EventEmitter {
     }
     const existingPeer = existingRoom?.peers.getPeer(message.peerId);
     let sessionToken: string;
-    if (existingPeer) {
+    if (existingPeer && !temporaryAdmission) {
       const tokenValidation = this.sessionTokens.resume(
         message.roomId,
         message.peerId,
@@ -1061,7 +1089,7 @@ export class SignalingServer extends EventEmitter {
       avatarHash: existingPeer?.avatarHash,
       avatarId: assignedAvatarId,
       socket,
-      isHost: false,
+      isHost: temporaryAdmission?.room.adminMemberId === message.peerId,
       isMuted: existingPeer?.isMuted ?? false,
       isSpeaking: existingPeer?.isSpeaking ?? false,
       isDeafened: existingPeer?.isDeafened ?? false,
@@ -1071,7 +1099,11 @@ export class SignalingServer extends EventEmitter {
       sceneZone: assignedSceneZone,
       gameName: existingPeer?.gameName,
       gameIconDataUrl: existingPeer?.gameIconDataUrl,
+      gameSession: existingPeer?.gameSession,
       musicActivity: existingPeer?.musicActivity,
+      applicationAudioName: existingPeer?.applicationAudioName,
+      memberSessionId: randomUUID(),
+      memberGeneration: (existingPeer?.memberGeneration ?? 0) + 1,
       joinedAt: existingPeer?.joinedAt ?? new Date().toISOString(),
       lastHeartbeatAt: Date.now(),
       disconnectedAt: undefined,
@@ -1086,7 +1118,7 @@ export class SignalingServer extends EventEmitter {
       peerId: message.peerId,
       memberCount: room.peers.listPeers().length,
     });
-    if (!existingPeer) {
+    if (!existingPeer && !temporaryRoom) {
       void this.dailyRoomReports.then((store) =>
         store.recordJoin(
           message.roomId,
@@ -1108,7 +1140,9 @@ export class SignalingServer extends EventEmitter {
       appVersion: room.appVersion,
       protocolVersion: room.protocolVersion,
       buildNumber: room.buildNumber,
-      iceServers: buildIceServersForPeer(message.peerId),
+      iceServers: this.options.temporaryOnly
+        ? (this.options.temporaryIceServers?.() ?? [])
+        : buildIceServersForPeer(message.peerId),
     };
     this.safeSend(socket, joinAck);
     void this.sendChatHistory(socket, room.roomId);
@@ -1117,11 +1151,12 @@ export class SignalingServer extends EventEmitter {
   }
 
   private handleLeave(socket: WebSocket, message: LeaveChannelMessage): void {
+    this.temporary.leave(socket, false);
     this.cloudAi.cancelSocket(socket);
     this.logger?.("peer left", { roomId: message.roomId, peerId: message.peerId });
     const peer = this.roomManager.getRoom(message.roomId)?.peers.getPeer(message.peerId);
     this.roomManager.removePeer(message.roomId, message.peerId);
-    if (peer) {
+    if (peer && !isTemporaryRoomSessionId(message.roomId)) {
       void this.dailyRoomReports.then((store) =>
         store.recordLeave(
           message.roomId,
@@ -1195,22 +1230,17 @@ export class SignalingServer extends EventEmitter {
       : undefined;
     const normalizedActivity =
       normalizedSceneZone === "restroomZone" ? "restroom" : message.activity;
-    const normalizedGameName = message.gameName?.trim() || undefined;
-    const normalizedGameIconDataUrl = message.gameIconDataUrl;
-    const normalizedMusicActivity = message.musicActivity
-      ? {
-          provider: message.musicActivity.provider,
-          providerName: message.musicActivity.providerName.trim().slice(0, 32),
-          trackTitle: message.musicActivity.trackTitle.trim().slice(0, 160),
-          artist: message.musicActivity.artist?.trim().slice(0, 100) || undefined,
-        }
-      : message.musicActivity === null
-        ? null
-        : undefined;
+    const {
+      gameName: normalizedGameName,
+      gameIconDataUrl: normalizedGameIconDataUrl,
+      gameSession,
+      musicActivity: normalizedMusicActivity,
+    } = normalizeMemberActivity(message, room.peers.getPeer(message.peerId)?.gameName);
     const author = room.peers.getPeer(message.peerId);
     const normalizedAvatar = normalizeAvatar(message.avatarDataUrl);
     const authoritativeNickname = author?.isGuest ? message.nickname : author?.displayName;
     room.peers.updateMemberState(message.peerId, {
+      applicationAudioName: message.applicationAudioName?.trim().slice(0, 64),
       isMuted: message.isMuted,
       isSpeaking: message.isSpeaking,
       isDeafened: message.isDeafened,
@@ -1219,6 +1249,7 @@ export class SignalingServer extends EventEmitter {
       sceneZone: normalizedSceneZone,
       gameName: message.gameName === undefined ? undefined : (normalizedGameName ?? ""),
       gameIconDataUrl: normalizedGameIconDataUrl,
+      gameSession,
       musicActivity: normalizedMusicActivity,
       nickname: authoritativeNickname,
       avatarDataUrl: normalizedAvatar.avatarDataUrl,
@@ -1228,7 +1259,7 @@ export class SignalingServer extends EventEmitter {
     // member_state is a partial update. Speaking, mute and profile updates do
     // not carry gameName, so only an explicitly supplied gameName is allowed
     // to start, change or clear the persisted game session.
-    if (message.gameName !== undefined) {
+    if (message.gameName !== undefined && !isTemporaryRoomSessionId(message.roomId)) {
       void this.dailyRoomReports.then((store) =>
         store.recordGame(
           message.roomId,
@@ -1239,6 +1270,7 @@ export class SignalingServer extends EventEmitter {
       );
     }
     const payload: MemberStateMessage = {
+      applicationAudioName: message.applicationAudioName?.trim().slice(0, 64),
       type: "member_state",
       roomId: message.roomId,
       peerId: message.peerId,
@@ -1250,6 +1282,7 @@ export class SignalingServer extends EventEmitter {
       sceneZone: normalizedSceneZone,
       gameName: message.gameName === undefined ? undefined : (normalizedGameName ?? ""),
       gameIconDataUrl: normalizedGameIconDataUrl,
+      gameSession,
       musicActivity: normalizedMusicActivity,
       nickname: authoritativeNickname,
       avatarId: message.avatarId,
@@ -1280,7 +1313,7 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
-    const history = await this.chatHistory;
+    const history = await this.temporary.history(message.roomId, this.chatHistory);
     const senderIdentity = author.profileId || author.id;
     const existing = history.findByClientMessageId(message.roomId, senderIdentity, clientMessageId);
     if (existing) {
@@ -1316,9 +1349,10 @@ export class SignalingServer extends EventEmitter {
     };
 
     history.append(message.roomId, storedMessage);
-    void this.dailyRoomReports.then((store) =>
-      store.recordMessage(message.roomId, author.profileId || author.id, author.nickname),
-    );
+    if (!isTemporaryRoomSessionId(message.roomId))
+      void this.dailyRoomReports.then((store) =>
+        store.recordMessage(message.roomId, author.profileId || author.id, author.nickname),
+      );
 
     for (const peer of room.peers.listConnectedPeers()) {
       this.safeSend(peer.socket, payload);
@@ -1344,7 +1378,7 @@ export class SignalingServer extends EventEmitter {
   }
 
   private async sendChatHistory(socket: WebSocket, roomId: string): Promise<void> {
-    const storedMessages = (await this.chatHistory).get(roomId);
+    const storedMessages = (await this.temporary.history(roomId, this.chatHistory)).get(roomId);
     const messages: ServerChatMessage[] = [];
     for (let index = storedMessages.length - 1; index >= 0; index -= 1) {
       const storedMessage = storedMessages[index];
@@ -1377,7 +1411,7 @@ export class SignalingServer extends EventEmitter {
     const author = message.peerId ? room?.peers.getPeer(message.peerId) : undefined;
     if (!room || !author) return;
 
-    void this.chatHistory.then((store) => {
+    void this.temporary.history(message.roomId, this.chatHistory).then((store) => {
       if (!store.remove(message.roomId, message.messageId, author.id)) return;
       const payload: ChatRecallMessage = {
         type: "chat_recall",
@@ -1415,7 +1449,7 @@ export class SignalingServer extends EventEmitter {
       createdByNickname: author.nickname,
       createdAt: new Date().toISOString(),
     };
-    void this.roomCollection.then((store) => {
+    void this.temporary.collection(message.roomId, this.roomCollection).then((store) => {
       store.add(message.roomId, item);
       this.broadcastRoomCollection(message.roomId, store.get(message.roomId));
     });
@@ -1424,14 +1458,14 @@ export class SignalingServer extends EventEmitter {
   private removeRoomCollectionItem(message: RoomCollectionRemoveMessage): void {
     const room = this.roomManager.getRoom(message.roomId);
     if (!room?.peers.getPeer(message.peerId ?? "")) return;
-    void this.roomCollection.then(async (store) => {
+    void this.temporary.collection(message.roomId, this.roomCollection).then(async (store) => {
       store.remove(message.roomId, message.itemId);
       this.broadcastRoomCollection(message.roomId, store.get(message.roomId));
     });
   }
 
   private async sendRoomCollection(socket: WebSocket, roomId: string): Promise<void> {
-    const items = (await this.roomCollection).get(roomId);
+    const items = (await this.temporary.collection(roomId, this.roomCollection)).get(roomId);
     for (const payload of buildRoomCollectionSnapshots(roomId, items)) {
       this.safeSend(socket, payload);
     }
@@ -1558,14 +1592,15 @@ export class SignalingServer extends EventEmitter {
       isSharing: message.isSharing,
     };
     const sharingPeer = room.peers.getPeer(message.peerId);
-    void this.dailyRoomReports.then((store) =>
-      store.recordScreenShare(
-        message.roomId,
-        sharingPeer?.profileId || message.peerId,
-        message.isSharing,
-        sharingPeer?.nickname || "朋友",
-      ),
-    );
+    if (!isTemporaryRoomSessionId(message.roomId))
+      void this.dailyRoomReports.then((store) =>
+        store.recordScreenShare(
+          message.roomId,
+          sharingPeer?.profileId || message.peerId,
+          message.isSharing,
+          sharingPeer?.nickname || "朋友",
+        ),
+      );
 
     for (const peer of room.peers.listConnectedPeers()) {
       if (peer.id !== message.peerId) {
@@ -1655,20 +1690,7 @@ export class SignalingServer extends EventEmitter {
     room.revision += 1;
     const serverTime = Date.now();
     for (const peer of room.peers.listConnectedPeers()) {
-      const payload: RoomSnapshotMessage | ChannelSnapshotMessage = {
-        type: room.roomId === "main" ? "channel_snapshot" : "room_snapshot",
-        roomId: room.roomId,
-        roomName: room.roomName,
-        privateRoom: room.privateRoom
-          ? { ...room.privateRoom, onlineCount: room.peers.listConnectedPeers().length }
-          : undefined,
-        members: room.peers.toRoomMembers(peer.id),
-        revision: room.revision,
-        serverTime,
-        appVersion: room.appVersion,
-        protocolVersion: room.protocolVersion,
-        buildNumber: room.buildNumber,
-      };
+      const payload = createRoomSnapshot(room, peer.id, serverTime);
       this.safeSend(peer.socket, payload);
       this.emit("snapshot", payload);
     }
@@ -1682,20 +1704,11 @@ export class SignalingServer extends EventEmitter {
   }
 
   private broadcastChannelCounts(): void {
-    const payload: ChannelCountsMessage = {
-      type: "channel_counts",
-      counts: {
-        main: this.roomManager.getConnectedPeerCount("main"),
-        side: this.roomManager.getConnectedPeerCount("side"),
-      },
-    };
+    const payload = createChannelCounts(this.roomManager);
 
     for (const socket of this.wss.clients) {
-      if (
-        socket.readyState === WebSocket.OPEN &&
-        this.sessions.has(socket) &&
-        !this.sessions.get(socket)?.roomId.startsWith("room_")
-      ) {
+      const id = this.sessions.get(socket)?.roomId;
+      if (socket.readyState === WebSocket.OPEN && (id === "main" || id === "side")) {
         this.safeSend(socket, payload);
       }
     }
@@ -1723,20 +1736,7 @@ export class SignalingServer extends EventEmitter {
       return;
     }
 
-    const payload: RoomSnapshotMessage | ChannelSnapshotMessage = {
-      type: room.roomId === "main" ? "channel_snapshot" : "room_snapshot",
-      roomId: room.roomId,
-      roomName: room.roomName,
-      privateRoom: room.privateRoom
-        ? { ...room.privateRoom, onlineCount: room.peers.listConnectedPeers().length }
-        : undefined,
-      members: room.peers.toRoomMembers(localPeerId),
-      revision: room.revision,
-      serverTime: Date.now(),
-      appVersion: room.appVersion,
-      protocolVersion: room.protocolVersion,
-      buildNumber: room.buildNumber,
-    };
+    const payload = createRoomSnapshot(room, localPeerId);
     this.safeSend(socket, payload);
     this.emit("snapshot", payload);
   }

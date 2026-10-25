@@ -13,6 +13,7 @@ import {
 } from "@private-voice/shared";
 
 import { PrivateRoomBrowser } from "../components/room/PrivateRoomBrowser";
+import { TemporaryRoomEntry } from "../components/room/TemporaryRoomEntry";
 import { AccountAvatar } from "../components/account/AccountAvatar";
 import { Input } from "../components/base/Input";
 import { BrandMark } from "../components/brand/BrandMark";
@@ -522,6 +523,10 @@ export const HomePage = () => {
               <div className="entry-server-status-slot">{serverTestStatus}</div>
             ) : null}
             <PrivateRoomBrowser busy={isJoining || isCheckingAudio} onJoin={enterChannel} />
+            <TemporaryRoomEntry
+              busy={isJoining || isCheckingAudio}
+              onJoin={(room) => joinChannel(room.signalingUrl, room.roomId, room)}
+            />
             <div data-gsap-entry="cta">
               {!hasSelectedInput ||
               !hasAudioOutput ||

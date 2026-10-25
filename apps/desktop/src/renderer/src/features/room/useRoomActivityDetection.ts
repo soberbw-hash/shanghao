@@ -15,6 +15,7 @@ type MoveLocalMember = (
   gameName?: string,
   musicActivity?: RoomMember["musicActivity"],
   gameIconDataUrl?: string,
+  gameSession?: RoomMember["gameSession"] | null,
 ) => void;
 
 interface ActivityDetectionRefs {
@@ -45,6 +46,7 @@ export const useRoomActivityDetection = (refs: ActivityDetectionRefs): void => {
             snapshot.gameName,
             snapshot.musicActivity,
             snapshot.gameIconDataUrl,
+            snapshot.gameSession ?? null,
           );
         } else {
           const gameZone = currentZone.startsWith("gameDesk") ? currentZone : "gameDesk1";
@@ -54,6 +56,7 @@ export const useRoomActivityDetection = (refs: ActivityDetectionRefs): void => {
             snapshot.gameName,
             snapshot.musicActivity,
             snapshot.gameIconDataUrl,
+            snapshot.gameSession ?? null,
           );
         }
       } else if (previousGame) {

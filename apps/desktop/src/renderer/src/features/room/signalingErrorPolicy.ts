@@ -17,7 +17,19 @@ export const decideSignalingError = (
     appVersion: string;
   },
 ): SignalingErrorDecision => {
-  if (["room_not_found", "room_banned", "room_removed", "room_full"].includes(payload.code)) {
+  if (
+    [
+      "room_not_found",
+      "room_banned",
+      "room_removed",
+      "room_full",
+      "temporary_room_ended",
+      "temporary_member_removed",
+      "temporary_membership_required",
+      "temporary_ticket_invalid",
+      "temporary_ticket_expired",
+    ].includes(payload.code)
+  ) {
     return { ignore: false, stopReconnect: true, reason: payload.code };
   }
   if (payload.code === "CLIENT_UPDATE_REQUIRED") {

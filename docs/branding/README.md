@@ -35,6 +35,8 @@
 
 开发／测试入口不得给裸 Electron 注册正式 `com.sober.shanghao` 身份。创建和修复快捷方式时同时核对目标、参数、IconLocation 和 AppUserModelID；正式身份只用于真正启动上号的入口。图标故障排查应枚举桌面、开始菜单和固定项目录的同身份快捷方式，再判断窗口资源和 Shell 缓存，避免反复刷新正确资源。
 
+2026-10-24 开发入口修复：桌面与开始菜单的开发版图标改为引用 `%LOCALAPPDATA%\Programs\ShangHaoDev\shanghao-dev-v4.ico`，由当前品牌 ICO 按字节复制，内容未变时不重写；避免桌面入口依赖开发构建目录。安装入口修复前备份两个旧快捷方式。本机已核对源/目标 SHA-256 相同，通过 Windows Shell 读取正确耳机图标并从桌面入口启动到响应窗口；只刷新这两个 Shell 条目，未删除全局图标缓存或重启 Explorer。此项验证不代表云端连接状态或其他业务功能通过。
+
 ## AI 专用图标
 
 用户另提供的三张蓝色 AI 原图原样保存在 `apps/desktop/src/renderer/src/assets/ai/`：`assistant-entry.png`、`assistant-headset.png` 和 `assistant-answer.png`。2026-10-01 用户明确改为统一采用耳机机器人，并要求去掉方形底板；入口、弹窗标题、等待和答案区均使用独立透明衍生文件 `assistant-headset-cutout.png`，不再切换成气泡或笑脸图。

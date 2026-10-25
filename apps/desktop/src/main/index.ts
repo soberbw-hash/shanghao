@@ -31,6 +31,7 @@ import { AiRuntimeManager } from "./ai-runtime-manager";
 import { FreeTokenLocalLlmProvider } from "./freetoken-local-llm-provider";
 import { FreeTokenManagedRuntime } from "./freetoken-managed-runtime";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
+import { createAutomaticRecordingBacklog } from "./automatic-recording-backlog";
 import { AiTextGateway } from "./ai-text-gateway";
 import { registerRoomMemoryIpc } from "./room-memory-ipc";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
@@ -62,6 +63,7 @@ import {
   createRecordingMediaResponse,
   decodeRecordingMediaUrl,
   isAllowedRecordingMediaPath,
+  readRecordingLibrary,
   RECORDING_MEDIA_PROTOCOL,
 } from "./recording-library";
 import {
@@ -592,8 +594,23 @@ const bootstrap = async (): Promise<void> => {
     () => settingsStore?.getSnapshot().isAiAutoTranscribeEnabled ?? false,
     transcriptionProvider,
     () => settingsStore?.getSnapshot().aiTranscriptionProvider ?? "cloud",
-    () => settingsStore?.getSnapshot().isAiAutoOrganizeEnabled ?? false,
+    () => true,
+    () => settingsStore?.getSnapshot().isAiCloudLocalAssistEnabled === true,
+    () => settingsStore?.getSnapshot().aiCloudLocalAsrModel ?? "qwen3-asr-0.6b-force",
   );
+  const automaticBacklog = createAutomaticRecordingBacklog({
+    settings: () => settingsStore!.getSnapshot(),
+    read: (config) =>
+      readRecordingLibrary(config.recordingSaveDirectory, config.recordingLibraryQuotaGb),
+    queue: (items, organize) => voiceMemory.queueRecordings(items, organize),
+    onError: () => {
+      void diagnostics?.writeLog({
+        category: "app",
+        level: "warn",
+        message: "Historical recording queue could not refresh; original files preserved",
+      });
+    },
+  });
   shortcutsController = shortcuts;
   overlayController = overlay;
   gameDetectionController = gameDetection;
@@ -615,6 +632,7 @@ const bootstrap = async (): Promise<void> => {
     gameDetection,
     aiModels,
     voiceMemory,
+    onAutomaticTranscriptionChange: automaticBacklog.refresh,
     customAiProvider,
     transcriptionProvider,
     huggingFaceAccess,
@@ -667,6 +685,7 @@ const bootstrap = async (): Promise<void> => {
         voiceMemory.initialize(),
       ]),
     )
+    .then(() => automaticBacklog.initialize())
     .then(
       () =>
         diagnostics?.writeLog({

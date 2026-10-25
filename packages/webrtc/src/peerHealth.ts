@@ -34,7 +34,10 @@ export const createPeerHealthState = (): PeerHealthState => ({ scores: [] });
 
 const healthScore = (stats: PeerAudioStats, iceState: RTCIceConnectionState): number => {
   let score = 100;
-  score -= Math.min(35, (stats.packetLossPercent ?? 0) * 3.5);
+  score -= Math.min(
+    35,
+    Math.max(stats.packetLossPercent ?? 0, stats.outboundPacketLossPercent ?? 0) * 3.5,
+  );
   score -= Math.min(18, Math.max(0, (stats.jitterMs ?? 0) - 20) * 0.25);
   score -= Math.min(16, Math.max(0, (stats.roundTripTimeMs ?? 0) - 120) * 0.04);
   score -= Math.min(18, (stats.concealmentPercent ?? 0) * 1.8);
@@ -64,6 +67,7 @@ export const advancePeerHealth = (
   const trend: PeerHealthTrend = delta <= -8 ? "degrading" : delta >= 8 ? "improving" : "stable";
   const networkDegraded =
     (input.stats.packetLossPercent ?? 0) >= 3 ||
+    (input.stats.outboundPacketLossPercent ?? 0) >= 3 ||
     (input.stats.jitterMs ?? 0) >= 45 ||
     (input.stats.roundTripTimeMs ?? 0) >= 220 ||
     (input.stats.concealmentPercent ?? 0) >= 4 ||

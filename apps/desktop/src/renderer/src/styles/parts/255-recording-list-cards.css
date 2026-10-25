@@ -1,0 +1,37 @@
+.recording-library-browser .recording-date-items {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
+  align-items: stretch;
+}
+
+.recording-library-browser .recording-date-item {
+  min-height: 108px;
+}
+
+.recording-library-browser .recording-item-select {
+  align-content: start;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding-right: 10px;
+  gap: 5px;
+}
+
+.recording-library-browser .recording-item-title {
+  padding-right: 52px;
+  line-height: 18px;
+}
+
+.recording-library-browser .recording-item-meta {
+  min-width: 0;
+  line-height: 15px;
+}
+
+.recording-library-browser .recording-item-ai-status {
+  min-width: 0;
+  align-self: end;
+  line-height: 15px;
+}
+
+.recording-library-browser .recording-item-ai-status > span:first-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

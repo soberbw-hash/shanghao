@@ -143,53 +143,58 @@ export const PrivateRoomBrowser = ({
       ));
   const visibleRooms =
     tab === "recent" ? rooms.filter((room) => room.roomId !== last?.roomId) : rooms;
-  const roomRow = (room: PrivateRoomInfo, preview = false, featured = false) => (
-    <div
-      key={room.roomId}
-      className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/65 px-3 py-2.5"
-    >
-      <span
-        className={cn(
-          "flex shrink-0 items-center justify-center rounded-xl",
-          featured ? "size-12" : "size-10",
-        )}
-        style={roomIconStyle(room.iconColor)}
+  const roomRow = (room: PrivateRoomInfo, preview = false, featured = false) => {
+    const RoomInformation = preview || featured ? "div" : "button";
+    return (
+      <div
+        key={room.roomId}
+        className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/65 px-3 py-2.5"
       >
-        <PrivateRoomIcon icon={room.icon} className={featured ? "size-6" : "size-5"} />
-      </span>
-      <button
-        type="button"
-        className="min-w-0 flex-1 text-left"
-        disabled={blocked || preview}
-        onClick={() => void join(room)}
-      >
-        <strong className={cn("block truncate text-[#263b56]", featured ? "text-lg" : "text-sm")}>
-          {room.name}
-        </strong>
-        <span className="text-xs tabular-nums text-slate-500">
-          频道 {room.channelCode} · {room.onlineCount}/{room.capacity} 在线
+        <span
+          className={cn(
+            "flex shrink-0 items-center justify-center rounded-xl",
+            featured ? "size-12" : "size-10",
+          )}
+          style={roomIconStyle(room.iconColor)}
+        >
+          <PrivateRoomIcon icon={room.icon} className={featured ? "size-6" : "size-5"} />
         </span>
-      </button>
-      <button
-        type="button"
-        disabled={blocked}
-        onClick={() => void toggleFavorite(room)}
-        aria-label={
-          history.favorites.some((item) => item.roomId === room.roomId)
-            ? "取消收藏房间"
-            : "收藏房间"
-        }
-        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-blue-500"
-      >
-        <Star
-          className="size-4"
-          fill={
-            history.favorites.some((item) => item.roomId === room.roomId) ? "currentColor" : "none"
+        <RoomInformation
+          type={preview || featured ? undefined : "button"}
+          className="min-w-0 flex-1 text-left"
+          disabled={preview || featured ? undefined : blocked}
+          onClick={preview || featured ? undefined : () => void join(room)}
+        >
+          <strong className={cn("block truncate text-[#263b56]", featured ? "text-lg" : "text-sm")}>
+            {room.name}
+          </strong>
+          <span className="text-xs tabular-nums text-slate-500">
+            频道 {room.channelCode} · {room.onlineCount}/{room.capacity} 在线
+          </span>
+        </RoomInformation>
+        <button
+          type="button"
+          disabled={blocked}
+          onClick={() => void toggleFavorite(room)}
+          aria-label={
+            history.favorites.some((item) => item.roomId === room.roomId)
+              ? "取消收藏房间"
+              : "收藏房间"
           }
-        />
-      </button>
-    </div>
-  );
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-blue-500"
+        >
+          <Star
+            className="size-4"
+            fill={
+              history.favorites.some((item) => item.roomId === room.roomId)
+                ? "currentColor"
+                : "none"
+            }
+          />
+        </button>
+      </div>
+    );
+  };
   return (
     <section className="private-room-browser space-y-4" aria-label="私人房间" aria-busy={loading}>
       <header className="flex flex-wrap items-center justify-between gap-2">

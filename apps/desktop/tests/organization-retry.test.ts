@@ -2,10 +2,74 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { OrganizationRetryState } from "@private-voice/shared";
 import { runOrganizationWithRetry, resetOrganizationRetry } from "../src/main/organization-retry";
-import { AiVoiceMemoryService } from "../src/main/ai-voice-memory-service";
+import { VoiceMemoryOrganizer } from "../src/main/voice-memory-organizer";
 import type { VoiceMemoryRecord } from "@private-voice/shared";
+import { createEmptyVoiceMemoryRecord } from "../src/main/voice-memory-record";
 
-test("real organizer chunk loop persists failure budget across service restarts", async () => {
+test("summary reduction does not resend a provider content refusal", async () => {
+  let calls = 0;
+  let state: OrganizationRetryState | undefined;
+  await assert.rejects(
+    runOrganizationWithRetry(
+      undefined,
+      async (next) => {
+        state = next;
+      },
+      async () => {
+        calls++;
+        throw Error("custom_ai_content_rejected");
+      },
+      new AbortController().signal,
+    ),
+    /custom_ai_content_rejected/,
+  );
+  assert.equal(calls, 1);
+  assert.equal(state?.attempts, 1);
+});
+
+test("real organizer preserves the transcript and stops after one content refusal", async () => {
+  let record: VoiceMemoryRecord = {
+    ...createEmptyVoiceMemoryRecord({ recordingId: "synthetic", filePath: "synthetic.wav" }),
+    phase: "ready",
+    transcript: [
+      {
+        id: "local",
+        recordingId: "synthetic",
+        startMs: 1000,
+        endMs: 4000,
+        text: "仅用于测试整理失败时的原稿保留。",
+        speakerId: "member",
+        confidence: "high",
+      },
+    ],
+  };
+  record.transcript[0]!.words = [
+    { id: "local", startMs: 1000, endMs: 4000, text: "仅用于测试整理失败时的原稿保留。" },
+  ];
+  const original = JSON.stringify(record.transcript);
+  let calls = 0;
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      organizerProvider: () => "custom",
+      generateJsonWithMetrics: async () => {
+        calls++;
+        throw Error("custom_ai_content_rejected");
+      },
+    } as never,
+    async (next) => (record = next),
+  );
+  await assert.rejects(
+    organizer.organize(record, false, new AbortController().signal),
+    /custom_ai_content_rejected/,
+  );
+  assert.equal(calls, 1);
+  assert.equal(JSON.stringify(record.transcript), original);
+  assert.equal(record.organization?.chunks[0]?.attempts, 1);
+  assert.equal(record.errorMessage, "organize_failed:custom_ai_content_rejected");
+});
+
+test("real organizer chunk loop persists failure budget across organizer restarts", async () => {
   let record = {
     schemaVersion: 1,
     recordingId: "retry-test",
@@ -34,19 +98,24 @@ test("real organizer chunk loop persists failure budget across service restarts"
   } as VoiceMemoryRecord;
   let calls = 0;
   const run = async (manual: boolean) => {
-    const service = Object.create(AiVoiceMemoryService.prototype);
-    service.save = async (next: VoiceMemoryRecord) => {
+    const save = async (next: VoiceMemoryRecord) => {
       record = structuredClone(next);
       return record;
     };
-    service.textGateway = {
+    const gateway = {
       usesLocalOrganizer: () => true,
       generateJsonWithMetrics: async () => {
         calls++;
         throw new Error("broken_runtime");
       },
     };
-    await assert.rejects(service.organize(record, manual, new AbortController().signal));
+    await assert.rejects(
+      new VoiceMemoryOrganizer(gateway as never, save).organize(
+        record,
+        manual,
+        new AbortController().signal,
+      ),
+    );
   };
   for (let i = 0; i < 3; i++) await run(false);
   assert.equal(calls, 6);

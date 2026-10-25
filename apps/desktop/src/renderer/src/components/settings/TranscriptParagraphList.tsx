@@ -1,6 +1,7 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type { ReadableTranscriptParagraph } from "@private-voice/shared";
+import { transcriptSeekRuns } from "../../features/ai/transcriptSeek";
 
 const clock = (ms: number) => {
   const seconds = Math.max(0, Math.floor(ms / 1000));
@@ -23,11 +24,44 @@ export const TranscriptParagraph = memo(function TranscriptParagraph({
       className="transcript-paragraph"
       type="button"
       data-paragraph-id={paragraph.id}
-      onClick={() => onSeek(paragraph.startMs)}
+      onClick={(event) => {
+        const anchor = (event.target as HTMLElement).closest<HTMLElement>(
+          "[data-transcript-start-ms]",
+        );
+        const offset = anchor ? Number(anchor.dataset.transcriptStartMs) : paragraph.startMs;
+        onSeek(Number.isFinite(offset) ? offset : paragraph.startMs);
+      }}
     >
-      <time>{clock(paragraph.startMs)}</time>
+      <time>
+        {paragraph.sourceSegments.some((segment) => segment.fusionEstimated) ? "≈" : ""}
+        {clock(paragraph.startMs)}
+      </time>
       <strong>{name}</strong>
-      <span>{paragraph.text}</span>
+      <span>
+        {paragraph.sourceSegments.some((segment) => segment.fusionUncertain) ? (
+          <small
+            className="mr-2 text-[#996925]"
+            title={
+              paragraph.sourceSegments.some((segment) => segment.fusionReviewReason)
+                ? "校对服务未能返回完整有效的结果，已保留原句及原时间，请回听核对。"
+                : "两份识别尚不能确认一致，保留原文供回听核对。"
+            }
+          >
+            {paragraph.sourceSegments.some((segment) => segment.fusionReviewReason)
+              ? "未校对"
+              : "待核对"}
+          </small>
+        ) : null}
+        {transcriptSeekRuns(paragraph).map((run, index) => (
+          <span
+            key={index}
+            data-transcript-start-ms={run.startMs}
+            title={`从 ${clock(run.startMs)} 回听`}
+          >
+            {run.text}
+          </span>
+        ))}
+      </span>
     </button>
   );
 });
@@ -91,20 +125,21 @@ export const TranscriptParagraphList = memo(function TranscriptParagraphList({
         const next = current + (event.shiftKey ? -1 : 1);
         if (current < 0 || next < 0 || next >= paragraphs.length) return;
         event.preventDefault();
-        list.current?.scrollIntoView({
-          index: next,
-          done: () => {
-            const focus = (remaining: number) => {
-              const target = Array.from(
-                host.current?.querySelectorAll<HTMLButtonElement>("[data-paragraph-id]") ?? [],
-              ).find((button) => button.dataset.paragraphId === paragraphs[next]?.id);
-              target?.focus({ preventScroll: true });
-              if (!target && host.current && remaining > 0)
-                focusFrame.current = requestAnimationFrame(() => focus(remaining - 1));
-            };
-            focus(10);
-          },
-        });
+        if (focusFrame.current !== undefined) cancelAnimationFrame(focusFrame.current);
+        const focus = (remaining: number) => {
+          const target = Array.from(
+            host.current?.querySelectorAll<HTMLButtonElement>("[data-paragraph-id]") ?? [],
+          ).find((button) => button.dataset.paragraphId === paragraphs[next]?.id);
+          if (target) {
+            target.scrollIntoView({ block: "nearest" });
+            target.focus({ preventScroll: true });
+          }
+          if (!target && host.current && remaining > 0)
+            focusFrame.current = requestAnimationFrame(() => focus(remaining - 1));
+        };
+        list.current?.scrollIntoView({ index: next });
+        // Focus the measured row after layout, including when no scroll event is needed.
+        focusFrame.current = requestAnimationFrame(() => focus(10));
       }}
     >
       {ready && paragraphs.length ? (

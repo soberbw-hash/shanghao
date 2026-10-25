@@ -9,7 +9,9 @@ export type AiAsrModelId =
   | "ark-asr-3b-q8_0";
 
 /** Initial selection for new profiles; existing saved choices remain authoritative. */
-export const DEFAULT_AI_ASR_MODEL_ID: AiAsrModelId = "glm-asr-nano-2512";
+export const DEFAULT_AI_ASR_MODEL_ID: AiAsrModelId = "qwen3-asr-0.6b-force";
+/** Cloud assistance uses acoustic alignment; legacy running Paraformer tasks may finish. */
+export const DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID = "qwen3-asr-0.6b-force" as const;
 
 export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
   "qwen3-asr-1.7b-force": "Qwen3-ASR-1.7B + ForcedAligner",
@@ -184,6 +186,8 @@ export interface AiTaskSchedulerStatus {
 }
 
 export interface AiVoiceMemorySnapshot {
+  /** Whole-operation lock; includes cloud tasks and cancellation cleanup. */
+  modelConfigurationBusy?: boolean;
   models: AiModelStatus[];
   scheduler: AiTaskSchedulerStatus;
   checkedAt: string;
@@ -245,6 +249,12 @@ export interface VoiceMemoryTranscriptSegment {
   rawSegmentId?: string;
   /** Serialized provider segments retained alongside normalized text. */
   rawSegments?: string[];
+  /** Fusion retains acoustic anchors; unresolved differences remain explicitly marked. */
+  fusionUncertain?: boolean;
+  fusionEstimated?: boolean;
+  /** Original sentence retained after bounded provider attempts; never presented as corrected. */
+  fusionReviewReason?:
+    "provider_invalid_json" | "provider_invalid_response" | "provider_content_rejected";
 }
 
 export interface VoiceMemoryChapter {
@@ -352,6 +362,8 @@ export interface VoiceMemoryOrganizationChunk {
   startMs: number;
   endMs: number;
   sourceSegmentIds: string[];
+  /** Hash of the actual normalized source rows; IDs/timing alone cannot validate corrected text. */
+  sourceSignature?: string;
   estimatedInputTokens: number;
   status: VoiceMemoryOrganizationChunkStatus;
   attempts: number;
@@ -694,6 +706,50 @@ export interface VoiceMemoryRecord {
   transcriptionStats?: VoiceMemoryTranscriptionStats;
   /** Durable per-chunk manifest; unlike completedUnits this preserves gaps and failures. */
   transcriptionUnits?: VoiceMemoryTranscriptionUnit[];
+  /** Bounded automatic recovery persisted across application restarts. */
+  remoteTranscriptionRetry?: { attempts: number; nextAttemptAt?: number };
+  /** Original API replies, retained locally so parsing repairs do not require another upload. */
+  remoteTranscription?: {
+    /** Absent on legacy five-minute uploads. */
+    partMs?: 30000 | 300000;
+    modelId: "siliconflow-sensevoice-small" | "custom-asr-api";
+    modelName?: string;
+    baseUrl?: string;
+    audioDurationMs: number;
+    /** Present only for independent member tracks. IDs include immutable source file metadata. */
+    sources?: Array<{
+      id: string;
+      startMs: number;
+      durationMs: number;
+      speakerId: string;
+      displayNameSnapshot: string;
+    }>;
+    parts: Array<{
+      sourceId?: string;
+      startMs: number;
+      durationMs: number;
+      text: string;
+      modelName: string;
+      emptyRechecked?: boolean;
+    }>;
+  };
+  /** Optional second local transcript; neither recognizer is silently merged into the other. */
+  transcriptionAssist?: {
+    status: "running" | "completed" | "failed" | "unavailable";
+    cloudModelId: "siliconflow-sensevoice-small" | "custom-asr-api";
+    localModelId: AiAsrModelId;
+    errorCode?: string;
+  };
+  /** Corrected copy; cloud/local ASR originals remain in transcriptionVariants. */
+  transcriptionFusion?: {
+    status: "running" | "completed" | "failed";
+    sourceSignature: string;
+    completedBatches: number;
+    totalBatches: number;
+    transcript: VoiceMemoryTranscriptSegment[];
+    speakers: VoiceMemorySpeaker[];
+    errorCode?: string;
+  };
   /** Metadata for the active/saved benchmark run. */
   transcriptionBenchmark?: VoiceMemoryBenchmarkRunMetadata;
   errorMessage?: string;
@@ -819,6 +875,8 @@ export interface VoiceMemoryProcessRequest {
   transcribe?: boolean;
   /** Discard the prior transcript/checkpoint and run recognition again from the beginning. */
   restartTranscription?: boolean;
+  /** Correct existing cloud/local originals without uploading audio or rerunning ASR. */
+  fuse?: boolean;
   /** One-off model choice for A/B testing; does not change the global default. */
   asrModelId?: AiAsrModelId;
   /** Optional metadata for comparison runs; it never changes recognition parameters. */

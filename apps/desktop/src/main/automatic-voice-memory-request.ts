@@ -1,16 +1,60 @@
-import type { VoiceMemoryProcessRequest, VoiceMemoryRecord } from "@private-voice/shared";
+import {
+  hasInvalidVoiceMemoryResult,
+  type VoiceMemoryProcessRequest,
+  type VoiceMemoryRecord,
+} from "@private-voice/shared";
 import { isTranscriptionExecutionComplete } from "./remote-transcription";
+
+/** Existing permission may recover derived text, never another audio upload or an explicit pause. */
+export function needsAutomaticPostprocessing(
+  record: VoiceMemoryRecord,
+  organize: boolean,
+): boolean {
+  return (
+    organize &&
+    record.autoOrganizeRequested === true &&
+    canAutomaticallySummarize(record) &&
+    !record.organization &&
+    !record.organizedAt &&
+    !record.summary.length
+  );
+}
+
+export function canAutomaticallySummarize(record: VoiceMemoryRecord): boolean {
+  return (
+    record.phase === "ready" &&
+    record.taskStatus === "success" &&
+    record.transcript.length > 0 &&
+    !hasInvalidVoiceMemoryResult(record) &&
+    isTranscriptionExecutionComplete(record)
+  );
+}
+export function ownsAutomaticSummary(
+  current: VoiceMemoryRecord | undefined,
+  completed: VoiceMemoryRecord,
+  taskId: string | undefined,
+): boolean {
+  return Boolean(
+    current &&
+    current.updatedAt === completed.updatedAt &&
+    current.taskId === taskId &&
+    current.phase === "ready" &&
+    current.taskStatus === "success",
+  );
+}
 
 /** Unknown legacy permission never grants automatic text-provider access. */
 export const automaticOrganizationConsent = (
   previous: VoiceMemoryRecord | undefined,
   request: VoiceMemoryProcessRequest,
 ): boolean =>
-  request.manual && typeof request.organize === "boolean"
-    ? request.organize
-    : previous
-      ? previous.autoOrganizeRequested === true
-      : request.organize === true;
+  request.organize === true
+    ? true
+    : request.manual && typeof request.organize === "boolean"
+      ? request.organize
+      : previous
+        ? previous.autoOrganizeRequested === true
+        : false;
 
 export const deferredVoiceMemoryRequest = (
   record: VoiceMemoryRecord,

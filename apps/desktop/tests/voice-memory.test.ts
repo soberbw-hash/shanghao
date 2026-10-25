@@ -1369,11 +1369,12 @@ test("a newer manual transcription pauses an older queued click instead of runni
 
 test("UI transcription retries acknowledge immediately and automatic organization follows transcription", async () => {
   const saved: VoiceMemoryRecord[] = [];
+  let current: VoiceMemoryRecord | undefined;
   const store = {
-    get: async () => undefined,
+    get: async () => current,
     save: async (value: VoiceMemoryRecord) => {
       saved.push(value);
-      return value;
+      return (current = value);
     },
   };
   const service = new AiVoiceMemoryService(
@@ -1387,11 +1388,15 @@ test("UI transcription retries acknowledge immediately and automatic organizatio
     request,
   ) => {
     requests.push(request);
-    return {
+    return store.save({
       ...record(),
       recordingId: request.recordingId,
       filePath: request.filePath,
-    };
+      taskId: request.taskId,
+      taskStatus: "success",
+      transcriptionModel: { id: "siliconflow-sensevoice-small", name: "synthetic" },
+      transcriptionElapsedMs: 100,
+    });
   };
 
   const acknowledged = await service.start({
@@ -1416,6 +1421,55 @@ test("UI transcription retries acknowledge immediately and automatic organizatio
     [undefined, false],
   );
 });
+
+for (const change of ["task", "revision", "missing"] as const) {
+  test(`automatic organization cannot follow a transcript whose stored ownership changed: ${change}`, async () => {
+    let current: VoiceMemoryRecord | undefined;
+    const store = {
+      get: async () => current,
+      save: async (value: VoiceMemoryRecord) => (current = value),
+    };
+    const service = new AiVoiceMemoryService(
+      { getTaskCheckpoint: () => undefined } as never,
+      {} as never,
+      {} as never,
+      store as never,
+    );
+    const requests: Array<{ organize?: boolean }> = [];
+    service.process = async (request) => {
+      requests.push(request);
+      const completed: VoiceMemoryRecord = {
+        ...record(),
+        recordingId: request.recordingId,
+        filePath: request.filePath,
+        taskId: request.taskId,
+        taskStatus: "success",
+        transcriptionModel: { id: "siliconflow-sensevoice-small", name: "synthetic" },
+        transcriptionElapsedMs: 100,
+      };
+      current =
+        change === "missing"
+          ? undefined
+          : {
+              ...completed,
+              taskId: change === "task" ? "new-owner" : completed.taskId,
+              updatedAt: change === "revision" ? "2026-08-13T12:00:00.001Z" : completed.updatedAt,
+            };
+      return completed;
+    };
+    await service.start({
+      recordingId: "fresh-recording",
+      filePath: "fresh-recording",
+      manual: false,
+      organize: true,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(
+      requests.map((request) => request.organize),
+      [false],
+    );
+  });
+}
 
 test("a new model comparison task replaces a terminal task before its cleanup microtask", async () => {
   let current: VoiceMemoryRecord = {

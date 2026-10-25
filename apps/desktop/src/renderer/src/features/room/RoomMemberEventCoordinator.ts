@@ -73,6 +73,7 @@ export class RoomMemberEventCoordinator {
     musicActivity?: RoomMember["musicActivity"],
     gameIconDataUrl?: string,
     callModeActive?: boolean,
+    gameSession?: RoomMember["gameSession"],
   ): void {
     this.localScene = { sceneZone, activity };
     this.members = this.members.map((member) => {
@@ -85,6 +86,7 @@ export class RoomMemberEventCoordinator {
         activity,
         sceneZone,
         gameName: normalizedGameName,
+        gameSession: normalizedGameName === "英雄联盟" ? gameSession : undefined,
         gameIconDataUrl: normalizePresenceGameIconDataUrl(normalizedGameName, gameIconDataUrl),
         musicActivity,
       };
@@ -204,6 +206,10 @@ export class RoomMemberEventCoordinator {
       return {
         ...member,
         nickname: payload.nickname ?? member.nickname,
+        applicationAudioName:
+          payload.applicationAudioName === undefined
+            ? member.applicationAudioName
+            : payload.applicationAudioName || undefined,
         avatarId: payload.avatarId ?? member.avatarId,
         isDeafened: payload.isDeafened ?? member.isDeafened,
         callModeActive: payload.callModeActive ?? member.callModeActive,
@@ -218,6 +224,12 @@ export class RoomMemberEventCoordinator {
             ? this.localScene.sceneZone
             : (payload.sceneZone ?? member.sceneZone),
         gameName,
+        gameSession:
+          gameName === "英雄联盟"
+            ? payload.gameSession === undefined
+              ? member.gameSession
+              : (payload.gameSession ?? undefined)
+            : undefined,
         gameIconDataUrl: normalizePresenceGameIconDataUrl(gameName, incomingGameIconDataUrl),
         musicActivity:
           payload.musicActivity === null

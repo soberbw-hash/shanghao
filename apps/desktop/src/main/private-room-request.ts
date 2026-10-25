@@ -1,3 +1,4 @@
+import { privateRoomResponseError } from "./private-room-auth";
 /** Shared bounded HTTP transport; room command policy and account scope stay with the owner. */
 export const requestPrivateRoom = async (
   fetcher: typeof fetch,
@@ -43,11 +44,6 @@ export const requestPrivateRoom = async (
   } catch {
     throw new Error("room_server_invalid_response");
   }
-  if (!response.ok) {
-    const code = (result as { error?: { code?: unknown } } | null)?.error?.code;
-    throw new Error(
-      typeof code === "string" && code.length <= 128 ? code : "room_service_unavailable",
-    );
-  }
+  if (!response.ok) throw privateRoomResponseError(result, response.status);
   return result;
 };

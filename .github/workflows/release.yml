@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   windows:
+    name: windows-${{ inputs.release_tag || github.ref_name }}
     runs-on: windows-latest
     env:
       VITE_CLOUDBASE_ENV_ID: ${{ vars.VITE_CLOUDBASE_ENV_ID }}
@@ -80,43 +81,28 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           $body = Get-Content "docs/release-notes/$env:RELEASE_TAG.md" -Raw
-          $body = $body.Replace('](../assets/releases/', "](https://raw.githubusercontent.com/soberbw-hash/shanghao/$env:RELEASE_TAG/docs/assets/releases/")
+          $assetBase = "https://github.com/soberbw-hash/shanghao/releases/download/$env:RELEASE_TAG"
+          $body = [regex]::Replace($body, '\]\(\.\./assets/releases/[^/]+/([^)]+)\)', "]($assetBase/`$1)")
+          New-Item -ItemType Directory -Path apps/desktop/release/screenshots -Force | Out-Null
+          Get-ChildItem "docs/assets/releases/$env:RELEASE_TAG" -Filter *.png -File | Copy-Item -Destination apps/desktop/release/screenshots
           Set-Content apps/desktop/release/release-body.md -Value $body -Encoding utf8
       - run: pnpm release:checksums
-      - uses: actions/upload-artifact@v7
+      # Publish from the verified build job. Release assets do not need an
+      # intermediate copy in the account's limited Actions artifact storage.
+      - name: Publish verified release assets
+        uses: softprops/action-gh-release@v2
         with:
-          name: windows-${{ inputs.release_tag || github.ref_name }}
-          if-no-files-found: error
-          path: |
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          name: 上号 ${{ inputs.release_tag || github.ref_name }}
+          body_path: apps/desktop/release/release-body.md
+          fail_on_unmatched_files: true
+          files: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.zip
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest*.yml
             apps/desktop/release/SHA256SUMS.txt
             apps/desktop/release/package-size.json
-            apps/desktop/release/release-body.md
-
-  publish:
-    needs: [windows]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.release_tag || github.ref_name }}
-      - uses: actions/download-artifact@v7
-        with:
-          path: artifacts
-          merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
-          name: 上号 ${{ inputs.release_tag || github.ref_name }}
-          body_path: artifacts/release-body.md
-          fail_on_unmatched_files: true
-          files: |
-            artifacts/*.exe
-            artifacts/*.zip
-            artifacts/*.blockmap
-            artifacts/latest*.yml
-            artifacts/SHA256SUMS.txt
-            artifacts/package-size.json
+            apps/desktop/release/screenshots/*.png

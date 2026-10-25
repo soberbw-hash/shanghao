@@ -19,6 +19,63 @@ const fixture = async () => {
   return { directory, audio, file: path.join(directory, "ai", "transcription-provider.enc") };
 };
 
+test("a successful empty ASR segment does not abort the rest of a long recording", async () => {
+  const f = await fixture();
+  try {
+    const store = new AiTranscriptionProviderStore(
+      f.directory,
+      secure,
+      async () => new Response(JSON.stringify({ text: "" }), { status: 200 }),
+    );
+    await store.save({ provider: "cloud", apiKey: "fixture-only" });
+    const part = await store.transcribe(f.audio, 1000, "cloud", new AbortController().signal);
+    assert.equal(part.text, "");
+  } finally {
+    await rm(f.directory, { recursive: true, force: true });
+  }
+});
+
+test("temporary upload disconnects expose a retryable code without leaking network details", async () => {
+  const f = await fixture();
+  try {
+    const store = new AiTranscriptionProviderStore(f.directory, secure, async () => {
+      throw new TypeError("fetch failed", { cause: { code: "ECONNRESET" } });
+    });
+    await store.save({ provider: "cloud", apiKey: "fixture-only" });
+    await assert.rejects(
+      store.transcribe(f.audio, 1000, "cloud", new AbortController().signal),
+      /cloud_asr_network_error/,
+    );
+  } finally {
+    await rm(f.directory, { recursive: true, force: true });
+  }
+});
+
+test("a disconnect while reading response text remains retryable", async () => {
+  const f = await fixture();
+  try {
+    const store = new AiTranscriptionProviderStore(
+      f.directory,
+      secure,
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new TypeError("terminated", { cause: { code: "UND_ERR_SOCKET" } }));
+            },
+          }),
+        ),
+    );
+    await store.save({ provider: "cloud", apiKey: "fixture-only" });
+    await assert.rejects(
+      store.transcribe(f.audio, 1000, "cloud", new AbortController().signal),
+      /cloud_asr_network_error/,
+    );
+  } finally {
+    await rm(f.directory, { recursive: true, force: true });
+  }
+});
+
 test("ASR credentials remain separate and damaged data is never overwritten", async () => {
   const f = await fixture();
   try {

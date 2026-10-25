@@ -7,3 +7,5 @@ export * from "./daily-room-report-store";
 export * from "./cloud-ai-service";
 export * from "./account-service";
 export * from "./account-http-controller";
+export * from "./temporary-room-auth";
+export * from "./temporary-room-coordinator";

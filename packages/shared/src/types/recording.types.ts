@@ -134,6 +134,8 @@ export interface RecordingSpeakerSegmentFinalizePayload {
 
 export interface RecordingLibraryItem {
   roomName?: string;
+  /** A legacy transcript exists, but its recording identity could not be verified. */
+  voiceMemoryRecovery?: "legacy_unverified";
   id: string;
   recordingId: string;
   title: string;

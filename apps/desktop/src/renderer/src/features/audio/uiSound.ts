@@ -2,7 +2,7 @@ import { createUISFX, type CueName, type PackName, type PlayingSFX, type UISFXPl
 
 import { writeRendererLog } from "../../utils/logger";
 import { waitForVisualIdle } from "../visual-runtime/waitForVisualIdle";
-import { loadRoomEntryCue } from "./roomEntryCue";
+import { loadRoomEntryCue, loadRoomMemberJoinCue } from "./roomEntryCue";
 
 export type UiSound =
   | "button-click"
@@ -28,9 +28,11 @@ export type UiSound =
   | "record-marker"
   | "mic-on"
   | "mic-off"
+  | "muted-speech-reminder"
   | "speaker-muted"
   | "speaker-unmuted"
   | "phone-mode-enter"
+  | "phone-mode-exit"
   | "settings-section"
   | "screen-share-start"
   | "screen-share-stop"
@@ -97,10 +99,18 @@ const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
   "record-marker": { cue: "checkpoint", pack: "studio", volume: uiGain.standard, cooldownMs: 160 },
   "mic-on": { cue: "toggle-on", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
   "mic-off": { cue: "toggle-off", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
+  "muted-speech-reminder": { cue: "blocked", pack: "soft", volume: 0.18, cooldownMs: 60_000 },
   "speaker-muted": { cue: "lock", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
   "speaker-unmuted": { cue: "unlock", pack: "soft", volume: uiGain.deviceToggle, cooldownMs: 120 },
   "phone-mode-enter": {
     cue: "double-click",
+    pack: "soft",
+    volume: 0.6,
+    playbackRate: 1.6,
+    cooldownMs: 180,
+  },
+  "phone-mode-exit": {
+    cue: "toggle-off",
     pack: "soft",
     volume: 0.6,
     playbackRate: 1.6,
@@ -139,12 +149,12 @@ const soundRecipes: Record<Exclude<UiSound, "knock-bell">, UiSoundRecipe> = {
 };
 
 const preloadSounds: readonly Exclude<UiSound, "knock-bell">[] = [
-  "button-click",
   "enter-room",
+  "member-join",
+  "button-click",
   "record-start",
   "popup-open",
   "leave-room",
-  "member-join",
   "member-leave",
   "away",
   "return",
@@ -161,10 +171,15 @@ const knockUrl = new URL("../../assets/sounds/knock-bell.wav", import.meta.url).
 const players = new Map<PackName, UISFXPlayer>();
 const activeSounds: PlayingSFX[] = [];
 const entryGains = new Set<GainNode>();
+type RoomFeedbackSound = "enter-room" | "member-join";
+const roomFeedbackPlaybacks = new Map<RoomFeedbackSound, PlayingSFX>();
 let entryCueRevision = 0;
+let memberCueRevision = 0;
+let lastMemberCueAt = -Infinity;
 let lastEntryCueAt = -Infinity;
 export const cancelDelayedRoomEntryCue = (): void => {
   entryCueRevision++;
+  memberCueRevision++;
 };
 let prepared = false;
 let feedbackEnabled = true;
@@ -321,6 +336,7 @@ export const prepareUiSounds = async (signal = new AbortController().signal): Pr
       await waitForVisualIdle(signal);
       const recipe = soundRecipes[sound];
       if (sound === "enter-room" && audioContext) await loadRoomEntryCue(audioContext);
+      else if (sound === "member-join" && audioContext) await loadRoomMemberJoinCue(audioContext);
       else await ensurePlayer(recipe.pack)?.preload([recipe.cue], { signal });
       signal.throwIfAborted();
     }
@@ -340,25 +356,37 @@ const retainPlayback = (playback: PlayingSFX): void => {
   });
 };
 
-const playRoomEntryCue = (): void => {
+const playRoomFeedbackCue = (sound: RoomFeedbackSound): void => {
   const context = audioContext;
   if (!context) return;
   const requestedAt = performance.now();
-  if (requestedAt - lastEntryCueAt < 250) return;
-  lastEntryCueAt = requestedAt;
-  const revision = ++entryCueRevision;
+  const isEntry = sound === "enter-room";
+  // A member snapshot arriving with our own entry belongs to the same feedback
+  // episode. Later members still get their ordinary join cue.
+  const entryPlaying = () =>
+    roomFeedbackPlaybacks.has("enter-room") || performance.now() - lastEntryCueAt < 250;
+  if (!isEntry && entryPlaying()) return;
+  if (requestedAt - (isEntry ? lastEntryCueAt : lastMemberCueAt) < (isEntry ? 250 : 220)) return;
+  if (isEntry) {
+    lastEntryCueAt = requestedAt;
+    memberCueRevision++;
+    roomFeedbackPlaybacks.get("member-join")?.stop();
+  } else lastMemberCueAt = requestedAt;
+  const revision = isEntry ? ++entryCueRevision : ++memberCueRevision;
   const feedback = feedbackRevision;
-  void loadRoomEntryCue(context)
+  void (isEntry ? loadRoomEntryCue(context) : loadRoomMemberJoinCue(context))
     .then(({ buffer }) => {
       if (
         !feedbackEnabled ||
         feedback !== feedbackRevision ||
-        revision !== entryCueRevision ||
+        revision !== (isEntry ? entryCueRevision : memberCueRevision) ||
+        (!isEntry && entryPlaying()) ||
         context.state !== "running" ||
         performance.now() - requestedAt > 250
       )
         return;
       const source = context.createBufferSource();
+      roomFeedbackPlaybacks.get(sound)?.stop();
       const gain = context.createGain();
       source.buffer = buffer;
       gain.gain.value = masterVolume * uiGain.roomEntry;
@@ -372,13 +400,14 @@ const playRoomEntryCue = (): void => {
             source.disconnect();
             gain.disconnect();
             entryGains.delete(gain);
+            if (roomFeedbackPlaybacks.get(sound) === playback) roomFeedbackPlaybacks.delete(sound);
             resolve();
           },
           { once: true },
         ),
       );
       let stopped = false;
-      retainPlayback({
+      const playback = {
         stop: () => {
           if (!stopped) {
             stopped = true;
@@ -386,7 +415,9 @@ const playRoomEntryCue = (): void => {
           }
         },
         ended,
-      });
+      };
+      roomFeedbackPlaybacks.set(sound, playback);
+      retainPlayback(playback);
       source.start();
     })
     .catch(() => undefined);
@@ -409,6 +440,7 @@ export const playUiSound = (sound: UiSound): void => {
       const request = ++latestResumeRequest;
       const revision = feedbackRevision;
       const entryRevision = entryCueRevision;
+      const memberRevision = memberCueRevision;
       const requestedAt = performance.now();
       resumePromise ??= audioContext?.resume().finally(() => {
         resumePromise = undefined;
@@ -419,6 +451,7 @@ export const playUiSound = (sound: UiSound): void => {
             feedbackEnabled &&
             revision === feedbackRevision &&
             (sound !== "enter-room" || entryRevision === entryCueRevision) &&
+            (sound !== "member-join" || memberRevision === memberCueRevision) &&
             request === latestResumeRequest &&
             performance.now() - requestedAt < 250 &&
             audioContext?.state === "running"
@@ -428,8 +461,8 @@ export const playUiSound = (sound: UiSound): void => {
         .catch(() => undefined);
       return;
     }
-    if (sound === "enter-room") {
-      playRoomEntryCue();
+    if (sound === "enter-room" || sound === "member-join") {
+      playRoomFeedbackCue(sound);
       return;
     }
     const playback = activePlayer.play(recipe.cue, {

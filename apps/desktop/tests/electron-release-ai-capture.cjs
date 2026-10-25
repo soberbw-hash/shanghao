@@ -44,7 +44,7 @@ app.whenReady().then(async () => {
     })()`);
     await capture("release-ai-settings.png");
     await window.webContents.executeJavaScript(
-      `document.querySelector('.ai-model-provider-grid').scrollIntoView({block:'center'})`,
+      `(()=>{const grid=document.querySelector('.ai-model-provider-grid');grid.closest('details').open=true;grid.scrollIntoView({block:'center'});if(grid.getBoundingClientRect().height<100)throw Error('model configuration is still collapsed')})()`,
     );
     await capture("release-models.png");
     await window.webContents.executeJavaScript(`(()=>{

@@ -293,9 +293,8 @@ export const createMixedCallStream = (
   };
 
   const stopParticipantCapture = (source: MixedSource, endMs = elapsedMs()): Promise<void> => {
-    if (source.participantStopping) return source.participantStopping;
     const capture = source.participantCapture;
-    if (!capture) return Promise.resolve();
+    if (!capture) return source.participantStopping ?? Promise.resolve();
     source.participantCapture = undefined;
     const stopped = new Promise<void>((resolve) => {
       capture.recorder.addEventListener(
@@ -354,12 +353,7 @@ export const createMixedCallStream = (
   };
 
   const startParticipantCapture = (source: MixedSource): void => {
-    if (
-      !segmentMimeType ||
-      !options.persistParticipantTrack ||
-      source.participantCapture ||
-      source.participantStopping
-    ) {
+    if (!segmentMimeType || !options.persistParticipantTrack || source.participantCapture) {
       return;
     }
     try {
@@ -420,10 +414,7 @@ export const createMixedCallStream = (
         source.analyser.disconnect();
         source.gain.disconnect();
         source.segmentDestination.disconnect();
-        void stopped.finally(() =>
-          source.segmentDestination.stream.getTracks().forEach((track) => track.stop()),
-        );
-        void participantStopped.finally(() =>
+        void Promise.all([stopped, participantStopped]).finally(() =>
           source.segmentDestination.stream.getTracks().forEach((track) => track.stop()),
         );
         sources.delete(key);
@@ -516,9 +507,8 @@ export const createMixedCallStream = (
         // Persist long participant tracks incrementally. This bounds renderer memory, keeps
         // completed five-minute pieces after a crash, and remains compatible with the existing
         // manifest/ASR resume path.
-        void stopParticipantCapture(source).then(() => {
-          if (!disposed && [...sources.values()].includes(source)) startParticipantCapture(source);
-        });
+        void stopParticipantCapture(source);
+        startParticipantCapture(source);
       }
       const shouldApplyFallbackLoudness =
         source.includeInMainMix && !usesFinalRemotePlaybackTap && loudnessBalanceEnabled;
@@ -604,10 +594,10 @@ export const createMixedCallStream = (
         source.analyser.disconnect();
         source.gain.disconnect();
         source.segmentDestination.disconnect();
-        void (source.participantStopping ?? Promise.resolve()).finally(() =>
-          source.segmentDestination.stream.getTracks().forEach((track) => track.stop()),
-        );
-        void (source.stopping ?? Promise.resolve()).finally(() =>
+        void Promise.all([
+          source.participantStopping ?? Promise.resolve(),
+          source.stopping ?? Promise.resolve(),
+        ]).finally(() =>
           source.segmentDestination.stream.getTracks().forEach((track) => track.stop()),
         );
       }

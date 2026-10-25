@@ -103,6 +103,7 @@ export const requireVoiceMemoryProcessRequest = (value: unknown): VoiceMemoryPro
     !validOptionalBoolean(request.manual) ||
     !validOptionalBoolean(request.organize) ||
     !validOptionalBoolean(request.transcribe) ||
+    !validOptionalBoolean(request.fuse) ||
     !validOptionalBoolean(request.restartTranscription) ||
     (request.markers !== undefined &&
       (!Array.isArray(request.markers) ||

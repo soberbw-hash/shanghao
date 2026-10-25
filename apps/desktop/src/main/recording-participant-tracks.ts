@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -230,6 +239,7 @@ export const finalizeRecordingParticipantTracks = async (
 export const loadRecordingParticipantTracks = async (
   recordingId: string,
   _recordingFilePath: string,
+  requireComplete = false,
 ): Promise<PersistedParticipantTrack[] | undefined> => {
   for (const directory of completedDirectories(recordingId)) {
     const manifest = await readManifest(directory, "completed");
@@ -237,10 +247,28 @@ export const loadRecordingParticipantTracks = async (
     // tracks attached to that id instead of rejecting them because the visible path changed.
     if (manifest.recordingId !== recordingId || manifest.tracks.length === 0) continue;
     const existingNames = new Set(await readdir(directory));
-    const tracks = manifest.tracks.filter((track) =>
-      existingNames.has(path.basename(track.filePath)),
-    );
-    if (tracks.length) return tracks;
+    const tracks = manifest.tracks.filter((track) => {
+      if (
+        path.resolve(track.filePath).toLowerCase() !==
+        path.resolve(directory, path.basename(track.filePath)).toLowerCase()
+      )
+        throw new Error("participant_track_path_invalid");
+      const exists = existingNames.has(path.basename(track.filePath));
+      if (!exists && requireComplete) throw new Error("participant_track_audio_missing");
+      return exists;
+    });
+    if (tracks.length) {
+      // Windows AppData virtualization may alias the trusted root. Resolve that root only:
+      // a junction in recordings/ or the recording directory must still fail containment.
+      const canonicalRoot = await realpath(path.dirname(path.dirname(directory)));
+      const canonicalDirectory = path.join(canonicalRoot, "recordings", path.basename(directory));
+      if ((await realpath(directory)).toLowerCase() !== canonicalDirectory.toLowerCase())
+        throw new Error("participant_track_path_invalid");
+      return tracks.map((track) => ({
+        ...track,
+        filePath: path.join(canonicalDirectory, path.basename(track.filePath)),
+      }));
+    }
   }
   return undefined;
 };

@@ -4,6 +4,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { PushToTalkState } from "@private-voice/shared";
+import * as audioSendGate from "../src/renderer/src/features/audio/audioSendGate";
 
 const source = ts.transpileModule(
   readFileSync(
@@ -35,6 +36,7 @@ const harness = (shortcut = "Ctrl+Space") => {
           },
         };
       if (id === "@private-voice/shared") return { PushToTalkState };
+      if (id === "../features/audio/audioSendGate") return audioSendGate;
       if (id === "../store/audioStore")
         return {
           useAudioStore: (select: (state: object) => unknown) =>

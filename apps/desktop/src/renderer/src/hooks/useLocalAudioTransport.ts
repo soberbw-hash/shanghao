@@ -5,6 +5,7 @@ import { PushToTalkState } from "@private-voice/shared";
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { setAudioSendEnabled } from "../features/audio/audioSendGate";
 
 const matchesShortcut = (event: KeyboardEvent, shortcut: string): boolean => {
   if (!shortcut) {
@@ -89,7 +90,7 @@ export const useLocalAudioTransport = (): void => {
     const track = localStream?.getAudioTracks()[0];
     if (!track) return;
     const unsubscribe = window.desktopApi.shortcuts.onPushToTalkState((pressed) => {
-      track.enabled = pressed && !isMuted && !isDeafened;
+      setAudioSendEnabled(track, pressed && !isMuted && !isDeafened);
       setPushToTalkState(pressed ? PushToTalkState.Pressed : PushToTalkState.Armed);
     });
     return unsubscribe;
@@ -110,24 +111,24 @@ export const useLocalAudioTransport = (): void => {
     }
 
     if (!isPushToTalkEnabled) {
-      track.enabled = !isMuted && !isDeafened;
+      setAudioSendEnabled(track, !isMuted && !isDeafened);
       setPushToTalkState(PushToTalkState.Off);
       return;
     }
 
-    track.enabled = false;
+    setAudioSendEnabled(track, false);
     setPushToTalkState(PushToTalkState.Armed);
     let pressedKey: string | undefined;
     const release = () => {
       pressedKey = undefined;
-      track.enabled = false;
+      setAudioSendEnabled(track, false);
       setPushToTalkState(PushToTalkState.Armed);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!pressedKey && !event.repeat && matchesShortcut(event, pushToTalkShortcut)) {
         pressedKey = event.code || event.key;
-        track.enabled = !isMuted && !isDeafened;
+        setAudioSendEnabled(track, !isMuted && !isDeafened);
         setPushToTalkState(PushToTalkState.Pressed);
       }
     };
@@ -143,7 +144,7 @@ export const useLocalAudioTransport = (): void => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", release);
-      track.enabled = false;
+      setAudioSendEnabled(track, false);
     };
   }, [
     isDeafened,

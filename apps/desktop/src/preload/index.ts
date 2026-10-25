@@ -1,8 +1,47 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { remoteControlApi } from "./remote-control";
 
 import { IPC_CHANNELS, type DesktopApi } from "@private-voice/shared";
 
 const desktopApi: DesktopApi = {
+  remoteControl: remoteControlApi,
+  applicationAudio: {
+    listSources: () => ipcRenderer.invoke(IPC_CHANNELS.applicationAudio.listSources),
+    start: (sourceId) => ipcRenderer.invoke(IPC_CHANNELS.applicationAudio.start, sourceId),
+    stop: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.applicationAudio.stop, sessionId),
+    setGain: (sessionId, gain) =>
+      ipcRenderer.invoke(IPC_CHANNELS.applicationAudio.setGain, sessionId, gain),
+    acknowledge: (sessionId, sequence) =>
+      ipcRenderer.send(IPC_CHANNELS.applicationAudio.acknowledge, sessionId, sequence),
+    onFrame: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, frame: Parameters<typeof listener>[0]) =>
+        listener(frame);
+      ipcRenderer.on(IPC_CHANNELS.applicationAudio.frame, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.applicationAudio.frame, wrapped);
+    },
+    onState: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]) =>
+        listener(state);
+      ipcRenderer.on(IPC_CHANNELS.applicationAudio.state, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.applicationAudio.state, wrapped);
+    },
+  },
+  temporaryRooms: {
+    prepareAvatar: (dataUrl) =>
+      ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.prepareAvatar, dataUrl),
+    getProfile: () => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.getProfile),
+    saveProfile: (profile) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.saveProfile, profile),
+    create: () => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.create),
+    join: (code) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.join, code),
+    manage: (request) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.manage, request),
+    release: (contextId) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.release, contextId),
+    onChanged: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]) =>
+        listener(state);
+      ipcRenderer.on(IPC_CHANNELS.temporaryRooms.changed, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.temporaryRooms.changed, wrapped);
+    },
+  },
   roomMemory: {
     get: (id) => ipcRenderer.invoke(IPC_CHANNELS.roomMemory.get, id),
     save: (request) => ipcRenderer.invoke(IPC_CHANNELS.roomMemory.save, request),

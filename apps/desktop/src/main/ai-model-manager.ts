@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, statfs, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -601,6 +602,7 @@ export class AiModelManager {
     const compute = this.scheduler.getComputeSnapshot();
     const runtimePressure = this.pressureController.snapshot;
     return {
+      modelConfigurationBusy: aiModelConfigurationUsage.busy,
       models: MODEL_DEFINITIONS.map((definition) => this.buildModelStatus(definition)),
       scheduler: {
         denials: this.scheduler.getDenialSnapshot(),
@@ -626,9 +628,7 @@ export class AiModelManager {
     };
   }
 
-  getComputeTimeline(): AiComputeEvent[] {
-    return this.scheduler.getComputeTimeline();
-  }
+  getComputeTimeline = (): AiComputeEvent[] => this.scheduler.getComputeTimeline();
 
   setRuntimeStatus(id: AiModelId, ready: boolean, message?: string): void {
     this.runtimeStatus[id] = { ...this.runtimeStatus[id], ready, message };

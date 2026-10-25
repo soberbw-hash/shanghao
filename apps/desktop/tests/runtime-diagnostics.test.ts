@@ -90,8 +90,8 @@ test("diagnostic IPC and bundle expose health without ordinary fault-lab UI", ()
   assert.match(ipc, /flight-recorder\.json/);
   assert.match(ipc, /ai-scheduler\.json/);
   assert.match(ipc, /ai-compute-timeline\.json/);
-  assert.match(diagnosticsCard, /import\.meta\.env\.DEV/);
-  assert.match(diagnosticsCard, /开发测试入口/);
+  assert.doesNotMatch(diagnosticsCard, /开发测试入口|onInjectFault/);
+  assert.match(diagnosticsCard, /遇到了什么问题/);
   assert.doesNotMatch(diagnosticsCard, /Realtime Fault Lab/);
 });
 
@@ -101,7 +101,7 @@ test("diagnostics keep screen-share status readable without exposing raw metrics
   );
   const healthProjection = readDesktop("src/renderer/src/features/diagnostics/healthProjection.ts");
 
-  assert.match(diagnosticsCard, /屏幕分享/);
+  assert.match(diagnosticsCard, /共享画面异常/);
   assert.match(healthProjection, /尚无屏幕分享画面可检查/);
   assert.match(healthProjection, /屏幕分享可能暂时卡住/);
   assert.match(diagnosticsCard, /回到房间/);

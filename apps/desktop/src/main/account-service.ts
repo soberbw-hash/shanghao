@@ -155,6 +155,13 @@ export class AccountDesktopService extends EventEmitter {
     guestAllowed: false,
   };
   private session?: PersistedAccountSession;
+  private authGeneration = 0;
+  private sessionRefresh?: {
+    generation: number;
+    server?: string;
+    forced: boolean;
+    task: Promise<AccountAuthResponse>;
+  };
   private refreshTimer?: NodeJS.Timeout;
   private recoveryTimer?: NodeJS.Timeout;
   private recoveryInFlight?: Promise<void>;
@@ -283,6 +290,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async configureCloudBase(config: CloudBaseClientConfig): Promise<void> {
+    this.authGeneration++;
     await this.cancelSessionRecovery();
     const envId = config.envId.trim();
     const region = config.region.trim();
@@ -351,10 +359,39 @@ export class AccountDesktopService extends EventEmitter {
    * Keep this behind the main-process account service so there is still one
    * authoritative session/token source for the whole desktop app.
    */
-  async getFreshAccessToken(): Promise<string | undefined> {
+  async getFreshAccessToken(forceRefresh = false): Promise<string | undefined> {
     if (this.snapshot.status !== "signed_in" || !this.session) return undefined;
-    await this.ensureFreshSession(false);
-    return this.session?.accessToken;
+    const generation = this.authGeneration,
+      server = this.getRelayServerUrl();
+    try {
+      await this.ensureFreshSession(false, forceRefresh);
+      if (
+        generation !== this.authGeneration ||
+        server !== this.getRelayServerUrl() ||
+        this.snapshot.status !== "signed_in"
+      )
+        throw new AccountDesktopError("account_session_expired");
+      return this.session?.accessToken;
+    } catch (error) {
+      if (
+        generation === this.authGeneration &&
+        server === this.getRelayServerUrl() &&
+        this.snapshot.status === "signed_in"
+      ) {
+        const retry = Boolean(
+          this.session && this.rememberSession && isTransientSessionError(error),
+        );
+        this.suspendSession();
+        this.updateSnapshot({
+          ...this.snapshot,
+          status: isTransientSessionError(error) ? "unavailable" : "signed_out",
+          profile: undefined,
+          message: this.codeOf(error),
+        });
+        if (retry) this.scheduleSessionRecovery();
+      }
+      throw error;
+    }
   }
 
   async getRememberedLogin(): Promise<AccountRememberedLogin | undefined> {
@@ -362,6 +399,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async login(input: AccountLoginRequest): Promise<AccountSnapshot> {
+    this.authGeneration++;
     await this.cancelSessionRecovery();
     this.rememberSession = input.rememberMe !== false;
     const identifier =
@@ -380,7 +418,10 @@ export class AccountDesktopService extends EventEmitter {
         true,
       ).then(
         (response) => response.profile,
-        () => result.profile,
+        (error: unknown) => {
+          if (!isTransientSessionError(error)) throw error;
+          return result.profile;
+        },
       );
       this.updateSnapshot({
         status: "signed_in",
@@ -425,6 +466,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async register(input: AccountRegisterRequest): Promise<AccountSnapshot> {
+    this.authGeneration++;
     await this.cancelSessionRecovery();
     // Registration is a successful sign-in flow too; keep the normal desktop
     // behavior even though the registration form does not ask about it again.
@@ -540,6 +582,7 @@ export class AccountDesktopService extends EventEmitter {
 
   async handleAuthDeepLink(rawUrl: string): Promise<AccountSnapshot> {
     if (!isDeepLinkAuthCallback(rawUrl)) return this.getSnapshot();
+    this.authGeneration++;
 
     if (this.snapshot.message === "account_email_verified") {
       return this.getSnapshot();
@@ -697,6 +740,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async logout(): Promise<AccountSnapshot> {
+    this.authGeneration++;
     await this.cancelSessionRecovery();
     const current = this.session;
     if (this.accountProvider === "cloudbase") {
@@ -724,6 +768,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   async continueAsGuest(): Promise<AccountSnapshot> {
+    this.authGeneration++;
     await this.cancelSessionRecovery();
     if (!this.snapshot.guestAllowed) throw new AccountDesktopError("account_guest_not_allowed");
     await this.clearSession();
@@ -738,6 +783,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   dispose(): void {
+    this.authGeneration++;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = undefined;
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
@@ -753,17 +799,73 @@ export class AccountDesktopService extends EventEmitter {
     return response.profile;
   }
 
-  private async ensureFreshSession(forceProfile: boolean): Promise<AccountAuthResponse> {
+  private ensureFreshSession(
+    forceProfile: boolean,
+    forceRefresh = false,
+  ): Promise<AccountAuthResponse> {
+    const active = this.sessionRefresh;
+    const generation = this.authGeneration,
+      server = this.getRelayServerUrl();
+    if (active?.generation === generation && active.server === server) {
+      if (forceRefresh && !active.forced)
+        return active.task.then(() => this.ensureFreshSession(forceProfile, true));
+      return active.task;
+    }
+    const task = this.refreshSession(forceProfile, forceRefresh).finally(() => {
+      if (this.sessionRefresh?.task === task) this.sessionRefresh = undefined;
+    });
+    this.sessionRefresh = { generation, server, forced: forceRefresh, task };
+    return task;
+  }
+
+  private async refreshSession(
+    forceProfile: boolean,
+    forceRefresh: boolean,
+  ): Promise<AccountAuthResponse> {
     if (!this.session) throw new AccountDesktopError("account_session_expired");
+    let owner = this.session;
+    const generation = this.authGeneration,
+      server = this.getRelayServerUrl();
+    const assertCurrent = () => {
+      if (
+        generation !== this.authGeneration ||
+        owner !== this.session ||
+        server !== this.getRelayServerUrl()
+      )
+        throw new AccountDesktopError("account_session_expired");
+    };
+    const accept = async (next: PersistedAccountSession) => {
+      assertCurrent();
+      const persisted = this.acceptSession(next);
+      owner = this.session!;
+      await persisted;
+      assertCurrent();
+    };
     if (this.accountProvider === "cloudbase") {
       try {
         const restored = this.cloudbaseNeedsRestore
           ? await this.requireCloudBase().restore(this.session)
           : undefined;
+        assertCurrent();
         if (restored) this.cloudbaseNeedsRestore = false;
+        if (!restored) {
+          const sdkSession = await this.requireCloudBase().getSession();
+          assertCurrent();
+          if (
+            sdkSession.accessToken !== this.session.accessToken ||
+            sdkSession.refreshToken !== this.session.refreshToken
+          ) {
+            const sdkProfile = await this.requireCloudBase().getProfile();
+            assertCurrent();
+            if (this.snapshot.profile && sdkProfile.userId !== this.snapshot.profile.userId)
+              throw new AccountDesktopError("account_session_expired");
+            await accept(sdkSession);
+          }
+        }
         const needsRefresh =
           !restored &&
-          this.session.expiresAt - Math.floor(Date.now() / 1_000) <= REFRESH_EARLY_SECONDS;
+          (forceRefresh ||
+            this.session.expiresAt - Math.floor(Date.now() / 1_000) <= REFRESH_EARLY_SECONDS);
         const result =
           restored ??
           (needsRefresh
@@ -775,7 +877,8 @@ export class AccountDesktopService extends EventEmitter {
                   : this.snapshot.profile,
               });
         if (!result.profile) throw new AccountDesktopError("account_profile_unavailable");
-        if (result.session !== this.session) await this.acceptSession(result.session);
+        assertCurrent();
+        if (result.session !== this.session) await accept(result.session);
         const profile =
           forceProfile || needsRefresh
             ? await this.request<{ profile: AccountProfile }>(
@@ -784,10 +887,14 @@ export class AccountDesktopService extends EventEmitter {
                 true,
               ).then(
                 (response) => response.profile,
-                () => result.profile,
+                (error: unknown) => {
+                  if (!isTransientSessionError(error)) throw error;
+                  return result.profile;
+                },
               )
             : result.profile;
         if (!profile) throw new AccountDesktopError("account_profile_unavailable");
+        assertCurrent();
         this.scheduleRefresh();
         return { profile, session: this.session };
       } catch (error) {
@@ -796,7 +903,7 @@ export class AccountDesktopService extends EventEmitter {
       }
     }
     const secondsRemaining = this.session.expiresAt - Math.floor(Date.now() / 1_000);
-    if (secondsRemaining <= REFRESH_EARLY_SECONDS) {
+    if (forceRefresh || secondsRemaining <= REFRESH_EARLY_SECONDS) {
       let refreshed: Session | undefined;
       try {
         const { data, error } = await this.requireSupabase().auth.refreshSession({
@@ -812,10 +919,12 @@ export class AccountDesktopService extends EventEmitter {
           { cause: error },
         );
       }
-      await this.acceptSession(toPersistedSession(refreshed));
+      assertCurrent();
+      await accept(toPersistedSession(refreshed));
       const profile = (
         await this.request<{ profile: AccountProfile }>("/api/account/me", { method: "GET" }, true)
       ).profile;
+      assertCurrent();
       return { profile, session: this.session };
     }
     if (forceProfile) {
@@ -824,6 +933,7 @@ export class AccountDesktopService extends EventEmitter {
         { method: "GET" },
         true,
       );
+      assertCurrent();
       this.scheduleRefresh();
       return { profile: result.profile, session: this.session };
     }
@@ -854,11 +964,15 @@ export class AccountDesktopService extends EventEmitter {
       (this.session.expiresAt - Math.floor(Date.now() / 1_000) - REFRESH_EARLY_SECONDS) * 1_000,
     );
     this.refreshTimer = setTimeout(() => {
+      const generation = this.authGeneration,
+        server = this.getRelayServerUrl();
       void this.ensureFreshSession(false)
         .then((result) => {
+          if (generation !== this.authGeneration || server !== this.getRelayServerUrl()) return;
           if (result.profile) this.updateSnapshot({ ...this.snapshot, profile: result.profile });
         })
         .catch(async (error) => {
+          if (generation !== this.authGeneration || server !== this.getRelayServerUrl()) return;
           const shouldRetry = Boolean(
             this.session && this.rememberSession && isTransientSessionError(error),
           );
@@ -882,6 +996,7 @@ export class AccountDesktopService extends EventEmitter {
   }
 
   private suspendSession(): void {
+    this.authGeneration++;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = undefined;
     this.session = undefined;

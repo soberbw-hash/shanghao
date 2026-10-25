@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { createPortal } from "react-dom";
 import {
   Check,
+  ChevronDown,
   FolderOpen,
   FolderSearch,
   Gauge,
@@ -31,13 +32,18 @@ import {
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { Switch } from "../base/Switch";
-import { SettingsSection } from "./SettingsSection";
 import { VoiceMemoryDetail } from "./VoiceMemoryDetail";
 import { ModelTestPanel } from "./ModelTestPanel";
 import { RecordingClipsPanel } from "./RecordingClipsPanel";
 import { RecordingRenameDialog } from "./RecordingRenameDialog";
 import { RecordingCardMeta } from "./RecordingCardMeta";
 import { RecordingMarkerCue } from "./RecordingMarkerCue";
+import { RecordingLibraryFiltersControl } from "./RecordingLibraryFilters";
+import {
+  EMPTY_RECORDING_FILTERS,
+  filterRecordingLibrary,
+  type RecordingLibraryFilters,
+} from "../../features/recording/recordingLibrarySearch";
 import { useRecordingDurations } from "../../hooks/useRecordingDurations";
 import { useRecordingClipPreview } from "../../hooks/useRecordingClipPreview";
 import { useRecordingStore } from "../../store/recordingStore";
@@ -187,9 +193,15 @@ const voiceMemoryStatus = (
     return {
       label: record.errorMessage?.startsWith("manual_required:long_recording")
         ? "长录音需手动转录"
-        : record.errorMessage?.startsWith("deferred:")
-          ? "等待后台处理"
-          : `已暂停 ${progress}%`,
+        : record.errorMessage === "deferred:automatic_transcription_disabled"
+          ? "自动转录已关闭"
+          : record.errorMessage?.startsWith("deferred:")
+            ? /^deferred:(?:cloud|custom)_asr_(?:http_|network_error|timeout)/.test(
+                record.errorMessage,
+              )
+              ? "等待云端重试"
+              : "等待后台处理"
+            : `已暂停 ${progress}%`,
       progress: progress || undefined,
       modelLabel,
       modelTitle,
@@ -210,7 +222,7 @@ const voiceMemoryStatus = (
       tone: "is-error",
     };
   }
-  return { label: "等待处理", tone: "is-queued" };
+  return { label: "排队中", tone: "is-queued" };
 };
 
 const recordingDate = (item: RecordingLibraryItem): Date =>
@@ -241,6 +253,8 @@ export const RecordingLibrarySettingsCard = ({
   const [selectedId, setSelectedId] = useState<string>();
   const clipPreview = useRecordingClipPreview(audioRef, selectedId);
   const [recordingFilter, setRecordingFilter] = useState<RecordingFilter>("all");
+  const [contentFilters, setContentFilters] =
+    useState<RecordingLibraryFilters>(EMPTY_RECORDING_FILTERS);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const resetClipPreview = clipPreview.reset;
@@ -404,18 +418,23 @@ export const RecordingLibrarySettingsCard = ({
       return;
     }
     setRecordingFilter("all");
+    setContentFilters(EMPTY_RECORDING_FILTERS);
     setSelectedId(item.id);
     setPendingSeekMs(openTarget.startMs);
   }, [library, openTarget, pushToast]);
 
   const visibleItems = useMemo(
     () =>
-      (library?.items ?? []).filter((item) => {
+      filterRecordingLibrary(library?.items ?? [], voiceMemories, contentFilters).filter((item) => {
         if (recordingFilter === "favorites") return item.isFavorite;
         return true;
       }),
-    [library?.items, recordingFilter],
+    [library?.items, recordingFilter, voiceMemories, contentFilters],
   );
+  useEffect(() => {
+    if (!isLibraryLoading && !visibleItems.some((item) => item.id === selectedId))
+      setSelectedId(visibleItems[0]?.id);
+  }, [visibleItems, selectedId, isLibraryLoading]);
 
   const groupedItems = useMemo(() => {
     const groups = new Map<string, RecordingLibraryItem[]>();
@@ -443,7 +462,7 @@ export const RecordingLibrarySettingsCard = ({
 
   useEffect(() => {
     setRenderLimit(RECORDING_RENDER_BATCH);
-  }, [recordingFilter, library?.directory]);
+  }, [recordingFilter, contentFilters, library?.directory]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -566,7 +585,11 @@ export const RecordingLibrarySettingsCard = ({
   const selectRecordingFilter = (nextFilter: RecordingFilter) => {
     setRecordingFilter(nextFilter);
     setSelectedRecordingIds(new Set());
-    const nextItem = library?.items.find((item) => {
+    const nextItem = filterRecordingLibrary(
+      library?.items ?? [],
+      voiceMemories,
+      contentFilters,
+    ).find((item) => {
       if (nextFilter === "favorites") return item.isFavorite;
       return true;
     });
@@ -714,75 +737,88 @@ export const RecordingLibrarySettingsCard = ({
 
   return (
     <div className="recording-library-page">
-      <SettingsSection title="录音库" description="录音、标记和播放进度都保存在本机。">
-        <div className="recording-library-utility-bar">
-          <div className="recording-library-location-tools">
-            <FolderOpen className="size-4 shrink-0" aria-hidden="true" />
-            <span className="recording-library-utility-label">存放位置</span>
-            <strong
-              className="recording-library-location-path"
-              title={library?.directory ?? "正在读取…"}
+      <header className="recording-library-toolbar">
+        <h2>录音库</h2>
+        <span className="recording-library-local-note">保存在本机</span>
+        <details className="recording-storage-settings">
+          <summary>
+            <FolderOpen aria-hidden="true" />
+            <span>存储设置</span>
+            <span>{formatBytes(library?.totalBytes ?? 0)}</span>
+            <ChevronDown aria-hidden="true" />
+          </summary>
+          <div className="recording-library-utility-bar">
+            <div className="recording-library-location-tools">
+              <FolderOpen className="size-4 shrink-0" aria-hidden="true" />
+              <span className="recording-library-utility-label">存放位置</span>
+              <strong
+                className="recording-library-location-path"
+                title={library?.directory ?? "正在读取…"}
+              >
+                {library?.directory ?? "正在读取…"}
+              </strong>
+              <Button
+                variant="secondary"
+                className="h-9 shrink-0 px-3"
+                onClick={() => void chooseDirectory()}
+              >
+                <MapPin className="size-4" aria-hidden="true" /> 更改
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-9 shrink-0 px-3"
+                onClick={() => void window.desktopApi.recording.openDirectory()}
+              >
+                打开
+              </Button>
+            </div>
+            <div
+              className="recording-library-cleanup-tools"
+              title="只自动清理检测为整段静音的录音；有声短录音与读取失败的录音保留。超过容量阈值时也不会自动回收有声录音。"
             >
-              {library?.directory ?? "正在读取…"}
-            </strong>
-            <Button
-              variant="secondary"
-              className="h-9 shrink-0 px-3"
-              onClick={() => void chooseDirectory()}
-            >
-              <MapPin className="size-4" aria-hidden="true" /> 更改
-            </Button>
-            <Button
-              variant="secondary"
-              className="h-9 shrink-0 px-3"
-              onClick={() => void window.desktopApi.recording.openDirectory()}
-            >
-              打开
-            </Button>
+              <span className="recording-library-usage">
+                录音占用 <strong>{formatBytes(library?.totalBytes ?? 0)}</strong>
+              </span>
+              <label
+                className="recording-library-auto-cleanup"
+                title="只自动清理整段静音录音，收藏、带标记、有声音及无法读取的录音保留"
+              >
+                <span>自动清理</span>
+                <Switch
+                  isChecked={settings.isRecordingWasteAutoCleanupEnabled}
+                  ariaLabel="自动清理整段静音的录音"
+                  onChange={(checked) =>
+                    void onChange({ isRecordingWasteAutoCleanupEnabled: checked })
+                  }
+                />
+              </label>
+              <label
+                className="settings-quota-control"
+                title="容量阈值触发静音检查；不会自动删除有声录音"
+              >
+                <span className="recording-library-quota-label">容量提醒</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  step={1}
+                  aria-label="录音库自动清理容量上限"
+                  value={settings.recordingLibraryQuotaGb}
+                  onChange={(event) =>
+                    void onChange({
+                      recordingLibraryQuotaGb: Math.max(
+                        1,
+                        Math.min(100, Number(event.target.value) || 20),
+                      ),
+                    })
+                  }
+                />
+                <span>GB</span>
+              </label>
+            </div>
           </div>
-          <div
-            className="recording-library-cleanup-tools"
-            title="自动清理不足10分钟或静音录音；无法读取的录音留待人工查看。超过容量上限时，回收最旧的未收藏、无标记录音。"
-          >
-            <span className="recording-library-usage">
-              录音占用 <strong>{formatBytes(library?.totalBytes ?? 0)}</strong>
-            </span>
-            <label
-              className="recording-library-auto-cleanup"
-              title="录音保存后自动清理不足10分钟或静音的录音；无法读取的录音留待人工查看"
-            >
-              <span>自动清理</span>
-              <Switch
-                isChecked={settings.isRecordingWasteAutoCleanupEnabled}
-                ariaLabel="自动清理不足10分钟或静音的录音"
-                onChange={(checked) =>
-                  void onChange({ isRecordingWasteAutoCleanupEnabled: checked })
-                }
-              />
-            </label>
-            <label className="settings-quota-control" title="录音库容量上限">
-              <span className="recording-library-quota-label">上限</span>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                step={1}
-                aria-label="录音库自动清理容量上限"
-                value={settings.recordingLibraryQuotaGb}
-                onChange={(event) =>
-                  void onChange({
-                    recordingLibraryQuotaGb: Math.max(
-                      1,
-                      Math.min(100, Number(event.target.value) || 20),
-                    ),
-                  })
-                }
-              />
-              <span>GB</span>
-            </label>
-          </div>
-        </div>
-      </SettingsSection>
+        </details>
+      </header>
 
       <div className="recording-library-workspace">
         <aside className="recording-library-browser" aria-label="录音列表">
@@ -826,6 +862,14 @@ export const RecordingLibrarySettingsCard = ({
               </button>
             ))}
           </div>
+          <RecordingLibraryFiltersControl
+            items={library?.items ?? []}
+            filters={contentFilters}
+            onChange={(filters) => {
+              setContentFilters(filters);
+              setSelectedRecordingIds(new Set());
+            }}
+          />
           {isSelectionMode ? (
             <div className="recording-bulk-toolbar" role="group" aria-label="批量管理录音">
               <span>已选 {selectedRecordings.length} 条</span>
@@ -913,7 +957,7 @@ export const RecordingLibrarySettingsCard = ({
                             />
                             {memoryStatus && memoryStatus.tone !== "is-ready" ? (
                               <span className={`recording-item-ai-status ${memoryStatus.tone}`}>
-                                <span>{memoryStatus.label}</span>
+                                <span title={memoryStatus.label}>{memoryStatus.label}</span>
                                 {memoryStatus.progress !== undefined ? (
                                   <span
                                     className="recording-item-ai-progress"
@@ -1169,16 +1213,6 @@ export const RecordingLibrarySettingsCard = ({
                   {playbackError}
                 </div>
               ) : null}
-              <div key="recording-clips-slot">
-                <RecordingClipsPanel
-                  key={`clips:${selected.id}`}
-                  recording={selected}
-                  durationMs={Math.round(duration * 1_000)}
-                  settings={settings}
-                  onChange={onChange}
-                  onPreview={clipPreview.play}
-                />
-              </div>
               <div key="recording-analysis-slot">
                 {isModelComparisonOpen ? (
                   <ModelTestPanel
@@ -1201,6 +1235,16 @@ export const RecordingLibrarySettingsCard = ({
                     onSeek={seekTranscript}
                   />
                 )}
+              </div>
+              <div key="recording-clips-slot">
+                <RecordingClipsPanel
+                  key={`clips:${selected.id}`}
+                  recording={selected}
+                  durationMs={Math.round(duration * 1_000)}
+                  settings={settings}
+                  onChange={onChange}
+                  onPreview={clipPreview.play}
+                />
               </div>
             </div>
           ) : (

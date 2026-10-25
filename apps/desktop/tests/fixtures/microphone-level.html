@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>麦克风背景音量测试</title>
+    <script>
+      window.desktopApi = { app: { writeLog: async () => {} } };
+    </script>
+    <script type="module">
+      import { injectIntoGlobalHook } from "/@react-refresh";
+      injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./microphone-level.tsx"></script>
+  </body>
+</html>

@@ -6,6 +6,7 @@ import type { CustomAiProviderStore } from "./custom-ai-provider-store";
 import type { SettingsStore } from "./settings-store";
 import type { SignalingClientBridge } from "./signaling-client";
 import type { LocalLLMProvider, LocalLlmGenerateResult } from "./local-llm-provider";
+import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
 
 export type AiTextPurpose = "organize" | "question";
 
@@ -37,9 +38,12 @@ const extractJsonObject = <T>(value: string): T => {
 };
 
 export const resolveAiTextProvider = (
-  _purpose: AiTextPurpose,
+  purpose: AiTextPurpose,
   organizerProvider: AiTextProvider,
-): AiTextProvider => (organizerProvider === "custom" ? "custom" : "cloud");
+): AiTextProvider =>
+  organizerProvider === "custom" || (purpose === "organize" && organizerProvider === "local")
+    ? "custom"
+    : "cloud";
 
 /** Routes summary/question work without coupling ASR to a particular text model. */
 export class AiTextGateway {
@@ -75,6 +79,10 @@ export class AiTextGateway {
   }
 
   async generateJsonWithMetrics<T>(request: GenerateJsonRequest): Promise<GeneratedJson<T>> {
+    return aiModelConfigurationUsage.run(() => this.generateWithProvider<T>(request));
+  }
+
+  private async generateWithProvider<T>(request: GenerateJsonRequest): Promise<GeneratedJson<T>> {
     const provider = this.providerFor(request.purpose);
     if (request.provider && request.provider !== provider) throw new Error("ai_provider_changed");
     if (provider === "cloud") {
@@ -92,7 +100,12 @@ export class AiTextGateway {
     if (provider === "custom") {
       const roomId =
         request.roomId ?? (request.purpose === "question" ? this.questionRoomId() : undefined);
-      const memory = roomId ? await this.memoryContext?.(roomId, request.signal) : undefined;
+      // Saved recordings own their text context. Reading live room memory for every
+      // chunk couples background summaries/fusion to room membership and navigation.
+      const memory =
+        request.purpose === "question" && roomId
+          ? await this.memoryContext?.(roomId, request.signal)
+          : undefined;
       request.signal?.throwIfAborted();
       if (request.purpose === "question" && this.questionRoomId() !== roomId)
         throw new Error("ai_question_room_changed");
@@ -101,6 +114,7 @@ export class AiTextGateway {
           prompt: memory ? `${memory}\n\n${request.prompt}` : request.prompt,
           maxNewTokens: request.maxNewTokens,
           signal: request.signal,
+          timeoutMs: request.purpose === "organize" ? 180000 : undefined,
         }),
       };
     }

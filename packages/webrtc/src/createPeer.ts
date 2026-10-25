@@ -1,4 +1,12 @@
 import type { IceCandidatePayload, SessionDescriptionPayload } from "@private-voice/signaling";
+import type { RemoteControlInputEnvelope } from "@private-voice/shared/types/remote-control.types";
+import {
+  RemoteControlTransport,
+  type RemoteControlTransportOptions,
+  type RemoteControlMessage,
+  type RemoteControlSendResult,
+  type RemoteControlCapability,
+} from "./remoteControlTransport";
 
 export interface MeshPeerOptions {
   peerId: string;
@@ -7,6 +15,7 @@ export interface MeshPeerOptions {
   onIceCandidate: (candidate: IceCandidatePayload) => void;
   onRemoteStream: (stream: MediaStream) => void;
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
+  remoteControl?: RemoteControlTransportOptions;
   onDiagnosticEvent?: (
     event:
       | "connection_state"
@@ -54,6 +63,7 @@ export interface ScreenShareReceiverStats {
 }
 
 export interface NetworkAdaptationSample {
+  outboundPacketLossPercent?: number;
   packetLossPercent?: number;
   roundTripTimeMs?: number;
   jitterMs?: number;
@@ -159,7 +169,7 @@ export const tuneOpusSdp = (sdp?: string): string | undefined => {
 };
 
 export const selectNetworkTier = (sample: NetworkAdaptationSample): NetworkAdaptationTier => {
-  const packetLoss = sample.packetLossPercent ?? 0;
+  const packetLoss = Math.max(sample.packetLossPercent ?? 0, sample.outboundPacketLossPercent ?? 0);
   const roundTripTime = sample.roundTripTimeMs ?? 0;
   const jitter = sample.jitterMs ?? 0;
   const concealment = sample.concealmentPercent ?? 0;
@@ -209,6 +219,7 @@ export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
 
 export class MeshPeerConnection {
   readonly connection: RTCPeerConnection;
+  private readonly remoteControl?: RemoteControlTransport;
   private readonly pendingIceCandidates: IceCandidatePayload[] = [];
   private readonly remoteStream = new MediaStream();
   private readonly screenTransceiver: RTCRtpTransceiver;
@@ -223,6 +234,12 @@ export class MeshPeerConnection {
     this.connection = new RTCPeerConnection({
       iceServers: options.iceServers ?? DEFAULT_ICE_SERVERS,
     });
+    if (options.remoteControl)
+      this.remoteControl = new RemoteControlTransport(
+        this.connection,
+        options.peerId,
+        options.remoteControl,
+      );
 
     for (const track of options.localStream.getTracks()) {
       this.connection.addTrack(track, options.localStream);
@@ -303,6 +320,7 @@ export class MeshPeerConnection {
   }
 
   private async createOfferInternal(iceRestart: boolean): Promise<SessionDescriptionPayload> {
+    this.remoteControl?.createChannels();
     const offer = await this.connection.createOffer({
       offerToReceiveAudio: true,
       offerToReceiveVideo: true,
@@ -322,6 +340,7 @@ export class MeshPeerConnection {
 
   async acceptOffer(offer: SessionDescriptionPayload): Promise<SessionDescriptionPayload> {
     if (this.connection.signalingState === "have-local-offer") {
+      this.remoteControl?.cancelPendingOffer();
       await this.connection.setLocalDescription({ type: "rollback" });
       this.options.onDiagnosticEvent?.("connection_state", {
         peerId: this.options.peerId,
@@ -551,9 +570,28 @@ export class MeshPeerConnection {
   }
 
   destroy(): void {
+    this.remoteControl?.destroy();
     this.pendingIceCandidates.length = 0;
     void this.screenTransceiver.sender.replaceTrack(null).catch(() => undefined);
     this.connection.close();
+  }
+
+  getRemoteControlCapability(): RemoteControlCapability {
+    return (
+      this.remoteControl?.capability() ?? { available: false, reason: "remote-control-disabled" }
+    );
+  }
+
+  sendRemoteControl(message: RemoteControlMessage): RemoteControlSendResult {
+    return (
+      this.remoteControl?.sendReliable(message) ?? { ok: false, reason: "remote-control-disabled" }
+    );
+  }
+
+  sendRemotePointer(input: RemoteControlInputEnvelope): RemoteControlSendResult {
+    return (
+      this.remoteControl?.sendPointer(input) ?? { ok: false, reason: "remote-control-disabled" }
+    );
   }
 
   private numberStat(value: unknown): number | undefined {

@@ -1,21 +1,38 @@
-.microphone-meter-control {
+.microphone-meter-shell {
   position: relative;
   isolation: isolate;
-  overflow: hidden;
+  border-radius: var(--room-dock-corner-radius, 22px);
+  background: linear-gradient(180deg, #fff, #f6f9fc);
 }
-.microphone-meter-control > :not(.microphone-level-fill) {
-  position: relative;
-  z-index: 1;
+.microphone-meter-shell:not(.is-muted) > button {
+  background: transparent !important;
 }
-.microphone-level-fill {
-  opacity: 0;
+.microphone-meter-control > .shanghao-motion-button-content {
+  position: static;
+  border-radius: inherit;
+}
+.microphone-level-viewport {
   position: absolute;
   inset: 0;
   z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
   pointer-events: none;
-  background: linear-gradient(to top, rgba(65, 191, 139, 0.54), rgba(124, 225, 174, 0.4));
+}
+.microphone-level-fill {
+  --microphone-tint: 105 179 155;
+  opacity: 0;
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--microphone-tint) / 0.2);
   transform: translateY(100%);
-  transition: transform 140ms ease-out;
+  transition: transform 150ms ease-out;
+}
+.microphone-level-fill[data-band="yellow"] {
+  --microphone-tint: 207 175 101;
+}
+.microphone-level-fill[data-band="red"] {
+  --microphone-tint: 207 132 133;
 }
 .microphone-level-fill[data-active="true"] {
   opacity: 1;
@@ -23,13 +40,13 @@
 .microphone-level-fill::before {
   content: "";
   position: absolute;
-  width: 200%;
-  height: 15px;
-  top: -6px;
-  left: -50%;
+  width: 140%;
+  height: 8px;
+  top: -3px;
+  left: -20%;
   border-radius: 45%;
-  background: rgba(125, 225, 177, 0.4);
-  animation: microphone-water 3s linear infinite;
+  background: rgb(var(--microphone-tint) / 0.12);
+  animation: microphone-water 4.2s ease-in-out infinite;
   animation-play-state: paused;
 }
 .microphone-level-fill[data-active="true"]::before {
@@ -37,7 +54,7 @@
 }
 @keyframes microphone-water {
   50% {
-    transform: translateX(12%) scaleY(0.6);
+    transform: translateX(8%) scaleY(0.65);
   }
 }
 @media (prefers-reduced-motion: reduce) {

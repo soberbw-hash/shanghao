@@ -3,22 +3,22 @@ import { publishVoiceMemoryOrganization } from "./recording-recap-publisher";
 
 type UploadDependencies = Parameters<typeof publishVoiceMemoryOrganization>[0];
 
-/** One upload per recording, with opt-in evaluated at completion and before sending. */
+/** Publication is always an explicit action; old automatic-upload preferences are ignored. */
 export const createRecordingRecapUpload = (
   dependencies: Omit<UploadDependencies, "recordingId" | "automatic">,
-  getSettings: () => Pick<AppSettings, "isAiAutoUploadEnabled">,
+  _legacySettings: () => Pick<AppSettings, "isAiAutoUploadEnabled">,
 ) => {
   const pending = new Map<string, Promise<VoiceMemoryRecord>>();
   const upload = (recordingId: string, automatic = false): Promise<VoiceMemoryRecord> => {
+    if (automatic)
+      return dependencies.voiceMemory.get(recordingId).then((record) => {
+        if (!record) throw new Error("voice_memory_organization_required");
+        return record;
+      });
     const existing = pending.get(recordingId);
     if (existing) return existing;
     const task = Promise.resolve()
       .then(async () => {
-        if (automatic && getSettings().isAiAutoUploadEnabled !== true) {
-          const record = await dependencies.voiceMemory.get(recordingId);
-          if (!record) throw new Error("voice_memory_organization_required");
-          return record;
-        }
         return publishVoiceMemoryOrganization({ ...dependencies, recordingId, automatic });
       })
       .finally(() => pending.delete(recordingId));
@@ -27,16 +27,6 @@ export const createRecordingRecapUpload = (
   };
   return {
     upload,
-    onCompleted(record: VoiceMemoryRecord) {
-      if (
-        getSettings().isAiAutoUploadEnabled !== true ||
-        record.phase !== "ready" ||
-        record.organization?.status !== "completed" ||
-        record.organizationPublication ||
-        record.taskId?.startsWith("model-comparison:")
-      )
-        return;
-      void upload(record.recordingId, true).catch(() => undefined);
-    },
+    onCompleted(_record: VoiceMemoryRecord) {},
   };
 };

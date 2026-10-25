@@ -50,7 +50,12 @@ import { clampMemberVolume } from "../audio/memberVolume";
 import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
 import { hasPlayableAudioTrack } from "../audio/remoteAudioTrack";
 import { replaceOutgoingAudioTrack } from "../audio/replaceOutgoingAudioTrack";
-import { logPeerNetworkAdaptation, PeerStatsMonitor } from "./PeerStatsMonitor";
+import {
+  logPeerNetworkAdaptation,
+  logPeerAudioRecovery,
+  PeerStatsMonitor,
+} from "./PeerStatsMonitor";
+import { logPeerConnectionDiagnostic } from "./PeerStatsMonitor";
 import { PeerOperationQueue } from "./PeerOperationQueue";
 import { PeerRecoveryCoordinator } from "./PeerRecoveryCoordinator";
 import { SignalingBridge } from "./SignalingBridge";
@@ -71,6 +76,7 @@ import { ReliableChatTransport } from "../chat/ReliableChatTransport";
 import { RoomSocialTransport } from "../chat/RoomSocialTransport";
 import type { QuickMessageControlEvent } from "../chat/quickReplies";
 import { ScreenAudioMixer } from "../screen-share/ScreenAudioMixer";
+import { RoomRemoteControlBridge } from "./RoomRemoteControlBridge";
 import { RoomScreenShareCoordinator } from "../screen-share/RoomScreenShareCoordinator";
 import {
   serverBuildSupportsDailyRoomReports,
@@ -136,6 +142,7 @@ const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const AUDIO_PATH_SYNC_INTERVAL_MS = 3_000;
 export { serverBuildSupportsDailyRoomReports, serverBuildSupportsReliableChat };
 export class RoomClient {
+  private readonly remoteControl: RoomRemoteControlBridge;
   private readonly signalingBridge = new SignalingBridge();
   private readonly peers = new Map<string, MeshPeerConnection>();
   private readonly peerVolumes = new Map<string, number>();
@@ -197,6 +204,7 @@ export class RoomClient {
   private hasLostSignalingOwnership = false;
 
   constructor(private readonly options: RoomClientOptions) {
+    this.remoteControl = new RoomRemoteControlBridge(this.peers);
     this.localStream = options.localStream;
     this.primaryInputTrack = options.localStream.getAudioTracks()[0];
     this.nickname = options.nickname;
@@ -265,6 +273,7 @@ export class RoomClient {
           hasRemoteAudio: this.webrtcAudioPeerIds.has(peerId),
           isRemoteMuted: member?.isMuted ?? false,
           isRemoteSpeaking: member?.speakingState === MemberSpeakingState.Speaking,
+          isLocalSpeaking: this.lastPublishedSpeakingState === true && !this.lastPublishedMuteState,
           iceState: this.peers.get(peerId)?.connection.iceConnectionState ?? "new",
         };
       },
@@ -318,8 +327,9 @@ export class RoomClient {
   }
 
   private async disconnectNow(): Promise<void> {
+    this.remoteControl.dispose();
     this.shouldReconnect = false;
-    this.rejectPendingConnection(new Error("room_client_disconnected"));
+    this.settlePendingConnection(new Error("room_client_disconnected"));
     this.stopSnapshotRecovery();
     this.stopHeartbeat();
     this.stopAudioPathSync();
@@ -481,7 +491,7 @@ export class RoomClient {
   async replaceInputTrack(nextTrack: MediaStreamTrack): Promise<void> {
     const previousPrimaryTrack = this.primaryInputTrack;
     const systemAudioTrack = this.screenShareCoordinator.activeStream?.getAudioTracks()[0];
-    if (systemAudioTrack) {
+    if (systemAudioTrack || this.screenAudioMixer.hasApplicationAudio()) {
       await this.applyScreenAudioMix(nextTrack, systemAudioTrack);
     } else {
       await this.applyOutgoingAudioTrack(nextTrack);
@@ -494,6 +504,17 @@ export class RoomClient {
 
   setPeerVolume(peerId: string, volume: number): void {
     this.peerVolumes.set(peerId, clampMemberVolume(volume));
+  }
+
+  async setApplicationAudioTrack(track?: MediaStreamTrack, sourceName?: string): Promise<void> {
+    if (this.isDisconnecting || this.hasLostSignalingOwnership) throw Error("room_not_connected");
+    await this.screenAudioMixer.setApplicationTrack(
+      track,
+      this.primaryInputTrack,
+      this.screenShareCoordinator.activeStream?.getAudioTracks()[0],
+      (next) => this.applyOutgoingAudioTrack(next),
+    );
+    this.presenceCoordinator.setApplicationAudioName(track ? sourceName || "应用" : "");
   }
 
   private openSocket(isReconnect: boolean): Promise<void> {
@@ -510,11 +531,11 @@ export class RoomClient {
     this.presenceCoordinator.resetPublication();
 
     return new Promise((resolve, reject) => {
-      this.rejectPendingConnection(new Error("signaling_session_superseded"));
+      this.settlePendingConnection(new Error("signaling_session_superseded"));
       const timeout = window.setTimeout(() => {
         if (this.pendingConnection !== pending) return;
         const error = new Error(this.wsOpened ? "join_ack_timeout" : "network_unreachable");
-        this.rejectPendingConnection(error);
+        this.settlePendingConnection(error);
         void this.signalingBridge.close();
       }, INITIAL_CONNECT_TIMEOUT_MS);
 
@@ -531,7 +552,7 @@ export class RoomClient {
         )
         .catch((error) => {
           if (this.pendingConnection !== pending) return;
-          this.rejectPendingConnection(error instanceof Error ? error : new Error(String(error)));
+          this.settlePendingConnection(error instanceof Error ? error : new Error(String(error)));
         });
     });
   }
@@ -569,14 +590,14 @@ export class RoomClient {
         const message = JSON.parse(payload.data) as SignalEnvelope;
         await this.handleSignal(message);
       } catch {
-        this.rejectPendingConnection(new Error("invalid_signaling_payload"));
+        this.settlePendingConnection(new Error("invalid_signaling_payload"));
       }
       return;
     }
 
     if (payload.type === "error") {
       if (!this.hasJoinedOnce) {
-        this.rejectPendingConnection(new Error(payload.message || "network_unreachable"));
+        this.settlePendingConnection(new Error(payload.message || "network_unreachable"));
       }
       return;
     }
@@ -634,12 +655,12 @@ export class RoomClient {
       }
 
       if (!this.hasJoinedOnce) {
-        this.rejectPendingConnection(new Error("signaling_socket_closed"));
+        this.settlePendingConnection(new Error("signaling_socket_closed"));
         this.options.onConnectionState(RoomConnectionState.Failed);
         return;
       }
 
-      this.rejectPendingConnection(new Error("signaling_socket_closed"));
+      this.settlePendingConnection(new Error("signaling_socket_closed"));
       this.reconnectCoordinator.beginEpisode();
       this.options.onConnectionState(
         this.webrtcReadyPeerIds.size > 0
@@ -747,10 +768,9 @@ export class RoomClient {
     musicActivity?: MusicActivity,
     gameIconDataUrl?: string,
     callModeActive?: boolean,
+    gameSession?: RoomMember["gameSession"],
   ): void {
-    // Keep the coordinator's member snapshot in lockstep with the optimistic UI.
-    // Otherwise, an unrelated peer event received before our server echo can replay
-    // the local member's previous seat and make the character briefly jump back.
+    // Keep optimistic seats in the coordinator so unrelated events cannot replay the old seat.
     this.memberEvents.updateLocalPresence(
       isDeafened,
       activity,
@@ -759,6 +779,7 @@ export class RoomClient {
       musicActivity,
       gameIconDataUrl,
       callModeActive,
+      gameSession,
     );
     this.presenceCoordinator.update(
       isDeafened,
@@ -768,6 +789,7 @@ export class RoomClient {
       musicActivity,
       gameIconDataUrl,
       callModeActive,
+      gameSession,
     );
   }
   /** Kept as a narrow compatibility seam for reconnect replay and focused tests. */
@@ -799,7 +821,7 @@ export class RoomClient {
       this.lastServerError = `version_mismatch:client=${clientProtocolVersion || "unknown"},server=${serverProtocolVersion || "unknown"}`;
       this.shouldReconnect = false;
       this.options.onConnectionState(RoomConnectionState.Failed);
-      this.rejectPendingConnection(error);
+      this.settlePendingConnection(error);
       void this.signalingBridge.close();
       void writeRendererLog("signaling", "error", "Relay protocol mismatch", {
         roomId: payload.roomId,
@@ -816,7 +838,7 @@ export class RoomClient {
     this.hasJoinedOnce = true;
     this.joinStage = "join_ack_received";
     this.options.onConnectionState(RoomConnectionState.WaitingSnapshot);
-    this.resolvePendingConnection();
+    this.settlePendingConnection();
     this.startSnapshotRecovery();
     void this.presenceCoordinator.publish();
     this.chatTransport.retryPending();
@@ -875,7 +897,7 @@ export class RoomClient {
     );
     this.hasJoinedOnce = true;
     this.joinAckReceived = true;
-    this.resolvePendingConnection();
+    this.settlePendingConnection();
 
     const activePeerIds = collectActivePeerIds(normalizedMembers, this.options.peerId);
     const previousPeerIds = [...this.remotePeerIds];
@@ -1015,7 +1037,7 @@ export class RoomClient {
 
   private rejectTerminalConnection(error: Error): void {
     this.shouldReconnect = false;
-    this.rejectPendingConnection(error);
+    this.settlePendingConnection(error);
     this.options.onConnectionState(RoomConnectionState.Failed);
     this.options.onReconnectExhausted?.(error);
   }
@@ -1044,7 +1066,7 @@ export class RoomClient {
         this.options.onReconnectExhausted?.(new Error(decision.reason ?? "signaling_error"));
     }
     this.options.onConnectionState(RoomConnectionState.Failed);
-    this.rejectPendingConnection(new Error(decision.reason ?? "signaling_error"));
+    this.settlePendingConnection(new Error(decision.reason ?? "signaling_error"));
   }
 
   async sendChatMessage(
@@ -1057,9 +1079,7 @@ export class RoomClient {
 
   async requestDailyRoomReports(targetRoomId: string): Promise<boolean> {
     if (!this.canSendChat()) throw new Error("signaling_not_connected");
-    // 2.5.x servers share protocol 7 but do not know this additive message.
-    // Sending it would make the legacy server return invalid_payload, which in
-    // turn marks the entire room connection failed and disables chat.
+    // Protocol-7 servers before this additive message reject it and disable the room connection.
     if (!serverBuildSupportsDailyRoomReports(this.serverBuildNumber)) return false;
     await this.send({
       type: "request_daily_room_reports",
@@ -1173,6 +1193,7 @@ export class RoomClient {
 
   private createPeer(targetPeerId: string): MeshPeerConnection {
     const peer = new MeshPeerConnection({
+      remoteControl: this.remoteControl.handlers(targetPeerId),
       peerId: targetPeerId,
       localStream: this.localStream,
       iceServers: this.iceServers,
@@ -1273,14 +1294,7 @@ export class RoomClient {
           }
         }
       },
-      onDiagnosticEvent: (event, context) => {
-        void writeRendererLog(
-          "webrtc",
-          event === "connection_state" && context.state === "failed" ? "warn" : "info",
-          `WebRTC ${event}`,
-          context,
-        );
-      },
+      onDiagnosticEvent: logPeerConnectionDiagnostic,
     });
 
     this.peers.set(targetPeerId, peer);
@@ -1404,7 +1418,7 @@ export class RoomClient {
       error: normalizedError.message,
     });
     this.isSignalingConnected = false;
-    this.rejectPendingConnection(normalizedError);
+    this.settlePendingConnection(normalizedError);
     void this.signalingBridge.close();
   }
 
@@ -1441,7 +1455,7 @@ export class RoomClient {
     this.shouldReconnect = false;
     this.isSignalingConnected = false;
     this.joinAckReceived = false;
-    this.rejectPendingConnection(new Error("signaling_session_superseded"));
+    this.settlePendingConnection(new Error("signaling_session_superseded"));
     this.stopSnapshotRecovery();
     this.stopHeartbeat();
     this.stopAudioPathSync();
@@ -1534,25 +1548,23 @@ export class RoomClient {
     stats: PeerAudioStats,
     evaluation: InboundAudioFlowEvaluation,
   ): void {
+    if (evaluation.reason === "outbound_degraded") {
+      if (this.peerRecovery.schedule(peerId, "outbound_playout_degraded"))
+        logPeerAudioRecovery(peerId, stats, evaluation);
+      return;
+    }
     const wasStalled = this.webrtcStalledPeerIds.has(peerId);
     if (evaluation.status === "stalled") {
+      const recoveryReason = `inbound_${evaluation.reason ?? "rtp_stalled"}`;
       this.webrtcFlowingPeerIds.delete(peerId);
       this.webrtcStalledPeerIds.add(peerId);
-      this.syncPeerMediaPath(peerId, "inbound_rtp_stalled");
+      this.syncPeerMediaPath(peerId, recoveryReason);
       if (!wasStalled) {
         void getRemoteAudioMixer().repairPeerPlayback(peerId);
-        void writeRendererLog(
-          "webrtc",
-          "warn",
-          "Remote audio RTP stopped; switching to relay and repairing the peer",
-          {
-            peerId,
-            packetsReceived: stats.packetsReceived,
-            bytesReceived: stats.bytesReceived,
-            stagnantSamples: evaluation.next.stagnantSamples,
-          },
-        );
-        this.peerRecovery.schedule(peerId, "inbound_rtp_stalled");
+        logPeerAudioRecovery(peerId, stats, evaluation);
+        if (evaluation.reason === "playout_degraded")
+          this.peerRecovery.schedule(peerId, "inbound_playout_degraded");
+        else this.peerRecovery.schedule(peerId, "inbound_rtp_stalled");
       }
       return;
     }
@@ -1561,9 +1573,7 @@ export class RoomClient {
       const wasFlowing = this.webrtcFlowingPeerIds.has(peerId);
       this.webrtcFlowingPeerIds.add(peerId);
       this.webrtcStalledPeerIds.delete(peerId);
-      // RTP growth is stronger transport evidence than decoded loudness. A quiet or
-      // muted friend can legitimately produce no non-zero PCM, so leaving the initial
-      // connection watchdog armed here would rebuild a healthy peer every few seconds.
+      // Verified RTP flow (including DTX silence) cancels recovery after playout checks pass.
       this.peerRecovery.clear(peerId, true);
       this.syncPeerMediaPath(peerId, wasStalled ? "inbound_rtp_resumed" : "inbound_rtp_verified");
       if (!wasFlowing || wasStalled) {
@@ -1676,7 +1686,7 @@ export class RoomClient {
 
   private async applyScreenAudioMix(
     microphoneTrack: MediaStreamTrack,
-    systemAudioTrack: MediaStreamTrack,
+    systemAudioTrack: MediaStreamTrack | undefined,
   ): Promise<void> {
     await this.screenAudioMixer.mix(microphoneTrack, systemAudioTrack, (track) =>
       this.applyOutgoingAudioTrack(track),
@@ -1684,30 +1694,19 @@ export class RoomClient {
   }
 
   private async restorePrimaryInputTrack(): Promise<void> {
-    await this.screenAudioMixer.restore(this.primaryInputTrack, (track) =>
-      this.applyOutgoingAudioTrack(track, true),
+    await this.screenAudioMixer.restore(
+      this.primaryInputTrack,
+      (track) => this.applyOutgoingAudioTrack(track, true),
+      !this.isDisconnecting && !this.hasLostSignalingOwnership,
     );
   }
 
-  private resolvePendingConnection(): void {
-    if (!this.pendingConnection) {
-      return;
-    }
-
-    const { resolve, timeout } = this.pendingConnection;
-    window.clearTimeout(timeout);
+  private settlePendingConnection(error?: Error): void {
+    const pending = this.pendingConnection;
+    if (!pending) return;
+    window.clearTimeout(pending.timeout);
     this.pendingConnection = undefined;
-    resolve();
-  }
-
-  private rejectPendingConnection(error: Error): void {
-    if (!this.pendingConnection) {
-      return;
-    }
-
-    const { reject, timeout } = this.pendingConnection;
-    window.clearTimeout(timeout);
-    this.pendingConnection = undefined;
-    reject(error);
+    if (error) pending.reject(error);
+    else pending.resolve();
   }
 }

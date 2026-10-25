@@ -294,7 +294,13 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(chatSource.includes("MessageLinkPreview"), true);
   assert.equal(chatSource.includes("formatCompactUrl"), true);
   assert.equal(chatLinkPreviewSource.includes("getMessageUrlDetails"), true);
-  assert.equal(chatSource.includes("<Link2 />"), true);
+  assert.equal(
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/chat/MessageLinkPreview.tsx"),
+      "utf8",
+    ).includes("<Link2 />"),
+    true,
+  );
   assert.equal(chatSource.includes("<QuickMessageRow"), true);
   assert.equal(quickRepliesSource.includes("QUICK_MESSAGE_PRESETS"), true);
   assert.equal(roomSource.includes("chatBubbles={characterChatBubbles}"), false);
@@ -482,7 +488,7 @@ test("scene seats align with the marked workstation positions", () => {
   );
   assert.match(
     stylesSource,
-    /\.room-date-calendar-today strong\s*\{[^}]*font-family:\s*\n\s*"Noto Sans SC Variable"[^}]*font-variant-numeric:\s*tabular-nums;/s,
+    /\.room-date-calendar-today strong\s*\{[^}]*font-family:\s*var\(--sg-font-family\)[^}]*font-variant-numeric:\s*tabular-nums;/s,
   );
   assert.match(
     stylesSource,

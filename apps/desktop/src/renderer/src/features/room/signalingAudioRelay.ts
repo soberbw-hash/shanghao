@@ -6,6 +6,7 @@ import type {
 
 import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
 import { RelayVoiceActivityGate } from "../audio/RelayVoiceActivityGate";
+import { RelayCapturePump } from "../audio/RelayCapturePump";
 import { shouldRequestRelayResync } from "./peerAudioPath";
 
 export type AudioRelayMessage =
@@ -68,7 +69,6 @@ interface PeerAudioState {
 
 const CHUNK_SIZE = 1024;
 const RELAY_SAMPLE_RATE = 16_000;
-const MIN_SEND_INTERVAL_MS = 20;
 const MAX_PACKET_AGE_MS = 3_000;
 const METRICS_LOG_INTERVAL_MS = 5_000;
 const RESYNC_DROP_THRESHOLD = 20;
@@ -92,7 +92,7 @@ class ShangHaoRelayCapture extends AudioWorkletProcessor {
       sourceOffset += writable;
       if (this.offset === this.buffer.length) {
         const completed = this.buffer;
-        this.port.postMessage(completed.buffer, [completed.buffer]);
+        this.port.postMessage({ samples: completed.buffer, capturedAtSeconds: currentTime }, [completed.buffer]);
         this.buffer = new Float32Array(${CHUNK_SIZE});
         this.offset = 0;
       }
@@ -256,8 +256,9 @@ export class SignalingAudioRelay {
   private isMuted = false;
   private shouldSendAudio = false;
   private isDestroyed = false;
-  private isSendInFlight = false;
-  private lastSendAt = 0;
+  private readonly capturePump = new RelayCapturePump((samples, rate, capturedAt) =>
+    this.sendCapturedPacket(samples, rate, capturedAt),
+  );
   private lastSendMetricsLogAt = 0;
   private lastReceiveMetricsLogAt = 0;
   private sentSinceMetricsLog = 0;
@@ -298,8 +299,15 @@ export class SignalingAudioRelay {
         outputChannelCount: [1],
         channelCount: 1,
       });
-      workletNode.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-        this.sendCapturedAudio(new Float32Array(event.data), context.sampleRate);
+      workletNode.port.onmessage = (
+        event: MessageEvent<{ samples: ArrayBuffer; capturedAtSeconds: number }>,
+      ) => {
+        const ageMs = Math.max(0, context.currentTime - event.data.capturedAtSeconds) * 1000;
+        this.sendCapturedAudio(
+          new Float32Array(event.data.samples),
+          context.sampleRate,
+          performance.now() - ageMs,
+        );
       };
       this.workletNode = workletNode;
       captureNode = workletNode;
@@ -334,7 +342,10 @@ export class SignalingAudioRelay {
 
   setMuted(isMuted: boolean): void {
     this.isMuted = isMuted;
-    if (isMuted) this.activityGate.reset();
+    if (isMuted) {
+      this.activityGate.reset();
+      this.capturePump.reset();
+    }
   }
 
   setShouldSend(shouldSend: boolean): void {
@@ -496,8 +507,6 @@ export class SignalingAudioRelay {
   }
 
   resetTransport(reason: string): void {
-    this.isSendInFlight = false;
-    this.lastSendAt = 0;
     this.bumpEpoch(reason);
     for (const [peerId, state] of this.peerStates) {
       this.resetPeerQueue(peerId, state, reason);
@@ -522,6 +531,7 @@ export class SignalingAudioRelay {
       return;
     }
     this.isDestroyed = true;
+    this.capturePump.reset();
     if (this.watchdogTimer) {
       window.clearInterval(this.watchdogTimer);
     }
@@ -545,18 +555,22 @@ export class SignalingAudioRelay {
     this.recordTimeline("mic_stopped");
   }
 
-  private sendCapturedAudio(input: Float32Array, sourceSampleRate: number): void {
+  private sendCapturedAudio(
+    input: Float32Array,
+    sourceSampleRate: number,
+    capturedAt?: number,
+  ): void {
+    if (this.isDestroyed || this.isMuted || !this.shouldSendAudio) return;
+    this.capturePump.push(input, sourceSampleRate, capturedAt);
+  }
+
+  private async sendCapturedPacket(
+    input: Float32Array,
+    sourceSampleRate: number,
+    capturedAt: number,
+  ): Promise<void> {
     const monotonicNow = performance.now();
-    if (
-      this.isDestroyed ||
-      this.isMuted ||
-      !this.shouldSendAudio ||
-      this.isSendInFlight ||
-      monotonicNow - this.lastSendAt < MIN_SEND_INTERVAL_MS
-    ) {
-      if (this.isSendInFlight) {
-        this.droppedSendChunks += 1;
-      }
+    if (this.isDestroyed || this.isMuted || !this.shouldSendAudio) {
       return;
     }
     const [track] = this.options.localStream.getAudioTracks();
@@ -581,10 +595,8 @@ export class SignalingAudioRelay {
     }
     const relaySamples = downsampleMono(gated.samples, sourceSampleRate, RELAY_SAMPLE_RATE);
     const gatedDurationMs = (gated.samples.length / sourceSampleRate) * 1_000;
-    this.isSendInFlight = true;
-    this.lastSendAt = monotonicNow;
     this.sentSinceMetricsLog += 1;
-    void this.options
+    await this.options
       .send({
         type: "audio_chunk",
         roomId: this.options.roomId,
@@ -594,8 +606,8 @@ export class SignalingAudioRelay {
         audioStreamEpoch: this.audioStreamEpoch,
         audioPath: "relay",
         sequence: this.sequence++,
-        sentAt: Date.now(),
-        capturedAtMonotonic: monotonicNow,
+        sentAt: Date.now() - Math.max(0, monotonicNow - capturedAt),
+        capturedAtMonotonic: capturedAt,
         durationMs: gatedDurationMs,
         sampleRate: RELAY_SAMPLE_RATE,
         channelCount: 1,
@@ -608,9 +620,6 @@ export class SignalingAudioRelay {
         this.options.onLog?.("warn", "signaling audio relay send failed", {
           error: error instanceof Error ? error.message : String(error),
         });
-      })
-      .finally(() => {
-        this.isSendInFlight = false;
       });
     this.logSendMetrics(monotonicNow);
   }
@@ -701,6 +710,7 @@ export class SignalingAudioRelay {
   }
 
   private bumpEpoch(reason: string): void {
+    this.capturePump.reset();
     this.audioStreamEpoch += 1;
     this.sequence = 0;
     this.options.onLog?.("info", "audio stream epoch advanced", {
@@ -769,7 +779,7 @@ export class SignalingAudioRelay {
     this.options.onLog?.("info", "signaling audio relay send metrics", {
       sendFps: Number((this.sentSinceMetricsLog / elapsedSeconds).toFixed(1)),
       sentAudioChunks: this.sentSinceMetricsLog,
-      skippedAudioChunks: this.droppedSendChunks,
+      skippedAudioChunks: this.droppedSendChunks + this.capturePump.droppedFrames,
       audioStreamEpoch: this.audioStreamEpoch,
       audioPath: "relay",
     });

@@ -93,13 +93,13 @@
 .walking-animal-shadow {
   position: absolute;
   z-index: 0;
-  left: 20%;
-  right: 20%;
-  bottom: 7px;
-  height: 10px;
+  left: 16%;
+  right: 16%;
+  bottom: 0;
+  height: 14px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(46, 61, 84, 0.24), transparent 70%);
-  filter: blur(3px);
+  background: radial-gradient(ellipse, #2737484d, #2737481f 38%, transparent 72%);
+  pointer-events: none;
 }
 
 .desk-animal {
@@ -226,8 +226,8 @@
   bottom: -6px;
   height: 16px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(46, 61, 84, 0.19), transparent 70%);
-  filter: blur(4px);
+  background: radial-gradient(ellipse, #27374842, #2737481a 38%, transparent 72%);
+  pointer-events: none;
 }
 
 .desk-animal-idle .desk-animal-body-rig {
@@ -335,8 +335,8 @@
   bottom: 2px;
   height: 12px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(29, 43, 66, 0.22), rgba(29, 43, 66, 0) 72%);
-  filter: blur(3px);
+  background: radial-gradient(ellipse, #27374842, #2737481a 38%, transparent 72%);
+  pointer-events: none;
   transform: scaleX(1.12);
 }
 
@@ -530,10 +530,10 @@
   left: 50%;
   transform: translateX(-50%);
   width: 50%;
-  height: 5px;
+  height: 12px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(30, 45, 70, 0.18) 0%, transparent 70%);
-  filter: blur(2px);
+  background: radial-gradient(ellipse, #27374838, #27374814 38%, transparent 72%);
+  pointer-events: none;
 }
 
 .room-character-speaking::before {

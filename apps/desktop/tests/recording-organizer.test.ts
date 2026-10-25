@@ -11,7 +11,328 @@ import {
   participantSpeakingShares,
   planRecordingOrganizationChunks,
   transcriptForOrganizationChunk,
+  organizationFinalPrompt,
+  RECORDING_ORGANIZATION_PIPELINE_VERSION,
 } from "../src/main/recording-organizer";
+
+test("recap normalization removes generic gaming filler and fabricated quotes while retaining a specific sourced joke", () => {
+  const record = longRecord();
+  record.transcript = [
+    { ...record.transcript[0]!, nickname: "阿甲", text: "我绝对不送，哎我怎么又没了。" },
+  ];
+  const result = normalizeOrganizationResult(
+    {
+      description: "朋友间游戏聊天开黑，气氛轻松愉快。",
+      summary: [
+        { text: "朋友间游戏聊天开黑，气氛轻松愉快。", sourceSegmentIds: ["segment-0"] },
+        { text: "阿甲刚说“我绝对不送”，下一句就开始找自己。", sourceSegmentIds: ["segment-0"] },
+        { text: "阿甲说“我输了十把”，当场破防。", sourceSegmentIds: ["segment-0"] },
+      ],
+    },
+    record,
+  );
+  assert.equal(result.summary.length, 1);
+  assert.match(result.summary[0]!.text, /我绝对不送/);
+  assert.doesNotMatch(result.description, /气氛轻松愉快/);
+  assert.deepEqual(result.summary[0]!.sourceSegmentIds, ["segment-0"]);
+});
+
+test("recap evidence owns speaker names and jump times instead of provider guesses", () => {
+  const record = longRecord();
+  record.transcript = [
+    { ...record.transcript[0]!, nickname: undefined, startMs: 5200, text: "我绝对不送。" },
+  ];
+  const result = normalizeOrganizationResult(
+    {
+      participants: [{ speakerId: "member-a", nickname: "凭空编造的阿强" }],
+      summary: [
+        {
+          text: "“我绝对不送”这句保证可以回听核对。",
+          sourceStartMs: 1,
+          sourceSegmentIds: ["segment-0"],
+        },
+      ],
+      funnyMoments: [
+        {
+          title: "一句保证",
+          description: "“我绝对不送”",
+          sourceSegmentIds: ["segment-0"],
+          speakerIds: ["invented-person"],
+        },
+      ],
+    },
+    record,
+  );
+  assert.equal(result.participants[0]?.nickname, undefined);
+  assert.equal(result.summary[0]?.sourceStartMs, 5200);
+  assert.ok(!result.funnyMoments[0]?.speakerIds.includes("invented-person"));
+});
+
+test("generic provider filler consumes a bounded repair attempt instead of being published as a successful recap", async () => {
+  const record = longRecord();
+  record.transcript = [{ ...record.transcript[0]!, text: "我绝对不送，哎我怎么又没了。" }];
+  let calls = 0;
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      generateJsonWithMetrics: async () => ({
+        value:
+          ++calls === 1
+            ? {
+                description: "朋友间游戏聊天开黑，气氛轻松愉快。",
+                summary: [{ text: "朋友间游戏聊天开黑，气氛轻松愉快。" }],
+              }
+            : {
+                description: "Sober一句保证刚落地，就开始寻找自己。",
+                summary: [
+                  {
+                    text: "Sober刚说“我绝对不送”，紧接着问自己怎么没了。",
+                    sourceSegmentIds: ["segment-0"],
+                  },
+                ],
+              },
+      }),
+    } as never,
+    async (value) => value,
+  );
+  const result = await organizer.organize(record, true, new AbortController().signal);
+  assert.equal(calls, 2);
+  assert.equal(result.organization?.status, "completed");
+  assert.match(result.summary[0]!.text, /我绝对不送/);
+  assert.doesNotMatch(result.summary[0]!.text, /轻松愉快/);
+});
+
+test("a new recap pipeline regenerates old completed and exhausted blocks without destroying the saved overview first", async () => {
+  const initial = longRecord();
+  initial.transcript = initial.transcript.slice(0, 1);
+  const old = "朋友间游戏聊天开黑，气氛轻松愉快。";
+  const seed = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      generateJsonWithMetrics: async () => ({ value: { description: "旧版概览" } }),
+    } as never,
+    async (record) => record,
+  );
+  const previous = await seed.organize(initial, true, new AbortController().signal);
+  previous.summary = [{ text: old }];
+  previous.organization!.pipelineVersion = RECORDING_ORGANIZATION_PIPELINE_VERSION - 1;
+  previous.organization!.chunks = previous.organization!.chunks.map((chunk) => ({
+    ...chunk,
+    attempts: 6,
+    status: "completed",
+  }));
+  let calls = 0;
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      generateJsonWithMetrics: async () => {
+        calls++;
+        return { value: { description: "Sober谈到了第1段的内容。" } };
+      },
+    } as never,
+    async (record) => {
+      if (record.organization?.status === "running") {
+        assert.equal(record.summary[0]?.text, old);
+        assert.equal(record.organization.finalResult?.description, "旧版概览");
+      }
+      return record;
+    },
+  );
+  const next = await organizer.organize(previous, true, new AbortController().signal);
+  assert.equal(calls, 1);
+  assert.equal(next.organization?.status, "completed");
+});
+
+test("chunk participants and references stay inside that chunk and reduction stays compact", () => {
+  const record = longRecord();
+  record.transcript = Array.from({ length: 458 }, (_, i) => ({
+    ...transcriptSegment(i, i * 20000),
+    id: `long-recording-identity-${i}-${"x".repeat(45)}`,
+  }));
+  const chunkRecord = { ...record, transcript: record.transcript.slice(0, 66) };
+  const result = normalizeOrganizationResult({ description: "按录音整理" }, chunkRecord);
+  assert.equal(result.participants.flatMap((p) => p.sourceSegmentIds).length, 66);
+  const legacy = normalizeOrganizationResult({ description: "已有分块" }, record);
+  const prompt = organizationFinalPrompt(record, [legacy, legacy]);
+  assert.ok(prompt.length < 4000, `participant references bloated prompt to ${prompt.length}`);
+  assert.equal(legacy.participants.flatMap((p) => p.sourceSegmentIds).length, 458);
+});
+
+test("empty reduction fails without publishing an empty summary or losing completed chunks", async () => {
+  let saved = longRecord();
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      generateJsonWithMetrics: async (request: GenerateJsonRequest) => ({
+        value: request.prompt.includes("把多个连续分块") ? {} : { description: "有效的分块内容。" },
+      }),
+    } as never,
+    async (value) => (saved = value),
+  );
+  await assert.rejects(
+    organizer.organize(saved, true, new AbortController().signal),
+    /organization_empty_result/,
+  );
+  assert.ok(saved.organization?.chunks.every((chunk) => chunk.status === "completed"));
+  assert.equal(saved.organization?.finalResult, undefined);
+  assert.equal(saved.organization?.status, "failed");
+});
+
+test("legacy empty completed reductions are retried without repeating successful transcript chunks", async () => {
+  let calls = 0;
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      generateJsonWithMetrics: async () => {
+        calls++;
+        return { value: { description: "有效摘要", summary: [{ text: "依据原文整理" }] } };
+      },
+    } as never,
+    async (record) => record,
+  );
+  const first = await organizer.organize(longRecord(), true, new AbortController().signal);
+  calls = 0;
+  const empty = normalizeOrganizationResult({}, longRecord());
+  const reductions = Object.fromEntries(
+    Object.entries(first.organization!.reductionRetries ?? {}).map(([key, value]) => [
+      key,
+      { ...value, value: empty },
+    ]),
+  );
+  const repaired = await organizer.organize(
+    { ...first, organization: { ...first.organization!, reductionRetries: reductions } },
+    true,
+    new AbortController().signal,
+  );
+  assert.ok(calls > 0, "cached empty reductions must not be mistaken for completed summaries");
+  assert.ok(calls < first.organization!.chunks.length, "successful chunks must be reused");
+  assert.equal(repaired.organization?.status, "completed");
+  assert.ok(repaired.summary.length);
+});
+
+test("completed fusion is the summary source while every persisted main transcript stays original", async () => {
+  const initial = longRecord();
+  initial.transcript = initial.transcript.slice(0, 1);
+  const original = JSON.stringify(initial.transcript);
+  const fused = [
+    { ...initial.transcript[0]!, text: "融合更正后的合成原句。", words: undefined },
+    {
+      ...initial.transcript[0]!,
+      id: "fusion-cloud:extra",
+      text: "仅云端存在的合成内容。",
+      startMs: 100000,
+      endMs: 105000,
+      fusionEstimated: true,
+      fusionUncertain: true,
+    },
+  ];
+  initial.transcriptionAssist = {
+    status: "completed",
+    cloudModelId: "siliconflow-sensevoice-small",
+    localModelId: "qwen3-asr-0.6b-force",
+  };
+  initial.transcriptionFusion = {
+    status: "completed",
+    sourceSignature: "a".repeat(64),
+    completedBatches: 1,
+    totalBatches: 1,
+    transcript: fused,
+    speakers: [],
+  };
+  let calls = 0;
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      generateJsonWithMetrics: async (request: GenerateJsonRequest) => {
+        calls++;
+        assert.ok(request.prompt.includes("sourceSegmentIds=fusion-cloud:extra"));
+        return {
+          value: {
+            description: "实际融合来源摘要",
+            summary: [
+              {
+                text: "云端独有的内容。",
+                sourceStartMs: 100000,
+                sourceSegmentIds: ["fusion-cloud:extra"],
+              },
+            ],
+          },
+        };
+      },
+    } as never,
+    async (record) => {
+      assert.equal(JSON.stringify(record.transcript), original);
+      return { ...record, updatedAt: "2026-10-23T12:00:00.000Z" };
+    },
+  );
+  const result = await organizer.organize(initial, true, new AbortController().signal);
+  assert.equal(calls, 1);
+  assert.equal(JSON.stringify(result.transcript), original);
+  assert.deepEqual(result.summary[0]?.sourceSegmentIds, ["fusion-cloud:extra"]);
+  assert.equal(result.updatedAt, "2026-10-23T12:00:00.000Z");
+});
+
+test("source signatures survive serialization and property ordering without repeating completed chunks", async () => {
+  const initial = longRecord();
+  initial.transcript = initial.transcript.slice(0, 1);
+  let calls = 0;
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      generateJsonWithMetrics: async () => {
+        calls++;
+        return { value: { description: "有效摘要" } };
+      },
+    } as never,
+    async (record) => record,
+  );
+  const first = await organizer.organize(initial, true, new AbortController().signal);
+  const restored = JSON.parse(JSON.stringify(first)) as VoiceMemoryRecord;
+  restored.transcript = restored.transcript.map(
+    (segment) =>
+      Object.fromEntries(
+        Object.entries(segment).reverse(),
+      ) as unknown as VoiceMemoryTranscriptSegment,
+  );
+  calls = 0;
+  await organizer.organize(restored, true, new AbortController().signal);
+  assert.equal(calls, 0);
+});
+
+test("a corrected sentence invalidates its cached summary despite unchanged identity and timing", async () => {
+  const initial = longRecord();
+  initial.transcript = initial.transcript.slice(0, 1);
+  let calls = 0;
+  const organizer = new VoiceMemoryOrganizer(
+    {
+      usesLocalOrganizer: () => false,
+      generateJsonWithMetrics: async (request: GenerateJsonRequest) => {
+        calls++;
+        return {
+          value: {
+            description: request.prompt.includes("更正后的合成原文") ? "更正后的摘要" : "原文摘要",
+          },
+        };
+      },
+    } as never,
+    async (record) => record,
+  );
+  const first = await organizer.organize(initial, true, new AbortController().signal);
+  calls = 0;
+  await organizer.organize(first, true, new AbortController().signal);
+  assert.equal(calls, 0, "identical input must still reuse completed work");
+  const corrected = {
+    ...first,
+    transcript: first.transcript.map((segment) => ({
+      ...segment,
+      text: "更正后的合成原文，时间与句子身份保持相同。",
+      words: undefined,
+    })),
+  };
+  const next = await organizer.organize(corrected, true, new AbortController().signal);
+  assert.equal(calls, 1, "same IDs cannot authorize a summary of stale wording");
+  assert.equal(next.organization?.finalResult?.description, "更正后的摘要");
+});
 
 const transcriptSegment = (
   index: number,

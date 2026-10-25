@@ -1,4 +1,9 @@
 export interface PeerAudioStats {
+  inboundStreamId?: string;
+  receivedSamplesDelta?: number;
+  outboundPacketsSent?: number;
+  outboundPacketsSentDelta?: number;
+  outboundPacketLossPercent?: number;
   jitterMs?: number;
   packetsLost?: number;
   packetsReceived?: number;
@@ -36,6 +41,7 @@ export interface InboundAudioProgress {
 }
 
 export interface InboundAudioFlowEvaluation {
+  reason?: "playout_degraded" | "outbound_degraded";
   status: InboundAudioFlowStatus;
   progressed: boolean;
   next: InboundAudioProgress;
@@ -151,8 +157,28 @@ export const collectPeerAudioStats = async (
   const snapshot: PeerAudioStats = {};
   let preferredCandidatePair: CandidatePairStats | undefined;
   let fallbackCandidatePair: CandidatePairStats | undefined;
+  let audioTransportId: string | undefined;
+  const selectedPairs = new Map<string, string>();
+  let outboundId: string | undefined;
+  const remoteAudio: Array<Record<string, unknown>> = [];
 
   stats.forEach((report) => {
+    if (
+      report.type === "outbound-rtp" &&
+      (report.kind === "audio" || report.mediaType === "audio") &&
+      report.isRemote !== true
+    ) {
+      outboundId = report.id;
+      snapshot.outboundPacketsSent =
+        typeof report.packetsSent === "number" ? report.packetsSent : undefined;
+    }
+    if (
+      report.type === "remote-inbound-rtp" &&
+      (report.kind === "audio" || report.mediaType === "audio")
+    )
+      remoteAudio.push(report);
+    if (report.type === "transport" && typeof report.selectedCandidatePairId === "string")
+      selectedPairs.set(report.id, report.selectedCandidatePairId);
     if (report.type === "candidate-pair" && report.state === "succeeded") {
       const candidatePair = report as CandidatePairStats;
       fallbackCandidatePair ??= candidatePair;
@@ -162,6 +188,8 @@ export const collectPeerAudioStats = async (
     }
 
     if (report.type === "inbound-rtp" && report.kind === "audio") {
+      snapshot.inboundStreamId = report.id;
+      audioTransportId = typeof report.transportId === "string" ? report.transportId : undefined;
       snapshot.jitterMs =
         typeof report.jitter === "number" ? Math.round(report.jitter * 1000) : undefined;
       snapshot.packetsLost =
@@ -210,7 +238,20 @@ export const collectPeerAudioStats = async (
     }
   });
 
-  const candidatePair = preferredCandidatePair ?? fallbackCandidatePair;
+  const remote =
+    remoteAudio.find((entry) => entry.localId === outboundId) ??
+    (!outboundId ? remoteAudio[0] : undefined);
+  if (remote && typeof remote.fractionLost === "number")
+    snapshot.outboundPacketLossPercent = Math.max(0, Math.min(100, remote.fractionLost * 100));
+
+  const selectedId = audioTransportId
+    ? selectedPairs.get(audioTransportId)
+    : selectedPairs.values().next().value;
+  const selected = selectedId
+    ? (stats.get(selectedId) as CandidatePairStats | undefined)
+    : undefined;
+  const candidatePair =
+    selected?.state === "succeeded" ? selected : (preferredCandidatePair ?? fallbackCandidatePair);
   snapshot.roundTripTimeMs =
     candidatePair && typeof candidatePair.currentRoundTripTime === "number"
       ? Math.round(candidatePair.currentRoundTripTime * 1000)

@@ -32,7 +32,9 @@ const mediaUrl = `data:audio/wav;base64,${btoa(String.fromCharCode(...silent))}`
 const currentTimes = new WeakMap<HTMLMediaElement, number>();
 Object.defineProperty(HTMLMediaElement.prototype, "duration", {
   configurable: true,
-  get: () => 800,
+  get() {
+    return this.getAttribute("src")?.endsWith("#long") ? 9823 : 800;
+  },
 });
 Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
   configurable: true,
@@ -55,6 +57,7 @@ HTMLMediaElement.prototype.play = async function () {
 };
 
 const date = "2026-10-19T11:30:00+08:00";
+const cardLayout = new URLSearchParams(location.search).has("cards");
 const markers = [
   { id: "start", offsetMs: 0, label: "演示 · 开场集合", createdAt: date },
   { id: "game", offsetMs: 61000, label: "演示 · 09:47 启动了英雄联盟", createdAt: date },
@@ -107,6 +110,16 @@ const record: VoiceMemoryRecord = {
       nickname: "演示队友 A",
       confidence: "high",
       text: "演示：大家先在中路集合，等兵线过来后再一起推进。注意保留控制技能，后排保持距离。",
+      words: [
+        { id: "demo-word-1", text: "演示：大家先在中路集合，", startMs: 50000, endMs: 55000 },
+        { id: "demo-word-2", text: "等兵线过来后再一起推进。", startMs: 56000, endMs: 61000 },
+        {
+          id: "demo-word-3",
+          text: "注意保留控制技能，后排保持距离。",
+          startMs: 62000,
+          endMs: 65000,
+        },
+      ],
     },
     {
       id: "demo-2",
@@ -152,6 +165,44 @@ const settings = {
   isAiAutoUploadEnabled: false,
 } as AppSettings;
 useSettingsStore.setState({ settings });
+const statusListeners = new Set<(value: VoiceMemoryRecord) => void>();
+window.addEventListener("recording-fixture-state", (event) => {
+  const state = (event as CustomEvent<string>).detail;
+  if (state === "dense") {
+    const transcript = Array.from({ length: 80 }, (_, index) => ({
+      ...record.transcript[index % record.transcript.length]!,
+      id: `dense-${index}`,
+      startMs: index * 30_000,
+      endMs: index * 30_000 + 15_000,
+      words: undefined,
+    }));
+    for (const listener of statusListeners) listener({ ...record, transcript });
+    return;
+  }
+  const next: VoiceMemoryRecord =
+    state === "ready"
+      ? record
+      : {
+          ...record,
+          phase: state === "failed" ? "ready" : "organizing",
+          processingStage: "organize",
+          taskStatus: state === "failed" ? "failed" : "processing",
+          organizedAt: undefined,
+          summary: [],
+          errorMessage: state === "failed" ? "organize_failed:cloud_ai_busy" : undefined,
+          organization: {
+            pipelineVersion: 1,
+            modelId: "cloud",
+            modelRevision: "fixture",
+            status: state === "failed" ? "failed" : "running",
+            completedChunks: 0,
+            chunks: [],
+            startedAt: date,
+            updatedAt: date,
+          },
+        };
+  for (const listener of statusListeners) listener(next);
+});
 window.desktopApi = {
   app: { writeLog: async () => {} },
   recording: {
@@ -169,42 +220,122 @@ window.desktopApi = {
           isFavorite: false,
           markers: [],
           fileSize: 6_800_000,
-          createdAt: "2026-10-18T20:10:00+08:00",
+          mediaUrl: cardLayout ? `${mediaUrl}#long` : mediaUrl,
+          createdAt: cardLayout ? date : "2026-10-18T20:10:00+08:00",
         },
       ],
     }),
   },
   ai: {
-    getVoiceMemory: async () => record,
-    listVoiceMemories: async () => [],
-    onVoiceMemoryStatus: () => () => {},
+    getVoiceMemory: async (recordingId: string) =>
+      cardLayout
+        ? {
+            ...record,
+            recordingId,
+            phase: "error",
+            taskStatus: "failed",
+            progress: recordingId === item.recordingId ? 11 : 1,
+            errorMessage: "cloud_asr_temporarily_unavailable",
+          }
+        : record,
+    listVoiceMemories: async () =>
+      cardLayout
+        ? [item.recordingId, "demo-2"].map((recordingId, index) => ({
+            ...record,
+            recordingId,
+            phase: "error",
+            taskStatus: "failed",
+            progress: index ? 1 : 11,
+            transcriptCount: 3,
+            errorMessage: "cloud_asr_temporarily_unavailable",
+          }))
+        : [
+            {
+              recordingId: item.recordingId,
+              filePath: item.filePath,
+              roomId: item.roomId,
+              createdAt: date,
+              updatedAt: date,
+              phase: "ready",
+              progress: 100,
+              transcriptCount: record.transcript.length,
+              speakerCount: 2,
+              chapterCount: 1,
+              highlightCount: 1,
+              markerCount: markers.length,
+              transcriptionComplete: true,
+              invalidResult: false,
+              transcriptionModel: record.transcriptionModel,
+            },
+          ],
+    searchMemory: async ({ query }: { query: string }) => {
+      document.documentElement.dataset.searchCount = String(
+        Number(document.documentElement.dataset.searchCount ?? 0) + 1,
+      );
+      if (document.documentElement.dataset.delayNextSearch === "true") {
+        document.documentElement.dataset.delayNextSearch = "false";
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+      return query.includes("战术")
+        ? [
+            {
+              recordingId: item.recordingId,
+              filePath: item.filePath,
+              roomName: item.roomName,
+              createdAt: date,
+              startMs: 61000,
+              title: "战术",
+              excerpt: "演示：我们先讨论战术，再一起推进。",
+              score: 1,
+              kind: "transcript",
+            },
+          ]
+        : [];
+    },
+    onVoiceMemoryStatus: (listener) => {
+      statusListeners.add(listener);
+      return () => statusListeners.delete(listener);
+    },
     getSnapshot: async () => ({ models: [], scheduler: { gameActive: false } }),
+    onStatus: () => () => {},
   },
 } as unknown as DesktopApi;
 
 const Fixture = () => {
   const [current, setCurrent] = useState(settings);
   return (
-    <main style={{ padding: "28px 36px", maxWidth: 1440, margin: "0 auto" }}>
+    <main
+      style={{
+        padding: "20px 28px",
+        maxWidth: 1440,
+        margin: "0 auto",
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       <header
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "end",
-          marginBottom: 24,
+          marginBottom: 16,
+          flexShrink: 0,
         }}
       >
         <div>
-          <p style={{ color: "#5d7d9d", fontSize: 12, marginBottom: 8 }}>SHANGHAO · 上号 3.4.12</p>
+          <p style={{ color: "#5d7d9d", fontSize: 12, marginBottom: 8 }}>SHANGHAO · 上号开发候选</p>
           <h1 style={{ fontSize: 26, fontWeight: 750, color: "#172f4b" }}>录音与语音记忆</h1>
         </div>
         <p style={{ color: "#6c7d90", fontSize: 12 }}>演示数据 · 不含私人录音</p>
       </header>
-      <RecordingLibrarySettingsCard
-        settings={current}
-        onChange={(patch) => setCurrent((previous) => ({ ...previous, ...patch }))}
-        pushToast={() => {}}
-      />
+      <div className="settings-recording-content">
+        <RecordingLibrarySettingsCard
+          settings={current}
+          onChange={(patch) => setCurrent((previous) => ({ ...previous, ...patch }))}
+          pushToast={() => {}}
+        />
+      </div>
     </main>
   );
 };

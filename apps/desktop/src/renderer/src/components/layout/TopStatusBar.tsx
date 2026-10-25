@@ -8,6 +8,7 @@ import { useRoomStore } from "../../store/roomStore";
 import { Button } from "../base/Button";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
 import { PrivateRoomIcon } from "../room/PrivateRoomIcon";
+import { TemporaryRoomControls } from "../room/TemporaryRoomControls";
 import {
   clearGlassPointerHighlight,
   updateGlassPointerHighlight,
@@ -117,16 +118,20 @@ export const TopStatusBar = ({
               /5
             </span>
           </span>
-          <Button
-            variant="ghost"
-            className="topbar-action topbar-room-switch !h-7 !w-7 !rounded-[9px] !border !border-[#cddced] !bg-white/55 !p-0"
-            title="切换房间"
-            aria-label="切换房间"
-            disabled={isSwitchingChannel}
-            onClick={onChooseRoom}
-          >
-            <ArrowLeftRight className="size-3.5" aria-hidden="true" />
-          </Button>
+          {room.temporaryRoom ? (
+            <TemporaryRoomControls />
+          ) : (
+            <Button
+              variant="ghost"
+              className="topbar-action topbar-room-switch !h-7 !w-7 !rounded-[9px] !border !border-[#cddced] !bg-white/55 !p-0"
+              title="切换房间"
+              aria-label="切换房间"
+              disabled={isSwitchingChannel}
+              onClick={onChooseRoom}
+            >
+              <ArrowLeftRight className="size-3.5" aria-hidden="true" />
+            </Button>
+          )}
           {isRecording ? (
             <div className="room-recording-live" role="status" aria-label="正在录音">
               <i aria-hidden="true" />
@@ -151,6 +156,18 @@ export const TopStatusBar = ({
         )}
       </div>
       <div className="topbar-controls">
+        {room.members.some((member) => member.applicationAudioName) && (
+          <span
+            className="topbar-application-audio"
+            role="status"
+            title={room.members
+              .filter((member) => member.applicationAudioName)
+              .map((member) => `${member.nickname} · ${member.applicationAudioName}`)
+              .join("、")}
+          >
+            正在放歌
+          </span>
+        )}
         <div className="topbar-metrics" aria-label="频道状态">
           <div
             className={`connection-quality-capsule topbar-metric ${connectionQuality.level}`}

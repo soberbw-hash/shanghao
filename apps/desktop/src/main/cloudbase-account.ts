@@ -353,7 +353,11 @@ export class CloudBaseAccountClient {
   }
 
   async getSession(): Promise<PersistedAccountSession> {
-    return this.toSession(await this.auth.getCredentials());
+    try {
+      return this.toSession(await this.auth.getCredentials());
+    } catch (error) {
+      throw this.mapError(error, "account_session_expired");
+    }
   }
 
   async signOut(): Promise<void> {

@@ -37,6 +37,16 @@ export const AudioSettingsCard = ({
         />
       </SettingsItemRow>
       <SettingsItemRow
+        label="静音说话提醒"
+        description="手动静音后持续说话时轻声提醒，每分钟最多一次；按键说话时不提醒。仅在本机检测。"
+      >
+        <Switch
+          ariaLabel="静音说话提醒"
+          isChecked={settings.isMutedSpeechReminderEnabled !== false}
+          onChange={(isMutedSpeechReminderEnabled) => onChange({ isMutedSpeechReminderEnabled })}
+        />
+      </SettingsItemRow>
+      <SettingsItemRow
         label="精彩时刻录制"
         description="录音中按一下，在录音旁生成可直接阅读的精彩时刻文本。"
       >

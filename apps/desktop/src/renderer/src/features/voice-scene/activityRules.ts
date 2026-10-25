@@ -3,6 +3,7 @@ import {
   MemberSpeakingState,
   type MemberActivity,
   type RoomMember,
+  gameSessionLabel,
 } from "@private-voice/shared";
 import { Gamepad2, Headphones, MicOff, Phone, RotateCw, VolumeX, WifiOff } from "lucide-react";
 
@@ -20,7 +21,7 @@ export interface MemberStatus {
   icon?: typeof Headphones;
 }
 
-export const memberStatus = (member: RoomMember): MemberStatus => {
+export const memberStatus = (member: RoomMember, now = Date.now()): MemberStatus => {
   if (member.presenceState === MemberPresenceState.Updating) {
     return { label: "正在更新", tone: "reconnecting", icon: RotateCw };
   }
@@ -40,11 +41,22 @@ export const memberStatus = (member: RoomMember): MemberStatus => {
     return { label: "静音中", tone: "muted", icon: MicOff };
   }
   if (member.speakingState === MemberSpeakingState.Speaking) {
-    return { label: "正在说话", tone: "speaking", icon: Headphones };
+    return {
+      label:
+        member.gameName === "英雄联盟" && member.gameSession
+          ? gameSessionLabel(member.gameSession, now)
+          : "正在说话",
+      tone: "speaking",
+      icon: Headphones,
+    };
   }
   if (member.gameName) {
     const gameLabel =
-      member.gameName === "KK 对战平台" ? "KK 对战平台" : `正在玩 ${member.gameName}`;
+      member.gameName === "英雄联盟" && member.gameSession
+        ? gameSessionLabel(member.gameSession, now)
+        : member.gameName === "KK 对战平台"
+          ? "KK 对战平台"
+          : `正在玩 ${member.gameName}`;
     return { label: gameLabel, tone: "gaming", icon: Gamepad2 };
   }
   return {

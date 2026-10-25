@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   AI_ASR_MODEL_NAMES,
+  DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
   CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
   evaluateVoiceMemoryTranscriptionValidity,
   hasInvalidVoiceMemoryResult,
@@ -26,7 +27,7 @@ import {
   type VoiceMemoryTaskStatus,
 } from "@private-voice/shared";
 import { AiModelManager } from "./ai-model-manager";
-import { AiJobWriteOwnership } from "./ai-job-write-ownership";
+import { AiJobWriteOwnership, isVoiceMemoryOwnershipError } from "./ai-job-write-ownership";
 import { AiRuntimeManager } from "./ai-runtime-manager";
 import { transcribeChunkWithRetry } from "./voice-memory-transcription-retry";
 import {
@@ -50,11 +51,22 @@ import { answerGlobalVoiceQuestion } from "./voice-memory-global-question";
 import { VoiceMemoryOrganizer } from "./voice-memory-organizer";
 import {
   automaticOrganizationConsent,
+  canAutomaticallySummarize,
+  ownsAutomaticSummary,
   deferredVoiceMemoryRequest,
 } from "./automatic-voice-memory-request";
 export { transcriptForPrompt } from "./voice-memory-organizer";
 import { bindTranscriptToKnownSpeaker, mergeSpeakerTranscript } from "./speaker-transcript";
 import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
+import { voiceMemoryResumeRequest } from "./voice-memory-resume";
+import { processTranscriptFusion } from "./transcript-fusion";
+import { assignVoiceMemorySpeaker, migrateVoiceMemoryIdentity } from "./voice-memory-identity";
+import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
+import { queueUntranscribedRecordings, type BacklogRecording } from "./automatic-recording-backlog";
+import {
+  planAutomaticRecordingRecovery,
+  retryDeferredRecordings,
+} from "./automatic-recording-recovery";
 
 export {
   TRANSCRIPTION_CHUNK_MS,
@@ -94,6 +106,7 @@ const createTaskId = (recordingId: string): string =>
 export class AiVoiceMemoryService {
   private readonly listeners = new Set<(record: VoiceMemoryRecord) => void>();
   private readonly controllers = new Map<string, AbortController>();
+  private readonly remoteTextJobs = new Set<string>();
   private readonly pendingProcesses = new Map<string, Promise<VoiceMemoryRecord>>();
   private readonly requestVersions = new Map<string, number>();
   private readonly recordingSetupQueues = new Map<string, Promise<void>>();
@@ -129,6 +142,9 @@ export class AiVoiceMemoryService {
     private readonly transcriptionProviderStore?: AiTranscriptionProviderStore,
     private readonly getTranscriptionProvider: () => AiTranscriptionProvider = () => "local",
     private readonly isAutomaticOrganizationEnabled: () => boolean = () => true,
+    private readonly isCloudLocalAssistEnabled: () => boolean = () => false,
+    private readonly getCloudLocalAsrModel: () => AiAsrModelId = () =>
+      DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
   ) {}
 
   async initialize(): Promise<void> {
@@ -226,8 +242,7 @@ export class AiVoiceMemoryService {
   }
 
   async getRuntimeStatus(): Promise<AiRuntimeStatus> {
-    // CUDA/PyTorch discovery is deliberately lazy. Starting the desktop app in manual
-    // transcription mode must not launch a Python worker just to populate the AI settings UI.
+    // Lazy discovery keeps settings/manual mode from launching Python workers.
     await this.refreshRuntimeStatus();
     const status = await this.runtime.status();
     return { ...status, lastTask: this.lastTask };
@@ -250,8 +265,24 @@ export class AiVoiceMemoryService {
     return this.store.search(request);
   }
 
-  pause(recordingId: string): void {
-    this.controllers.get(recordingId)?.abort();
+  async pause(recordingId: string): Promise<void> {
+    const controller = this.controllers.get(recordingId);
+    if (controller) {
+      controller.abort();
+      return;
+    }
+    if (!this.pendingProcesses.has(recordingId)) return;
+    const version = (this.requestVersions.get(recordingId) ?? 0) + 1;
+    this.requestVersions.set(recordingId, version);
+    this.pendingProcesses.delete(recordingId);
+    const record = await this.store.get(recordingId);
+    if (record && this.requestVersions.get(recordingId) === version)
+      await this.save({
+        ...record,
+        phase: "paused",
+        taskStatus: "pending",
+        errorMessage: undefined,
+      });
   }
 
   hasActiveTask(): boolean {
@@ -336,6 +367,9 @@ export class AiVoiceMemoryService {
         transcriptionElapsedMs: undefined,
         transcriptionStats: undefined,
         transcriptionUnits: undefined,
+        remoteTranscription: undefined,
+        transcriptionAssist: undefined,
+        transcriptionFusion: undefined,
         transcriptionBenchmark: undefined,
         errorMessage: undefined,
         speakers: [],
@@ -400,8 +434,7 @@ export class AiVoiceMemoryService {
     try {
       await this.models.clearTaskCheckpointsForRecording(recordingId);
     } catch {
-      // The record is already gone. Do not tell the UI deletion failed and invite a retry
-      // that could target a newly imported recording with the same identity.
+      // Deletion succeeded; a UI retry could target a newly imported record with this identity.
       this.log("warn", "Voice memory checkpoint cleanup failed", {
         errorCode: "voice_memory_checkpoint_cleanup_failed",
       });
@@ -418,7 +451,7 @@ export class AiVoiceMemoryService {
     const legacy =
       legacyRecordingId !== recordingId ? await this.store.get(legacyRecordingId) : undefined;
     const record = stable ?? legacy;
-    if (!record) return;
+    if (!record || (legacyRecordingId !== recordingId && stable)) return;
     const activeIds = new Set([legacyRecordingId, recordingId]);
     const running = [...activeIds].some((id) => this.pendingProcesses.has(id));
     for (const id of activeIds) {
@@ -435,18 +468,18 @@ export class AiVoiceMemoryService {
         ]);
       }),
     );
-    const migrated = await this.store.save({
-      ...record,
-      recordingId,
-      filePath,
-      transcript: record.transcript.map((segment) => ({ ...segment, recordingId })),
-      markerTitles: record.markerTitles.map((marker) => {
-        const current = markers.find((candidate) => candidate.offsetMs === marker.offsetMs);
-        return current ? { ...marker, markerId: current.id } : marker;
-      }),
-      phase: running ? "paused" : record.phase,
-    });
-    if (legacy && legacyRecordingId !== recordingId) await this.store.delete(legacyRecordingId);
+    const migrated = await this.save(
+      {
+        ...migrateVoiceMemoryIdentity(record, recordingId, filePath),
+        markerTitles: record.markerTitles.map((marker) => {
+          const current = markers.find((candidate) => candidate.offsetMs === marker.offsetMs);
+          return current ? { ...marker, markerId: current.id } : marker;
+        }),
+        phase: running ? "paused" : record.phase,
+      },
+      { onlyIfMissing: legacyRecordingId !== recordingId },
+    );
+    // Keep the source: another process can update it after this snapshot was copied.
     if (running) {
       void this.start({
         recordingId,
@@ -462,23 +495,7 @@ export class AiVoiceMemoryService {
   async resume(recordingId: string): Promise<VoiceMemoryRecord> {
     const record = await this.store.get(recordingId);
     if (!record) throw new Error("voice_memory_not_found");
-    const resumeOrganization =
-      record.processingStage === "organize" &&
-      record.transcript.length > 0 &&
-      !hasInvalidVoiceMemoryResult(record);
-    return this.start({
-      recordingId,
-      filePath: record.filePath,
-      roomId: record.roomId,
-      roomName: record.roomName,
-      manual: true,
-      transcribe: !resumeOrganization,
-      organize: resumeOrganization || record.autoOrganizeRequested === true,
-      asrModelId:
-        record.transcriptionModel?.id && record.transcriptionModel.id in AI_ASR_MODEL_NAMES
-          ? (record.transcriptionModel.id as AiAsrModelId)
-          : undefined,
-    });
+    return this.start(voiceMemoryResumeRequest(record));
   }
 
   async selectTranscriptionVariant(
@@ -498,6 +515,7 @@ export class AiVoiceMemoryService {
       transcriptionStats: variant.transcriptionStats,
       transcriptionUnits: variant.transcriptionUnits,
       transcriptionBenchmark: variant.benchmark,
+      transcriptionFusion: undefined,
       phase: "ready",
       progress: 100,
       errorMessage: undefined,
@@ -505,25 +523,25 @@ export class AiVoiceMemoryService {
   }
 
   /** Acknowledges a UI retry immediately while the durable worker continues in the background. */
-  async start(request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> {
+  async start(request: VoiceMemoryProcessRequest, historical = false): Promise<VoiceMemoryRecord> {
+    request = { ...request, organize: !request.benchmark };
     if (this.deletingRecordings.has(request.recordingId)) throw new Error("voice_memory_deleted");
     const allowRecreate = this.deletedRecordings.has(request.recordingId);
     return this.serializeRecordingSetup(request.recordingId, () =>
-      this.startNow(request, allowRecreate),
+      this.startNow(request, allowRecreate, historical),
     );
   }
 
   private async startNow(
     request: VoiceMemoryProcessRequest,
     allowRecreate: boolean,
+    historical: boolean,
   ): Promise<VoiceMemoryRecord> {
     if (this.deletedRecordings.has(request.recordingId) && !allowRecreate) {
       throw new Error("voice_memory_deleted");
     }
     if (allowRecreate) this.deletedRecordings.delete(request.recordingId);
-    // A retry button can be clicked more than once while the request is waiting
-    // behind another long recording. Keep the first accepted task instead of
-    // replacing it with another task for the same recording.
+    // Repeated clicks preserve the first accepted task, including while queued.
     const pending = this.pendingProcesses.get(request.recordingId);
     if (pending) {
       const pendingRecord = await this.store.get(request.recordingId);
@@ -546,14 +564,15 @@ export class AiVoiceMemoryService {
       }
     }
     const previousRecord = await this.store.get(request.recordingId);
+    if (historical && request.transcribe !== false && previousRecord?.transcript.length)
+      return previousRecord;
     const previous = previousRecord ? this.withTranscriptionModel(previousRecord) : undefined;
     const taskId = request.taskId ?? createTaskId(request.recordingId);
     const queuedRequest = {
       ...request,
       organize: request.manual ? request.organize : automaticOrganizationConsent(previous, request),
       taskId,
-      // A manual retry is a durable resume unless the caller explicitly requests a restart.
-      // Invalid/partial results are exactly the records that need their completed units kept.
+      // Manual retries resume saved units, including partial results, unless restart is explicit.
       restartTranscription: request.transcribe !== false && request.restartTranscription === true,
     };
     const queued = await this.save({
@@ -572,7 +591,7 @@ export class AiVoiceMemoryService {
     if (request.manual) {
       void this.process(queuedRequest).catch(() => undefined);
     } else {
-      this.queueAutomaticProcess(queuedRequest);
+      this.queueAutomaticProcess(queuedRequest, historical);
     }
     return queued;
   }
@@ -607,7 +626,9 @@ export class AiVoiceMemoryService {
       if (this.requestVersions.get(request.recordingId) !== version) {
         return (await this.store.get(request.recordingId)) ?? emptyRecord(request);
       }
-      return this.writeOwnership.run(request.recordingId, version, () => this.processNow(request));
+      return this.writeOwnership.run(request.recordingId, version, () =>
+        aiModelConfigurationUsage.run(() => this.processNow(request)),
+      );
     };
 
     let operation: Promise<VoiceMemoryRecord>;
@@ -615,10 +636,10 @@ export class AiVoiceMemoryService {
       const manualRequestVersion = ++this.manualRequestVersion;
       const interruptedAutomatic = this.activeAutomatic?.operation;
       const interruptedManual = this.activeManual?.operation;
-      if (this.activeAutomatic) {
+      if (this.activeAutomatic && !this.remoteTextJobs.has(this.activeAutomatic.recordingId)) {
         this.controllers.get(this.activeAutomatic.recordingId)?.abort();
       }
-      if (this.activeManual) {
+      if (this.activeManual && !this.remoteTextJobs.has(this.activeManual.recordingId)) {
         this.controllers.get(this.activeManual.recordingId)?.abort();
       }
       operation = this.manualQueue
@@ -662,6 +683,15 @@ export class AiVoiceMemoryService {
           if (this.requestVersions.get(request.recordingId) !== version) {
             return (await this.store.get(request.recordingId)) ?? emptyRecord(request);
           }
+          if (!this.isAutomaticTranscriptionEnabled()) {
+            const record = (await this.store.get(request.recordingId)) ?? emptyRecord(request);
+            return this.save({
+              ...record,
+              phase: "paused",
+              taskStatus: "pending",
+              errorMessage: "deferred:automatic_transcription_disabled",
+            });
+          }
           const active = run();
           this.activeAutomatic = {
             recordingId: request.recordingId,
@@ -695,66 +725,48 @@ export class AiVoiceMemoryService {
     return operation;
   }
 
-  async queueRecordings(
-    recordings: Array<{
-      recordingId?: string;
-      filePath: string;
-      fileSize?: number;
-      roomId?: string;
-      roomName?: string;
-      markers?: Array<{ id: string; offsetMs: number }>;
-    }>,
-    organize: boolean,
-  ): Promise<void> {
-    if (!this.isAutomaticTranscriptionEnabled()) return;
-    for (const recording of [...recordings].sort(
-      (left, right) =>
-        (left.fileSize ?? Number.MAX_SAFE_INTEGER) - (right.fileSize ?? Number.MAX_SAFE_INTEGER),
-    )) {
-      const recordingId = recording.recordingId ?? recording.filePath;
-      await this.reconcileRecordingIdentity(
-        recording.filePath,
-        recordingId,
-        recording.filePath,
-        recording.markers,
-      );
-      const record = await this.store.get(recordingId);
-      const isCurrentTerminalResult =
-        record?.phase === "ready" &&
-        record.transcriptionPipelineVersion === TRANSCRIPTION_PIPELINE_VERSION;
-      if (isCurrentTerminalResult || this.pendingProcesses.has(recordingId)) continue;
-      const taskId = createTaskId(recordingId);
-      const queuedRequest: VoiceMemoryProcessRequest = {
-        recordingId,
-        filePath: recording.filePath,
-        roomId: recording.roomId,
-        roomName:
-          record?.roomName ??
-          recording.roomName ??
-          (recording.roomId === "side"
-            ? "二号房"
-            : recording.roomId === "main"
-              ? "一号房"
-              : "房间"),
-        organize,
-        markers: recording.markers,
-        taskId,
-      };
-      await this.start(queuedRequest);
-    }
+  async queueRecordings(recordings: BacklogRecording[], organize: boolean): Promise<void> {
+    await queueUntranscribedRecordings(
+      recordings,
+      organize && this.isAutomaticOrganizationEnabled(),
+      {
+        enabled: () => !this.stopped && this.isAutomaticTranscriptionEnabled(),
+        get: (id) => this.store.get(id),
+        pending: (id) => this.pendingProcesses.has(id),
+        start: (request) => this.start(request, true),
+        reconcile: (recording, id) =>
+          this.reconcileRecordingIdentity(
+            recording.filePath,
+            id,
+            recording.filePath,
+            recording.markers,
+          ),
+        onError: () =>
+          this.log(
+            "warn",
+            "Historical transcription admission skipped an unreadable recording",
+            {},
+          ),
+      },
+    );
   }
 
-  private queueAutomaticProcess(request: VoiceMemoryProcessRequest): void {
-    // Readable speech always wins over an optional Qwen summary. If organization is
-    // occupying the worker, keep its transcript checkpoint and yield to the new audio.
-    if (this.activeAutomatic?.organizing) {
+  private queueAutomaticProcess(request: VoiceMemoryProcessRequest, historical: boolean): void {
+    // Local inference yields to new audio; remote text keeps running while audio waits.
+    if (
+      !historical &&
+      this.activeAutomatic?.organizing &&
+      !this.remoteTextJobs.has(this.activeAutomatic.recordingId)
+    ) {
       this.controllers.get(this.activeAutomatic.recordingId)?.abort();
     }
     const transcription = this.process({ ...request, organize: false });
     if (request.organize !== false) {
       void transcription
-        .then((record) => {
-          if (!record.transcript.length || record.errorMessage === "no_reliable_speech") return;
+        .then(async (record) => {
+          if (!canAutomaticallySummarize(record) || !this.isAutomaticTranscriptionEnabled()) return;
+          const current = await this.store.get(record.recordingId);
+          if (!ownsAutomaticSummary(current, record, request.taskId)) return;
           return this.process({ ...request, transcribe: false, organize: true });
         })
         .catch(() => undefined);
@@ -774,6 +786,8 @@ export class AiVoiceMemoryService {
     });
     const previous = await this.store.get(request.recordingId);
     let record = previous ?? emptyRecord(request);
+    if (request.manual && request.transcribe !== false)
+      record = { ...record, remoteTranscriptionRetry: undefined };
     record = { ...record, autoOrganizeRequested: automaticOrganizationConsent(previous, request) };
     if (request.benchmark) {
       const environment = await this.runtime.benchmarkEnvironment();
@@ -803,6 +817,7 @@ export class AiVoiceMemoryService {
     this.controllers.set(request.recordingId, controller);
     try {
       if (shouldTranscribe) {
+        record = { ...record, transcriptionFusion: undefined };
         currentStage = "audio_file";
         await this.runtime.validateInputFile(request.filePath);
         record = await this.updateDiagnostic(record, request, taskId, currentStage, "processing");
@@ -830,6 +845,8 @@ export class AiVoiceMemoryService {
             transcriptionElapsedMs: undefined,
             transcriptionStats: undefined,
             transcriptionUnits: undefined,
+            remoteTranscription: undefined,
+            transcriptionAssist: undefined,
             transcriptionBenchmark: request.benchmark ? record.transcriptionBenchmark : undefined,
             organizedAt: undefined,
             organization: undefined,
@@ -838,8 +855,7 @@ export class AiVoiceMemoryService {
           });
         }
         if (!request.benchmark && record.transcriptionBenchmark) {
-          // A saved benchmark clip is historical result metadata. A later normal transcription
-          // must always use the full recording and must not inherit benchmark-only range/state.
+          // Ordinary transcription must not inherit historical benchmark clip ranges.
           record = { ...record, transcriptionBenchmark: undefined };
         }
         record = await this.transcribe(
@@ -893,7 +909,7 @@ export class AiVoiceMemoryService {
               : "no_reliable_speech",
         });
       }
-      await this.save({
+      record = await this.save({
         ...record,
         taskId,
         taskStatus: "processing",
@@ -901,6 +917,17 @@ export class AiVoiceMemoryService {
         transcriptionPipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
       });
       let organizationError: string | undefined;
+      if (!this.textGateway.usesLocalOrganizer?.()) this.remoteTextJobs.add(request.recordingId);
+      record = await processTranscriptFusion(
+        record,
+        request,
+        this.textGateway,
+        this.save.bind(this),
+        controller.signal,
+        () => {
+          currentStage = "organize";
+        },
+      );
       if (
         request.organize !== false &&
         (request.manual || (record.autoOrganizeRequested && this.isAutomaticOrganizationEnabled()))
@@ -908,14 +935,17 @@ export class AiVoiceMemoryService {
         try {
           currentStage = "organize";
           if (!request.manual) await this.textGateway.assertOrganizerConfigured?.();
-          record = await this.organize(record, request.manual === true, controller.signal);
+          record = await new VoiceMemoryOrganizer(this.textGateway, (next) =>
+            this.save(next),
+          ).organize(record, request.manual === true, controller.signal);
         } catch (error) {
           if (controller.signal.aborted || (error as Error).message === "ai_task_paused")
             throw error;
           organizationError = error instanceof Error ? error.message : String(error);
+          if (isVoiceMemoryOwnershipError(error)) throw error;
           if (!request.manual && organizationError === "custom_ai_not_configured") throw error;
           // Preserve the durable attempts/failure state saved inside organize before it threw.
-          record = (await this.store.get(record.recordingId)) ?? record;
+          record = await this.requireRecord(record.recordingId, true);
           this.log("warn", "Voice memory organization failed; transcript retained", {
             recordingId: record.recordingId,
             reason: organizationError,
@@ -958,6 +988,7 @@ export class AiVoiceMemoryService {
     } catch (error) {
       const paused = controller.signal.aborted || (error as Error).message === "ai_task_paused";
       const reason = error instanceof Error ? error.message : String(error);
+      if (isVoiceMemoryOwnershipError(error)) throw error;
       const requiresManual =
         !request.manual && reason === "automatic_long_recording_requires_manual";
       this.log(paused || requiresManual ? "info" : "error", "Voice memory processing stopped", {
@@ -965,26 +996,14 @@ export class AiVoiceMemoryService {
         reason,
         paused,
       });
-      const deferred =
-        !request.manual &&
-        !requiresManual &&
-        (reason === "manual_only" ||
-          reason === "cloud_asr_key_required" ||
-          reason === "custom_asr_key_required" ||
-          reason === "custom_ai_not_configured" ||
-          /^model_.+_(?:not_installed|runtime_not_ready)$/.test(reason) ||
-          reason === "waiting_for_game_to_finish" ||
-          reason === "realtime_pressure" ||
-          reason.startsWith("voice_") ||
-          reason.startsWith("screen_share") ||
-          reason.startsWith("peer_recovery") ||
-          reason.startsWith("network_quality") ||
-          reason.startsWith("renderer_memory"));
-      // transcribe() persists every completed chunk before moving to the next one. When a later
-      // chunk is paused or fails, the rejected promise cannot return that newer record object to
-      // this caller. Reload the durable copy so this final status update never overwrites already
-      // visible transcript segments with the stale pre-transcription snapshot.
-      const durableRecord = (await this.store.get(request.recordingId)) ?? record;
+      // Reload saved chunks: a later rejection cannot return the newer transcription snapshot.
+      const durableRecord = await this.requireRecord(request.recordingId, true);
+      const recovery = planAutomaticRecordingRecovery(durableRecord, reason, {
+        manual: request.manual,
+        paused: paused || requiresManual,
+        enabled: this.isAutomaticTranscriptionEnabled(),
+      });
+      const deferred = recovery.deferred;
       const interruptedStats =
         currentStage !== "organize" && durableRecord.transcriptionStats
           ? {
@@ -995,6 +1014,7 @@ export class AiVoiceMemoryService {
           : durableRecord.transcriptionStats;
       record = await this.save({
         ...durableRecord,
+        remoteTranscriptionRetry: recovery.retry,
         transcriptionStats: interruptedStats,
         taskId,
         taskStatus: paused || deferred || requiresManual ? "pending" : "failed",
@@ -1003,7 +1023,7 @@ export class AiVoiceMemoryService {
           request,
           paused || deferred || requiresManual ? "pending" : "failed",
           currentStage,
-          { errorCode: this.errorCode(error), errorMessage: reason },
+          { errorCode: classifyLocalModelRuntimeError(error), errorMessage: reason },
         ),
         phase: paused || deferred || requiresManual ? "paused" : "error",
         errorMessage: requiresManual
@@ -1020,6 +1040,7 @@ export class AiVoiceMemoryService {
     } finally {
       if (this.controllers.get(request.recordingId) === controller) {
         this.controllers.delete(request.recordingId);
+        this.remoteTextJobs.delete(request.recordingId);
       }
       if (request.taskId?.startsWith("model-comparison:")) {
         // A comparison run is intentionally isolated: do not leave the previous model resident
@@ -1036,17 +1057,7 @@ export class AiVoiceMemoryService {
     nickname: string,
   ): Promise<VoiceMemoryRecord> {
     const record = await this.requireRecord(recordingId);
-    const speakers = record.speakers.filter((speaker) => speaker.speakerId !== speakerId);
-    speakers.push({ speakerId, memberId, nickname, confidence: "high", manuallyConfirmed: true });
-    return this.save({
-      ...record,
-      speakers,
-      transcript: record.transcript.map((segment) =>
-        segment.speakerId === speakerId
-          ? { ...segment, memberId, nickname, confidence: "high" }
-          : segment,
-      ),
-    });
+    return this.save(assignVoiceMemorySpeaker(record, speakerId, memberId, nickname));
   }
 
   async updateMarkerTitle(
@@ -1181,12 +1192,13 @@ export class AiVoiceMemoryService {
     requestedModelId?: AiAsrModelId,
     requestedBenchmark?: VoiceMemoryBenchmarkRunMetadata,
     onStage?: (stage: VoiceMemoryProcessingStage) => void,
+    forceLocal = false,
   ): Promise<VoiceMemoryRecord> {
     onStage?.("preprocess");
     // A model comparison is explicit consent to run the selected installed ASR locally.
     // The global provider still controls ordinary recordings, including retained local IDs.
     const transcriptionProvider =
-      requestedBenchmark || record.taskId?.startsWith("model-comparison:")
+      forceLocal || requestedBenchmark || record.taskId?.startsWith("model-comparison:")
         ? "local"
         : this.getTranscriptionProvider();
     if (transcriptionProvider !== "local") {
@@ -1196,11 +1208,36 @@ export class AiVoiceMemoryService {
         manual,
         signal,
         store: this.transcriptionProviderStore,
+        assistModelId: this.getCloudLocalAsrModel(),
+        isAssistModelReady: (id) =>
+          this.models
+            .getSnapshot()
+            .models.some(
+              (model) => model.id === id && Boolean(model.activeRevision && model.runtimeReady),
+            ),
+        assist: this.isCloudLocalAssistEnabled()
+          ? (local) =>
+              this.transcribeCore(
+                local,
+                manual,
+                signal,
+                local.transcriptionAssist!.localModelId,
+                undefined,
+                onStage,
+                true,
+              ).finally(() => this.runtime.releaseAsr("cloud_local_assist_complete"))
+          : undefined,
+        reload: () => this.store.get(record.recordingId),
+        ownsRevision: (next) => this.writeOwnership.ownsRevision(next.recordingId, next.updatedAt),
         updateDiagnostic: this.updateDiagnostic.bind(this),
         save: this.save.bind(this),
         onStage,
       });
     }
+    if (forceLocal && !record.transcriptionModel)
+      await this.models.clearTaskCheckpoint(
+        `transcription:${record.recordingId}:${requestedModelId}`,
+      );
     const {
       taskId,
       legacyTaskId,
@@ -1339,7 +1376,7 @@ export class AiVoiceMemoryService {
         onStage?.("convert");
         const asrStartedAt = performance.now();
         const duration = Math.max(1, source.endMs - source.startMs);
-        const chunk = await this.transcribeChunkWithRetry(
+        const chunk = await transcribeChunkWithRetry(
           () =>
             this.runtime.transcribeChunk({
               modelId: asrModelId,
@@ -1370,6 +1407,7 @@ export class AiVoiceMemoryService {
             totalUnits,
             benchmark: Boolean(activeBenchmark),
           },
+          this.log.bind(this),
         );
         const recognized = chunk.segments;
         const chunkResult = chunk.result;
@@ -1647,7 +1685,7 @@ export class AiVoiceMemoryService {
       );
       const duration = Math.min(transcriptionChunkMs, sourceEndMs - offsetMs);
       const asrStartedAt = performance.now();
-      const chunk = await this.transcribeChunkWithRetry(
+      const chunk = await transcribeChunkWithRetry(
         () =>
           this.runtime.transcribeChunk({
             modelId: asrModelId,
@@ -1677,6 +1715,7 @@ export class AiVoiceMemoryService {
           totalUnits,
           benchmark: Boolean(activeBenchmark),
         },
+        this.log.bind(this),
       );
       const segments = chunk.segments;
       const chunkResult = chunk.result;
@@ -1826,30 +1865,9 @@ export class AiVoiceMemoryService {
     });
   }
 
-  private transcribeChunkWithRetry(
-    operation: Parameters<typeof transcribeChunkWithRetry>[0],
-    signal: AbortSignal,
-    context: Parameters<typeof transcribeChunkWithRetry>[2],
-  ) {
-    return transcribeChunkWithRetry(operation, signal, context, this.log.bind(this));
-  }
-
-  private organize(
-    record: VoiceMemoryRecord,
-    manual: boolean,
-    signal: AbortSignal,
-  ): Promise<VoiceMemoryRecord> {
-    return new VoiceMemoryOrganizer(this.textGateway, (next) => this.save(next)).organize(
-      record,
-      manual,
-      signal,
-    );
-  }
-
   private async refreshRuntimeStatus(): Promise<void> {
     const statuses = await this.runtime.modelRuntimeStatuses();
-    // One runtime scan used to emit one full renderer snapshot per model. Batch the result so
-    // opening AI settings produces a single state update instead of a burst of 10+ renders.
+    // Batch runtime status to avoid a renderer snapshot burst when opening AI settings.
     const batchRuntimeStatuses = this.models.setRuntimeStatuses?.bind(this.models);
     if (batchRuntimeStatuses) {
       batchRuntimeStatuses(statuses);
@@ -1873,32 +1891,31 @@ export class AiVoiceMemoryService {
     this.deferredRetryTimer = setTimeout(() => {
       this.deferredRetryTimer = undefined;
       void this.retryDeferredRecords().catch((error) => {
-        this.log("warn", "Deferred transcription retry failed", { reason: this.errorCode(error) });
+        this.log("warn", "Deferred transcription retry failed", {
+          reason: classifyLocalModelRuntimeError(error),
+        });
       });
     }, 9_000);
   }
 
   private async retryDeferredRecords(): Promise<void> {
-    if (this.stopped) return;
-    if (!this.isAutomaticTranscriptionEnabled()) return;
-    if (this.controllers.size > 0) return this.scheduleDeferredRetry();
-    if (
+    return retryDeferredRecordings(
+      !this.stopped && this.isAutomaticTranscriptionEnabled(),
+      this.controllers.size > 0,
       this.getTranscriptionProvider() === "local" &&
-      !this.models.canRunTask("transcription", false).runnable
-    )
-      return;
-    const records = await this.store.list();
-    for (const record of records.filter((item) => item.errorMessage?.startsWith("deferred:"))) {
-      await this.process(
-        deferredVoiceMemoryRequest(record, this.isAutomaticOrganizationEnabled()),
-      ).catch(() => undefined);
-    }
+        !this.models.canRunTask("transcription", false).runnable,
+      () => this.store.list(),
+      (record) =>
+        this.process(deferredVoiceMemoryRequest(record, this.isAutomaticOrganizationEnabled())),
+      () => this.scheduleDeferredRetry(),
+    );
   }
 
-  private async requireRecord(recordingId: string): Promise<VoiceMemoryRecord> {
+  private async requireRecord(recordingId: string, owned = false) {
     const record = await this.store.get(recordingId);
     if (!record) throw new Error("voice_memory_not_found");
-    return this.withTranscriptionModel(record);
+    if (owned) this.writeOwnership.assertRevision(record.recordingId, record.updatedAt);
+    return owned ? record : this.withTranscriptionModel(record);
   }
 
   private async runQuestion<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -1973,10 +1990,6 @@ export class AiVoiceMemoryService {
     });
   }
 
-  private errorCode(error: unknown): string {
-    return classifyLocalModelRuntimeError(error);
-  }
-
   private async save(
     record: VoiceMemoryRecord,
     options: VoiceMemorySaveOptions = {},
@@ -2007,6 +2020,7 @@ export class AiVoiceMemoryService {
         }
       : record;
     const saved = await this.store.save(persisted, options);
+    this.writeOwnership.recordSaved(saved.recordingId, saved.updatedAt);
     if (saved.diagnostic) this.lastTask = saved.diagnostic;
     this.log("info", "AI pipeline stage", {
       taskId: saved.taskId,

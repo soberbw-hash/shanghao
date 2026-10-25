@@ -13,6 +13,132 @@ const storage = {
   decryptString: (value: Buffer) => value.toString("utf8"),
 };
 
+test("invalid JSON diagnostics classify syntax without retaining the provider text", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-json-shape-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const diagnostics: unknown[] = [];
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { content: '{"description":"synthetic-private-text" broken}' },
+            },
+          ],
+        }),
+      ),
+  );
+  const provider = new CustomAiProviderStore(
+    async (payload) => {
+      diagnostics.push(payload);
+    },
+    root,
+    storage,
+  );
+  await provider.save({
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "fixture",
+    apiKey: "synthetic",
+  });
+  await assert.rejects(
+    provider.generateJson({ prompt: "synthetic", maxNewTokens: 1000 }),
+    /custom_ai_invalid_json/,
+  );
+  assert.ok(JSON.stringify(diagnostics).includes('"jsonSyntax":"delimiter"'));
+  assert.ok(!JSON.stringify(diagnostics).includes("synthetic-private-text"));
+});
+
+test("GLM content rejection has a safe code without leaking the provider body", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-content-rejection-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const logs: unknown[] = [];
+  const store = new CustomAiProviderStore(
+    async (entry) => {
+      logs.push(entry);
+    },
+    root,
+    storage,
+  );
+  await store.save({
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "fixture",
+    apiKey: "synthetic",
+  });
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(
+        JSON.stringify({ error: { code: "1301", message: "private transcript body" } }),
+        { status: 400 },
+      ),
+  );
+  await assert.rejects(
+    store.generateJson({ prompt: "synthetic", maxNewTokens: 200 }),
+    /custom_ai_content_rejected/,
+  );
+  assert.doesNotMatch(JSON.stringify(logs), /private transcript body|synthetic/);
+});
+
+test("a truncated model reply reports an incomplete answer without accepting partial JSON", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-json-truncated-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ finish_reason: "length", message: { content: '{"description":"未完成' } }],
+        }),
+      ),
+  );
+  const store = new CustomAiProviderStore(undefined, root, storage);
+  await store.save({
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "fixture",
+    apiKey: "synthetic",
+  });
+  await assert.rejects(
+    store.generateJson({ prompt: "synthetic", maxNewTokens: 200 }),
+    /custom_ai_response_truncated/,
+  );
+});
+
+test("organization has a bounded longer deadline and network failures expose only a safe code", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-organize-deadline-"));
+  const deadlines: number[] = [];
+  t.mock.method(AbortSignal, "timeout", (ms: number) => {
+    deadlines.push(ms);
+    return new AbortController().signal;
+  });
+  t.mock.method(globalThis, "fetch", async () => {
+    if (deadlines.length > 2) throw new TypeError("fetch failed");
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }));
+  });
+  try {
+    const store = new CustomAiProviderStore(undefined, root, storage);
+    await store.save({
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      model: "glm-4-flash-250414",
+      apiKey: "test-key",
+    });
+    await store.generateJson({ prompt: "Return JSON", maxNewTokens: 1000, timeoutMs: 180000 });
+    await store.generateJson({ prompt: "Return JSON", maxNewTokens: 1000 });
+    assert.deepEqual(deadlines, [180000, 60000]);
+    await assert.rejects(
+      store.generateJson({ prompt: "Return JSON", maxNewTokens: 1000 }),
+      /custom_ai_network_error/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("custom AI credentials retain the key across edits and refuse to overwrite damaged data", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-custom-ai-"));
   const filePath = path.join(root, "ai", "custom-provider.enc");

@@ -13,7 +13,7 @@ export default tseslint.config(
       "packages/signaling/phone-mic-sidecar-dist/**",
       "**/release/**",
       "**/node_modules/**",
-      "artifacts/**",
+      "**/artifacts/**",
       "**/test-artifacts/**",
       // Generated browser evidence and isolated downloaded runtimes, not sources.
       "output/**",

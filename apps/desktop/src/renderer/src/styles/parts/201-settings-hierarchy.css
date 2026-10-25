@@ -1,0 +1,55 @@
+.settings-nav-group + .settings-nav-group {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(198, 214, 232, 0.55);
+}
+
+.settings-nav-group-label {
+  padding: 5px 12px;
+  color: #60728a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai-advanced-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  list-style: none;
+  color: #263b56;
+  cursor: pointer;
+}
+
+.ai-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ai-advanced-summary strong,
+.ai-advanced-summary small {
+  display: block;
+}
+
+.ai-advanced-summary strong {
+  font-size: 14px;
+}
+
+.ai-advanced-summary small {
+  margin-top: 4px;
+  color: #60728a;
+  font-size: 12px;
+}
+
+.ai-advanced-summary:focus-visible {
+  outline: 2px solid #3f6ed7;
+  outline-offset: 5px;
+  border-radius: 6px;
+}
+
+.ai-advanced-settings[open] > .ai-advanced-summary {
+  margin-bottom: 18px;
+}
+
+.ai-advanced-settings[open] > .ai-advanced-summary > svg {
+  transform: rotate(180deg);
+}

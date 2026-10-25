@@ -4,15 +4,14 @@ import { resolveFfmpegExecutable } from "./media-runtime";
 import { mainResourceScheduler } from "./main-resource-scheduler";
 import { runLocalProcess } from "./local-process";
 
-// User-selected cleanup threshold; exactly ten minutes is not a short recording.
+// Legacy manual review threshold; duration alone never authorizes automatic cleanup.
 export const SHORT_RECORDING_MS = 10 * 60 * 1_000;
 export const SILENT_RECORDING_PEAK_DB = -60;
 
-/** Probe failures are review candidates, never proof that a recording is disposable. */
+/** Only measured complete silence authorizes automatic cleanup, at any duration. */
 export const isAutomaticWasteCandidate = (
   candidate: RecordingCleanupCandidate | undefined,
-): candidate is RecordingCleanupCandidate =>
-  candidate?.reason === "too_short" || candidate?.reason === "silent";
+): candidate is RecordingCleanupCandidate => candidate?.reason === "silent";
 
 interface RecordingProbeResult {
   durationMs?: number;
@@ -44,7 +43,6 @@ export const parseRecordingProbeOutput = (
   const seconds = hours * 3_600 + minutes * 60 + durationSeconds;
   if (!Number.isFinite(seconds) || seconds <= 0) return { reason: "unreadable" };
   const durationMs = Math.round(seconds * 1_000);
-  if (durationMs < SHORT_RECORDING_MS) return { durationMs, reason: "too_short" };
 
   const volumeMarker = output.lastIndexOf("max_volume:");
   const volumeToken =
@@ -59,6 +57,7 @@ export const parseRecordingProbeOutput = (
   if (maximumVolumeDb <= SILENT_RECORDING_PEAK_DB) {
     return { durationMs, maximumVolumeDb, reason: "silent" };
   }
+  if (durationMs < SHORT_RECORDING_MS) return { durationMs, maximumVolumeDb, reason: "too_short" };
   return { durationMs, maximumVolumeDb };
 };
 

@@ -22,6 +22,7 @@ import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useAccountStore } from "../store/accountStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { HomePage } from "./HomePage";
+import { TemporaryGuestEntry } from "../components/room/TemporaryGuestEntry";
 
 type AccountMode = "login" | "register";
 
@@ -812,6 +813,7 @@ export const AccountPage = () => {
           </motion.form>
         </AnimatePresence>
 
+        <TemporaryGuestEntry />
         {snapshot.guestAllowed ? (
           <footer className="account-guest">
             <span>临时身份，不创建账号</span>

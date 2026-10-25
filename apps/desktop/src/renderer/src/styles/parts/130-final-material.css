@@ -507,7 +507,7 @@ body::before {
 
 .room-date-calendar-month {
   color: #57738a;
-  font-family: "Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif;
+  font-family: var(--sg-font-family);
   font-size: 8px;
   font-weight: 760;
   letter-spacing: 0.12em;
@@ -542,8 +542,7 @@ body::before {
 
 .room-date-calendar-today strong {
   color: #405f78;
-  font-family:
-    "Noto Sans SC Variable", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family: var(--sg-font-family);
   font-size: clamp(27px, 2.25vw, 31px);
   font-weight: 670;
   font-variant-numeric: tabular-nums;
@@ -556,7 +555,7 @@ body::before {
   display: block;
   width: 100%;
   color: #7b92a5;
-  font-family: "Noto Sans SC Variable", "Microsoft YaHei UI", sans-serif;
+  font-family: var(--sg-font-family);
   font-size: 7px;
   font-weight: 680;
   letter-spacing: 0.08em;

@@ -11,7 +11,11 @@ test("room header shares compact actions and keeps channel codes in invitation r
   assert.match(topbar, /topbar-action topbar-room-switch/u);
   assert.match(topbar, /aria-label="切换房间"/u);
   assert.match(topbar, /member\.presenceState === "online"/u);
-  assert.match(await read("hooks/useRoomState.ts"), /privateRoomInvitationUrl\(/u);
+  assert.match(
+    await read("features/room/roomSessionPresentation.ts"),
+    /privateRoomInvitationUrl\(/u,
+  );
+  assert.match(await read("hooks/useRoomState.ts"), /buildChannelInviteText/u);
   assert.match(await read("hooks/useRoomState.ts"), /channelCode: room\.privateRoom\.channelCode/u);
   assert.doesNotMatch(await read("pages/RoomPage.tsx"), /RoomManagementDialog|roomManagementOpen/u);
 });

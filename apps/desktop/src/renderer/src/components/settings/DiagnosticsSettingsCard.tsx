@@ -1,128 +1,39 @@
-import { useCallback, useEffect, useState } from "react";
-
+import { useState } from "react";
+import { ArrowRight, Download, HelpCircle } from "lucide-react";
 import type {
-  AiRuntimeStatus,
   LocalAudioDiagnostics,
   PeerHealthDiagnostics,
-  RealtimeFaultKind,
   RelayStatusSnapshot,
   RuntimeHealthSnapshot,
   ScreenSharePipelineDiagnostics,
   WindowsIntegrationStatus,
 } from "@private-voice/shared";
-
 import { Button } from "../base/Button";
+import { SettingsSection } from "./SettingsSection";
+import { useSettingsStore } from "../../store/settingsStore";
 import type { AudioRuntimeSnapshot } from "../../features/audio/audioRuntimeSnapshot";
 import type { RemoteAudioMixerDiagnostics } from "../../features/audio/RemoteAudioMixer";
 import {
-  aggregateHealthLevel,
   microphoneHealth,
+  speakerHealth,
   roomAudioHealth,
   screenShareHealth,
-  speakerHealth,
-  type HealthLevel,
 } from "../../features/diagnostics/healthProjection";
-import { SettingsSection } from "./SettingsSection";
 import {
   networkHealth,
   networkPermissionHealth,
 } from "../../features/diagnostics/networkPermissionHealth";
 
-const AiRuntimeDiagnosticsPanel = ({ onOpenAiSettings }: { onOpenAiSettings: () => void }) => {
-  const [status, setStatus] = useState<AiRuntimeStatus>();
-  const [loadError, setLoadError] = useState(false);
+const situations = [
+  ["microphone", "朋友听不到我", "检查麦克风与静音设置"],
+  ["speaker", "听不到朋友", "检查耳机、扬声器和房间声音"],
+  ["connection", "进不去房间 / 声音断断续续", "检查连接和系统网络权限"],
+  ["transcription", "录音转不出文字", "检查转录配置与任务进度"],
+  ["sharing", "共享画面异常", "检查分享来源与房间画面"],
+] as const;
+type Situation = (typeof situations)[number][0];
 
-  const refresh = useCallback(async () => {
-    try {
-      setStatus(await window.desktopApi.ai.getRuntimeStatus());
-      setLoadError(false);
-    } catch {
-      setLoadError(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const asr = status?.asr;
-  const task = status?.lastTask;
-  const isBusy = asr?.runtimePhase === "running";
-  const hasProblem = Boolean(
-    loadError || (status && !asr?.ready && !isBusy) || asr?.runtimePhase === "error",
-  );
-  const statusLabel = loadError
-    ? "检查失败"
-    : !status
-      ? "正在检查"
-      : isBusy
-        ? "正在检查"
-        : hasProblem
-          ? "需要处理"
-          : "正常";
-
-  return (
-    <div className="rounded-[16px] border border-[#DCE8F5] bg-[#F7FAFE] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[13px] font-semibold text-[#344054]">AI 转录</div>
-          <div className="mt-1 text-xs leading-5 text-[#667085]">
-            {isBusy && task ? `正在处理“${task.fileName}”` : "负责录音转文字和语音记忆"}
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span
-              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                hasProblem
-                  ? "bg-[#FFF0F0] text-[#C45151]"
-                  : !status
-                    ? "bg-[#F1F5F9] text-[#64748B]"
-                    : asr?.ready || isBusy
-                      ? "bg-[#EAF7EF] text-[#2F8051]"
-                      : "bg-[#FFF8E8] text-[#9A6A19]"
-              }`}
-            >
-              {statusLabel}
-            </span>
-            {asr?.modelName ? (
-              <span className="text-[11px] text-[#7A8CA5]">当前模型：{asr.modelName}</span>
-            ) : null}
-          </div>
-          {hasProblem ? (
-            <div className="mt-2 text-xs leading-5 text-[#C45151]">
-              {loadError
-                ? "状态读取失败，请重新检查。"
-                : "运行组件尚未准备完成，请到 AI 设置检查模型和运行组件。"}
-            </div>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-2">
-          <Button variant="ghost" onClick={() => void refresh()}>
-            重新检查
-          </Button>
-          {hasProblem ? (
-            <Button variant="secondary" onClick={onOpenAiSettings}>
-              去 AI 设置
-            </Button>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const healthClass = (level: HealthLevel): string =>
-  level === "正常"
-    ? "bg-[#EAF7EF] text-[#2F8051]"
-    : level === "有问题"
-      ? "bg-[#FFF0F0] text-[#C45151]"
-      : level === "需要看看"
-        ? "bg-[#FFF8E8] text-[#9A6A19]"
-        : "bg-[#F1F5F9] text-[#64748B]";
-
-const isAttentionLevel = (level: HealthLevel): boolean =>
-  level === "需要看看" || level === "有问题";
-
-interface ShangHaoHealthOverviewProps {
+export interface DiagnosticsSettingsCardProps {
   runtimeHealth?: RuntimeHealthSnapshot;
   relay?: RelayStatusSnapshot;
   localAudioDiagnostics?: LocalAudioDiagnostics;
@@ -133,233 +44,6 @@ interface ShangHaoHealthOverviewProps {
   outputDeviceCount: number;
   remotePeerCount: number;
   webrtcReadyPeerCount: number;
-  screenShare?: ScreenSharePipelineDiagnostics;
-  windowsStatus?: WindowsIntegrationStatus;
-  onRefresh: () => void;
-  onOpenAudioSettings: () => void;
-  onOpenHome: () => void;
-  onOpenRoom: () => void;
-  onRefreshWindows: () => void;
-  onRepairFirewall: () => void;
-  isRepairingFirewall: boolean;
-  isRefreshingHealth: boolean;
-  isRefreshingWindows: boolean;
-  checkFeedback?: string;
-}
-
-const ShangHaoHealthOverview = ({
-  runtimeHealth,
-  relay,
-  localAudioDiagnostics,
-  audioRuntime,
-  mixer,
-  peerHealth,
-  roomActive,
-  outputDeviceCount,
-  remotePeerCount,
-  webrtcReadyPeerCount,
-  screenShare,
-  windowsStatus,
-  onRefresh,
-  onOpenAudioSettings,
-  onOpenHome,
-  onOpenRoom,
-  onRefreshWindows,
-  onRepairFirewall,
-  isRepairingFirewall,
-  isRefreshingHealth,
-  isRefreshingWindows,
-  checkFeedback,
-}: ShangHaoHealthOverviewProps) => {
-  const relayLevel: HealthLevel = relay ? (relay.isReachable ? "正常" : "有问题") : "未检测";
-  const roomFinding = roomAudioHealth({ remotePeerCount, webrtcReadyPeerCount, peerHealth });
-  const micFinding = microphoneHealth(audioRuntime, localAudioDiagnostics);
-  const outputFinding = speakerHealth({ outputDeviceCount, roomActive, remotePeerCount, mixer });
-  const networkFinding = networkHealth(relay);
-  const screenFinding = screenShareHealth(screenShare);
-  const windowsFinding = networkPermissionHealth(windowsStatus?.firewall);
-  const items: Array<{
-    label: string;
-    level: HealthLevel;
-    description: string;
-    actionLabel?: string;
-    onClick?: () => void;
-    badge?: string;
-  }> = [
-    {
-      label: "麦克风",
-      level: micFinding.level,
-      description: micFinding.description,
-      actionLabel: "去语音设置",
-      onClick: onOpenAudioSettings,
-    },
-    {
-      label: "扬声器",
-      level: outputFinding.level,
-      description: outputFinding.description,
-      actionLabel: "去语音设置",
-      onClick: onOpenAudioSettings,
-    },
-    {
-      label: "房间连接",
-      level: roomFinding.level,
-      description: roomFinding.description,
-      actionLabel: "回到房间",
-      onClick: onOpenRoom,
-    },
-    {
-      label: "服务器连接",
-      level: relayLevel,
-      description:
-        relayLevel === "未检测"
-          ? "尚未检查服务器连接。"
-          : relayLevel === "有问题"
-            ? "暂时连不上服务器，请检查网络或服务器设置。"
-            : "房间服务连接正常。",
-      actionLabel: "回到房间",
-      onClick: onOpenHome,
-    },
-    {
-      label: "网络速度",
-      ...networkFinding,
-      badge: networkFinding.level === "需要看看" ? "延迟偏高" : undefined,
-    },
-    {
-      label: "屏幕分享",
-      level: screenFinding.level,
-      description: screenFinding.description,
-      actionLabel: "回到房间",
-      onClick: onOpenRoom,
-    },
-    {
-      label: "Windows 网络权限",
-      ...windowsFinding,
-      actionLabel: windowsFinding.retry ? "重试修复" : undefined,
-      onClick: windowsFinding.retry ? onRepairFirewall : undefined,
-    },
-  ];
-  const attentionCount = items.filter(({ level }) => isAttentionLevel(level)).length;
-  const normalCount = items.filter(({ level }) => level === "正常").length;
-  const uncheckedCount = items.filter(({ level }) => level === "未检测").length;
-  const overallLevel = aggregateHealthLevel(items.map(({ level }) => level));
-
-  return (
-    <div className="rounded-[16px] border border-[#DCE8F5] bg-white p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[14px] font-semibold text-[#344054]">系统状态 · 连接与设备</div>
-          <div className="mt-1 text-xs leading-5 text-[#667085]">
-            {normalCount} 项正常 · {attentionCount} 项提醒 · {uncheckedCount} 项待确认
-          </div>
-          <div className="mt-1 text-[11px] leading-5 text-[#7A8CA5]">
-            {runtimeHealth
-              ? "连接异常会自动尝试恢复，缺失的网络规则会自动修复；系统授权仍需你确认。"
-              : "正在读取运行状态。"}
-          </div>
-          {checkFeedback ? (
-            <div className="mt-1 text-[11px] leading-5 text-[#52657D]" role="status">
-              {checkFeedback}
-            </div>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${healthClass(overallLevel)}`}
-          >
-            整体：
-            {overallLevel === "需要看看" || overallLevel === "有问题" ? "有提醒" : overallLevel}
-          </span>
-          <Button
-            variant="ghost"
-            disabled={isRefreshingHealth || isRefreshingWindows}
-            onClick={onRefresh}
-          >
-            {isRefreshingHealth ? "检查中…" : "重新检查"}
-          </Button>
-        </div>
-      </div>
-      <div className="mt-3 grid items-start gap-2 sm:grid-cols-2">
-        {items.map(({ label, level, description, actionLabel, onClick, badge }) => (
-          <div key={label} className="rounded-xl border border-[#EDF2F7] bg-[#FAFCFF] px-3 py-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] font-semibold text-[#52657D]">{label}</span>
-              <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${healthClass(level)}`}
-              >
-                {badge ?? (level === "有问题" || level === "需要看看" ? "需要处理" : level)}
-              </span>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-              <div className="min-w-0 text-[11px] leading-5 text-[#7A8CA5]">{description}</div>
-              {actionLabel && onClick && isAttentionLevel(level) ? (
-                <Button
-                  variant="ghost"
-                  className="h-6 shrink-0 rounded-md px-2 text-[11px]"
-                  onClick={onClick}
-                  disabled={isRepairingFirewall}
-                >
-                  {label === "Windows 网络权限" && isRepairingFirewall ? "修复中…" : actionLabel}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ))}
-      </div>
-      {windowsStatus ? (
-        <div className="mt-3 flex justify-end">
-          <Button
-            variant="ghost"
-            className="px-0 text-[11px]"
-            disabled={isRefreshingHealth || isRefreshingWindows}
-            onClick={onRefreshWindows}
-          >
-            {isRefreshingWindows ? "正在检查系统权限…" : "重新检查系统权限"}
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-};
-
-export const DiagnosticsSettingsCard = ({
-  runtimeHealth,
-  relay,
-  localAudioDiagnostics,
-  audioRuntime,
-  mixer,
-  peerHealth,
-  roomActive,
-  outputDeviceCount,
-  webrtcReadyPeerCount,
-  remotePeerCount,
-  screenShare,
-  windowsStatus,
-  onOpenLogs,
-  onExportBundle,
-  onCopySummary,
-  onRefreshHealth,
-  onOpenAudioSettings,
-  onOpenAiSettings,
-  onOpenHome,
-  onOpenRoom,
-  onRefreshWindows,
-  onRepairFirewall,
-  isRepairingFirewall,
-  isRefreshingHealth,
-  isRefreshingWindows,
-  checkFeedback,
-  onInjectFault,
-}: {
-  runtimeHealth?: RuntimeHealthSnapshot;
-  relay?: RelayStatusSnapshot;
-  localAudioDiagnostics?: LocalAudioDiagnostics;
-  audioRuntime?: AudioRuntimeSnapshot;
-  mixer?: RemoteAudioMixerDiagnostics;
-  peerHealth?: Record<string, PeerHealthDiagnostics>;
-  roomActive: boolean;
-  outputDeviceCount: number;
-  webrtcReadyPeerCount: number;
-  remotePeerCount: number;
   screenShare?: ScreenSharePipelineDiagnostics;
   windowsStatus?: WindowsIntegrationStatus;
   onOpenLogs: () => void;
@@ -375,82 +59,196 @@ export const DiagnosticsSettingsCard = ({
   isRepairingFirewall: boolean;
   isRefreshingHealth: boolean;
   isRefreshingWindows: boolean;
+  isExportingBundle?: boolean;
   checkFeedback?: string;
-  onInjectFault: (kind: RealtimeFaultKind) => void;
-}) => (
-  <SettingsSection
-    title="检查与修复"
-    description="上号会在后台检查并自动尝试修复。这里查看进度、系统授权提醒，或导出技术报告。"
-  >
-    <div className="diagnostics-user-view space-y-3">
-      <ShangHaoHealthOverview
-        runtimeHealth={runtimeHealth}
-        relay={relay}
-        localAudioDiagnostics={localAudioDiagnostics}
-        audioRuntime={audioRuntime}
-        mixer={mixer}
-        peerHealth={peerHealth}
-        roomActive={roomActive}
-        outputDeviceCount={outputDeviceCount}
-        remotePeerCount={remotePeerCount}
-        webrtcReadyPeerCount={webrtcReadyPeerCount}
-        screenShare={screenShare}
-        windowsStatus={windowsStatus}
-        onRefresh={onRefreshHealth}
-        onOpenAudioSettings={onOpenAudioSettings}
-        onOpenHome={onOpenHome}
-        onOpenRoom={onOpenRoom}
-        onRefreshWindows={onRefreshWindows}
-        onRepairFirewall={onRepairFirewall}
-        isRepairingFirewall={isRepairingFirewall}
-        isRefreshingHealth={isRefreshingHealth}
-        isRefreshingWindows={isRefreshingWindows}
-        checkFeedback={checkFeedback}
-      />
-      <AiRuntimeDiagnosticsPanel onOpenAiSettings={onOpenAiSettings} />
-      <div className="rounded-[16px] border border-[#E7ECF2] bg-[#F8FAFC] p-4">
-        <div className="text-[13px] font-semibold text-[#344054]">需要帮忙时</div>
-        <div className="mt-1 text-xs leading-5 text-[#667085]">
-          导出诊断包会包含后台保存的详细技术信息，方便开发者定位问题；这里不会把这些术语直接堆给你看。
-        </div>
-        <div className="mt-3 flex flex-wrap gap-3">
-          <Button variant="secondary" onClick={onOpenLogs}>
-            打开诊断文件夹
-          </Button>
-          <Button variant="secondary" onClick={onExportBundle}>
-            导出完整诊断包
-          </Button>
-          <Button variant="ghost" onClick={onCopySummary}>
-            复制易读摘要
-          </Button>
-        </div>
-      </div>
-      {import.meta.env.DEV ? (
-        <details className="rounded-[16px] border border-dashed border-[#E4B968] bg-[#FFF9EC] p-4">
-          <summary className="cursor-pointer select-none text-[13px] font-semibold text-[#6F5422]">
-            开发测试入口
-          </summary>
-          <div className="mt-1 text-[11px] leading-5 text-[#93713A]">
-            仅开发环境可见，用于验证断线、旧连接事件、重复关闭、快照超时、单好友音频恢复和屏幕轨丢失。
+}
+
+export const DiagnosticsSettingsCard = (props: DiagnosticsSettingsCardProps) => {
+  const [selected, setSelected] = useState<Situation>();
+  const provider = useSettingsStore((state) => state.settings?.aiTranscriptionProvider ?? "cloud");
+  const mic = microphoneHealth(props.audioRuntime, props.localAudioDiagnostics);
+  const output = speakerHealth(props);
+  const room = roomAudioHealth(props);
+  const network = networkHealth(props.relay);
+  const screen = screenShareHealth(props.screenShare);
+  const permissions = networkPermissionHealth(props.windowsStatus?.firewall);
+  const busy = props.isRefreshingHealth || props.isRefreshingWindows;
+  const guidance = {
+    microphone: {
+      title: "先确认麦克风能收到你的声音",
+      finding: mic.description,
+      steps: [
+        "确认麦克风没有静音，耳机或麦克风已插好。",
+        "在语音设置里选择正在使用的麦克风，做一次声音测试。",
+        "本机有输入不代表朋友已听到，测试后请朋友帮忙确认。",
+      ],
+      action: "去语音设置测试",
+      onClick: props.onOpenAudioSettings,
+    },
+    speaker: {
+      title: "先确认声音播放到正确的设备",
+      finding: output.description,
+      steps: [
+        "确认没有关闭房间声音，朋友也没有静音。",
+        "在语音设置里选择正在使用的耳机或扬声器，检查音量。",
+        "仍听不到某位朋友时，回到房间检查对方的音量。",
+      ],
+      action: "检查耳机和音量",
+      onClick: props.onOpenAudioSettings,
+    },
+    connection: {
+      title: "先检查网络，再看系统授权",
+      finding:
+        props.relay && !props.relay.isReachable
+          ? "暂时连接不上房间服务器，请先确认网络可用。"
+          : network.level === "需要看看"
+            ? "当前网络响应偏慢，可能影响语音。"
+            : !props.roomActive && props.relay?.isReachable
+              ? "房间服务器可以连接，回首页选择房间后再试。"
+              : room.description,
+      steps: [
+        "确认电脑能正常上网，再回到房间重试。",
+        "连接异常会自动尝试恢复，也可回到房间查看连接状态。",
+        permissions.retry
+          ? "使用下方“修复网络权限”，按 Windows 提示确认授权。"
+          : "重试后仍连接不上时，导出诊断包，方便开发者定位。",
+      ],
+      action: props.roomActive ? "回到房间查看" : "回首页选择房间",
+      onClick: props.roomActive ? props.onOpenRoom : props.onOpenHome,
+    },
+    transcription: {
+      title: "先查看任务进度和转录配置",
+      finding:
+        provider === "local"
+          ? "当前使用本地转录，需要准备所选模型和运行组件。"
+          : "当前使用云端转录，需要可用的密钥和网络连接。",
+      steps: [
+        "录音库里显示“排队中”时，会等待前一条处理完成。",
+        "到 AI 功能检查所选服务是否配置完成；本地辅助缺模型时，先只用云端。",
+        "若显示失败，保留已有结果后重试；仍失败时导出诊断包。",
+      ],
+      action: "检查转录设置",
+      onClick: props.onOpenAiSettings,
+    },
+    sharing: {
+      title: "回到房间检查正在分享的画面",
+      finding: screen.description,
+      steps: [
+        "确认选择的是想分享的窗口或屏幕。",
+        "请朋友确认是否能看到画面；只有本机预览不能证明对方已收到。",
+        "画面卡住时可停止后重新选择分享来源，语音不需要退出。",
+      ],
+      action: "回到房间",
+      onClick: props.onOpenRoom,
+    },
+  };
+  const current = selected ? guidance[selected] : undefined;
+  return (
+    <SettingsSection
+      title="帮助与修复"
+      description="选一个遇到的情况，按提示处理；需要帮助时导出诊断包。"
+    >
+      <div className="diagnostics-user-view text-[var(--sg-ink-1)]">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#dce8f5] pb-5">
+          <div className="max-w-[55ch]">
+            <p className="text-sm font-medium">需要帮忙定位问题？</p>
+            <p className="mt-1 text-xs leading-5 text-[#52657d]">
+              导出后把诊断包发给开发者，无需读懂里面的技术信息。
+            </p>
           </div>
+          <Button disabled={props.isExportingBundle} onClick={props.onExportBundle}>
+            <Download className="size-4" aria-hidden="true" />
+            {props.isExportingBundle ? "正在导出…" : "导出完整诊断包"}
+          </Button>
+        </div>
+        <div className="mt-6 grid gap-6 md:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
+          <div role="group" aria-label="遇到了什么问题">
+            <h3 className="mb-3 text-sm font-semibold">遇到了什么问题？</h3>
+            <div className="space-y-1">
+              {situations.map(([id, title, description]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={selected === id}
+                  aria-controls="diagnostics-guidance"
+                  className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3978bd] ${selected === id ? "border-[#b8d5f6] bg-[#eaf3ff]" : "border-transparent hover:bg-[#f3f8ff]"}`}
+                  onClick={() => setSelected(id)}
+                >
+                  <span>
+                    <strong className="block text-[13px] font-medium">{title}</strong>
+                    <span className="mt-1 block text-xs text-[#52657d]">{description}</span>
+                  </span>
+                  <ArrowRight className="size-4 shrink-0 text-[#52657d]" aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          </div>
+          <section
+            id="diagnostics-guidance"
+            className="min-w-0 md:border-l md:border-[#dce8f5] md:pl-6"
+            aria-live="polite"
+          >
+            {current ? (
+              <>
+                <h3 className="text-base font-semibold">{current.title}</h3>
+                <p className="mt-3 text-[13px] leading-6 text-[#52657d]">{current.finding}</p>
+                <ol className="mt-4 list-decimal space-y-3 pl-5 text-[13px] leading-6">
+                  {current.steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+                {selected === "connection" && (permissions.retry || props.isRepairingFirewall) ? (
+                  <div className="mt-4 border-l-2 border-[#b8d5f6] pl-3">
+                    <p className="text-xs leading-5 text-[#52657d]">
+                      上号的网络权限需要处理。修复时若出现 Windows 授权框，请确认后继续。
+                    </p>
+                    <Button
+                      className="mt-2"
+                      variant="secondary"
+                      disabled={props.isRepairingFirewall || busy}
+                      onClick={props.onRepairFirewall}
+                    >
+                      {props.isRepairingFirewall ? "修复中…" : "修复网络权限"}
+                    </Button>
+                  </div>
+                ) : null}
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <Button variant="secondary" data-action="primary" onClick={current.onClick}>
+                    {current.action}
+                  </Button>
+                  <Button variant="ghost" disabled={busy} onClick={props.onRefreshHealth}>
+                    {busy ? "检查中…" : "重新检查"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex min-h-[240px] flex-col items-center justify-center gap-3 text-center text-[#52657d]">
+                <HelpCircle className="size-7" aria-hidden="true" />
+                <p className="text-sm">选择一种情况，查看下一步</p>
+                <p className="max-w-[32ch] text-xs leading-5">
+                  不用判断技术指标，也不用先重置设置。
+                </p>
+              </div>
+            )}
+            {props.checkFeedback ? (
+              <p className="mt-3 text-xs leading-5 text-[#52657d]" role="status">
+                {props.checkFeedback}
+              </p>
+            ) : null}
+          </section>
+        </div>
+        <details className="mt-6 border-t border-[#dce8f5] pt-4">
+          <summary className="cursor-pointer text-xs text-[#52657d]">其他帮助工具</summary>
           <div className="mt-3 flex flex-wrap gap-2">
-            {(
-              [
-                ["断开信令", "signal_disconnect"],
-                ["旧 Socket Close", "stale_socket_close"],
-                ["重复 Close", "duplicate_socket_close"],
-                ["快照超时", "snapshot_timeout"],
-                ["单好友音频停滞", "one_peer_audio_stall"],
-                ["屏幕轨丢失", "screen_track_lost"],
-              ] satisfies Array<[string, RealtimeFaultKind]>
-            ).map(([label, kind]) => (
-              <Button key={kind} variant="ghost" onClick={() => onInjectFault(kind)}>
-                {label}
-              </Button>
-            ))}
+            <Button variant="ghost" onClick={props.onCopySummary}>
+              复制问题摘要
+            </Button>
+            <Button variant="ghost" onClick={props.onOpenLogs}>
+              打开诊断文件夹
+            </Button>
           </div>
         </details>
-      ) : null}
-    </div>
-  </SettingsSection>
-);
+      </div>
+    </SettingsSection>
+  );
+};

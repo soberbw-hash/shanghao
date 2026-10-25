@@ -16,7 +16,8 @@ test("native phone input rejects malformed and stale samples and retires listene
     kill: () => void;
   })[] = [];
   const availability: boolean[] = [],
-    samples: unknown[] = [];
+    samples: unknown[] = [],
+    statuses: unknown[] = [];
   const exports = {} as {
     PhoneInputMonitor: new (...args: unknown[]) => {
       configure: (value: unknown) => void;
@@ -65,7 +66,10 @@ test("native phone input rejects malformed and stale samples and retires listene
   });
   const cutoff = Date.now();
   const monitor = new exports.PhoneInputMonitor(
-    (value: boolean) => availability.push(value),
+    (value: boolean, _raw: boolean, status: unknown) => {
+      availability.push(value);
+      if (status) statuses.push(status);
+    },
     (sampledAt: number) => sampledAt > cutoff,
   );
   try {
@@ -78,6 +82,15 @@ test("native phone input rejects malformed and stale samples and retires listene
     send({ down: true }); // No ready handshake, no fabricated transition.
     send({ ready: true });
     assert.equal(availability.at(-1), true);
+    send({ inputDesktopAvailable: false });
+    assert.equal(samples.length, 0, "inaccessible desktop cannot unmute or synthesize input");
+    send({ inputDesktopAvailable: true, foregroundHigher: true });
+    assert.equal(
+      JSON.stringify(statuses.at(-1)),
+      JSON.stringify({ inputDesktopAvailable: true, foregroundHigher: true }),
+    );
+    send({ inputDesktopAvailable: true, foregroundHigher: null });
+    assert.equal(JSON.stringify(statuses.at(-1)), JSON.stringify({ inputDesktopAvailable: true }));
     send({
       down: "true",
       ctrlKey: false,

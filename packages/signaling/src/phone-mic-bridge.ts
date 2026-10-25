@@ -84,9 +84,9 @@ export class PhoneMicBridge {
     return this.sessions.size;
   }
 
-  attachToServer(server: Server, signalingWss: WebSocketServer): void {
+  attachToServer(server: Server, signalingWss: WebSocketServer, allowPhoneMic = true): void {
     server.on("upgrade", (request, socket, head) => {
-      if (request.url?.split("?")[0] === "/phone-mic/ws") {
+      if (allowPhoneMic && request.url?.split("?")[0] === "/phone-mic/ws") {
         this.handleUpgrade(request, socket, head);
       } else {
         signalingWss.handleUpgrade(request, socket, head, (client) => {

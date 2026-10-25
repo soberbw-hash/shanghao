@@ -1,0 +1,83 @@
+/* Storage management belongs to the library toolbar, outside the reading surface. */
+.recording-library-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  position: relative;
+  z-index: 4;
+  padding-inline: 4px;
+}
+.recording-library-toolbar h2 {
+  color: #24384f;
+  font-size: 16px;
+  font-weight: 650;
+}
+.recording-library-local-note {
+  color: #526b87;
+  font-size: 12px;
+}
+.recording-storage-settings {
+  margin-left: auto;
+}
+.recording-storage-settings > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: #526b87;
+  font-size: 12px;
+  list-style: none;
+  cursor: pointer;
+}
+.recording-storage-settings > summary svg {
+  width: 15px;
+  height: 15px;
+}
+.recording-storage-settings[open] > summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.recording-storage-settings .recording-library-utility-bar {
+  position: absolute;
+  z-index: 6;
+  inset: 100% 0 auto auto;
+  width: min(600px, calc(100vw - 80px));
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: #f4f9ff;
+  box-shadow: 0 12px 28px rgb(69 105 145 / 12%);
+}
+.recording-storage-settings .recording-library-location-tools {
+  flex-basis: auto;
+}
+.recording-storage-settings .recording-library-cleanup-tools {
+  border: 0;
+  padding: 0;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.recording-storage-settings .recording-library-usage {
+  display: none;
+}
+.recording-library-page {
+  gap: 8px;
+}
+.recording-storage-settings > summary:focus-visible,
+.recording-processing-settings > summary:focus-visible,
+.recording-overview > summary:focus-visible {
+  outline: 2px solid #327dd9;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+@media (max-width: 700px) {
+  .recording-library-local-note {
+    display: none;
+  }
+  .recording-storage-settings .recording-library-location-tools {
+    flex-wrap: wrap;
+  }
+  .recording-storage-settings .recording-library-location-path {
+    flex-basis: 65%;
+  }
+}

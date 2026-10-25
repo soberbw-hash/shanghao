@@ -66,8 +66,9 @@ test("current local metadata and safeguards are complete", () => {
   assert.equal(release.includes("windows-${{ inputs.release_tag || github.ref_name }}"), true);
   assert.equal(
     release.includes("docs/release-notes/$env:RELEASE_TAG.md") &&
-      release.includes("body_path: artifacts/release-body.md") &&
-      release.includes("https://raw.githubusercontent.com/soberbw-hash/shanghao/"),
+      release.includes("body_path: apps/desktop/release/release-body.md") &&
+      release.includes("repository: ${{ github.repository }}") &&
+      release.includes("token: ${{ github.token }}"),
     true,
   );
   assert.equal(release.includes("VITE_CLOUDBASE_ENV_ID"), true);
@@ -78,6 +79,12 @@ test("current local metadata and safeguards are complete", () => {
   assert.equal(release.includes("pnpm test:five-peer-media"), true);
   assert.equal(release.includes("pnpm release:verify-package"), true);
   assert.equal(release.includes("SHA256SUMS.txt"), true);
+  assert.equal(
+    release.includes("actions/upload-artifact"),
+    false,
+    "installers publish directly without consuming intermediate Actions artifact storage",
+  );
+  assert.equal(release.includes("actions/download-artifact"), false);
 });
 
 test("main CI, CodeQL, and Dependabot guard the repository", () => {

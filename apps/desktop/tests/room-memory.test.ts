@@ -478,7 +478,7 @@ test("cloud questions, organization, and report prompts prepend only their own m
   assert.equal(roomMemoryContext(store.get(roomB)), "");
 });
 
-test("custom API receives original recording room memory and question room memory", async () => {
+test("custom recording summaries use only their original text while questions retain the joined room memory", async () => {
   const ids: string[] = [],
     prompts: string[] = [];
   const gateway = new AiTextGateway(
@@ -511,9 +511,10 @@ test("custom API receives original recording room memory and question room memor
     maxNewTokens: 100,
     manual: true,
   });
-  assert.deepEqual(ids, [roomA, roomB]);
-  assert.ok(prompts[0]!.includes(roomA));
-  assert.ok(!prompts[0]!.includes(roomB));
+  assert.deepEqual(ids, [roomB]);
+  assert.equal(prompts[0], "整理");
+  assert.ok(prompts[1]!.includes(roomB));
+  assert.ok(!prompts[1]!.includes(roomA));
   await gateway.generateJson({
     purpose: "organize",
     prompt: "没有房间归属的旧录音",
@@ -522,7 +523,7 @@ test("custom API receives original recording room memory and question room memor
   });
   assert.deepEqual(
     ids,
-    [roomA, roomB],
+    [roomB],
     "unscoped recordings cannot inherit the joined room's private memory",
   );
   assert.doesNotMatch(prompts[2]!, /房间记忆/);

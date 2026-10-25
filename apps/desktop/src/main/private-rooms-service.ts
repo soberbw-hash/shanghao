@@ -13,6 +13,7 @@ import {
 import type { AccountDesktopService } from "./account-service";
 import { PrivateRoomHistoryStore } from "./private-room-history";
 import { requestPrivateRoom } from "./private-room-request";
+import { privateRoomServerUrl, requestPrivateRoomWithSession } from "./private-room-auth";
 const required = (value: unknown, max: number): string => {
   if (typeof value !== "string" || !value.trim() || value.length > max)
     throw new Error("room_invalid_request");
@@ -160,19 +161,10 @@ export class PrivateRoomsDesktopService implements PrivateRoomsApi {
     return `${url.toString()}|${snapshot.profile.userId}`;
   }
   private server(): URL {
-    const url = new URL(this.getServerUrl() ?? "");
-    if (!/^wss?:$/.test(url.protocol) || url.username || url.password)
-      throw new Error("room_server_invalid_url");
-    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
-    if (
-      url.protocol !== "https:" &&
-      !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
-      !this.accounts.getSnapshot().developmentConnection
-    )
-      throw new Error("account_secure_transport_required");
-    url.hash = "";
-    url.pathname = "/";
-    return url;
+    return privateRoomServerUrl(
+      this.getServerUrl(),
+      !!this.accounts.getSnapshot().developmentConnection,
+    );
   }
   private async request(
     route: string,
@@ -184,12 +176,17 @@ export class PrivateRoomsDesktopService implements PrivateRoomsApi {
     const scope = this.scope();
     this.pending++;
     try {
-      const token = await this.accounts.getFreshAccessToken();
-      if (!token || this.scope() !== scope) throw new Error("account_session_expired");
       const url = this.server();
       url.pathname = `/api/rooms${route.split("?")[0]}`;
       url.search = route.includes("?") ? route.split("?")[1]! : "";
-      const result = await requestPrivateRoom(this.fetcher, url, token, method, body, signal);
+      const result = await requestPrivateRoomWithSession(
+        (force) => this.accounts.getFreshAccessToken(force),
+        () => {
+          if (this.scope() !== scope) throw new Error("account_session_expired");
+        },
+        (token) => requestPrivateRoom(this.fetcher, url, token, method, body, signal),
+        signal,
+      );
       if (this.scope() !== scope) throw new Error("account_session_expired");
       return result;
     } finally {

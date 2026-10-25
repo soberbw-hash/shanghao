@@ -11,6 +11,9 @@ import {
 import type { WebSocket } from "ws";
 
 export interface PeerSession {
+  memberSessionId?: string;
+  memberGeneration?: number;
+  applicationAudioName?: string;
   id: string;
   userId: string;
   username?: string;
@@ -33,6 +36,7 @@ export interface PeerSession {
   sceneZone?: SceneZoneId;
   gameName?: string;
   gameIconDataUrl?: string;
+  gameSession?: RoomMember["gameSession"];
   musicActivity?: MusicActivity;
   joinedAt: string;
   lastHeartbeatAt: number;
@@ -125,6 +129,7 @@ export class PeerManager {
         | "isSpeaking"
         | "isDeafened"
         | "callModeActive"
+        | "applicationAudioName"
         | "activity"
         | "sceneZone"
         | "gameName"
@@ -135,6 +140,7 @@ export class PeerManager {
       >
     > & {
       gameIconDataUrl?: string | null;
+      gameSession?: RoomMember["gameSession"] | null;
       musicActivity?: MusicActivity | null;
     },
   ): void {
@@ -143,6 +149,7 @@ export class PeerManager {
       for (const [key, value] of Object.entries(nextState)) {
         if (key === "gameName" && value === "") {
           peer.gameName = undefined;
+          peer.gameSession = undefined;
           continue;
         }
         if (key === "musicActivity" && value === null) {
@@ -151,6 +158,10 @@ export class PeerManager {
         }
         if (key === "gameIconDataUrl" && value === null) {
           peer.gameIconDataUrl = undefined;
+          continue;
+        }
+        if (key === "gameSession" && value === null) {
+          peer.gameSession = undefined;
           continue;
         }
         if (value !== undefined) {
@@ -163,6 +174,8 @@ export class PeerManager {
   toRoomMembers(localPeerId?: string): RoomMember[] {
     return this.listPeers().map((peer) => ({
       id: peer.id,
+      memberSessionId: peer.memberSessionId,
+      memberGeneration: peer.memberGeneration,
       userId: peer.userId,
       username: peer.username,
       displayName: peer.displayName,
@@ -178,10 +191,12 @@ export class PeerManager {
       isMuted: peer.isMuted,
       isDeafened: peer.isDeafened,
       callModeActive: peer.callModeActive ?? false,
+      applicationAudioName: peer.applicationAudioName || undefined,
       activity: peer.activity,
       sceneZone: peer.sceneZone,
       gameName: peer.gameName,
       gameIconDataUrl: peer.gameIconDataUrl,
+      gameSession: peer.gameSession,
       musicActivity: peer.musicActivity,
       presenceState: peer.disconnectedAt
         ? peer.disconnectedFor === "updating"

@@ -17,7 +17,7 @@ test("long recording ranges cover the entire recording without time gaps", () =>
     duration,
   );
   ranges.forEach((range, index) => {
-    assert.ok(range.durationMs <= 15 * 60_000);
+    assert.ok(range.durationMs <= 5 * 60_000);
     if (index)
       assert.equal(range.startMs, ranges[index - 1]!.startMs + ranges[index - 1]!.durationMs);
   });
@@ -48,6 +48,7 @@ test("real encoder splits an over-hour recording below API limits and removes on
   await handle.close();
   let partPath = "";
   let calls = 0;
+  let completed = 0;
   try {
     const result = await transcribeRemoteParts(
       file,
@@ -56,13 +57,20 @@ test("real encoder splits an over-hour recording below API limits and removes on
       async (part, length) => {
         partPath = part;
         calls++;
-        assert.ok(length <= 3600_000);
+        assert.ok(length <= 300_000);
         assert.ok((await stat(part)).size < 50 * 1024 * 1024);
         return { text: `这是第 ${calls} 段测试内容`, modelName: "synthetic-test" };
       },
       async () => {},
+      async (part, index, count) => {
+        completed++;
+        assert.equal(index, completed);
+        assert.equal(count, 13);
+        assert.equal(part.startMs, (index - 1) * 300_000);
+      },
     );
-    assert.equal(result.length, 5);
+    assert.equal(result.length, 13);
+    assert.equal(completed, 13);
     assert.equal(result.at(-1)?.startMs, 3600_000);
     assert.equal((await stat(file)).size, bytes + 44);
     await assert.rejects(stat(partPath), /ENOENT/);

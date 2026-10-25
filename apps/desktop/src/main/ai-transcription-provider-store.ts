@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { app, safeStorage } from "electron";
+import { readBoundedProviderFile, recoverAndMigrateProvider } from "./provider-encryption-recovery";
 import { readAiProviderResponse } from "./ai-provider-response";
 
 import type {
@@ -175,21 +176,35 @@ export class AiTranscriptionProviderStore {
     );
     form.append("model", model);
     const timeoutMs = Math.max(120_000, Math.min(30 * 60_000, durationMs * 4));
+    const requestFailed = (error: unknown): never => {
+      if (signal.aborted) throw new Error("ai_task_paused");
+      const networkCode = ((error as Error)?.cause as { code?: string } | undefined)?.code;
+      if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"))
+        throw new Error(`${provider}_asr_timeout`, { cause: error });
+      if (
+        error instanceof TypeError &&
+        (error.message === "fetch failed" || error.message === "terminated") &&
+        (!networkCode ||
+          /^(?:ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|ECONNREFUSED|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT)$/.test(
+            networkCode,
+          ))
+      ) {
+        throw new Error(`${provider}_asr_network_error`, { cause: error });
+      }
+      throw error;
+    };
     const response = await this.fetcher(`${baseUrl}/audio/transcriptions`, {
       method: "POST",
       redirect: "error",
       headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
       body: form,
       signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
-    }).catch((error) => {
-      if (signal.aborted) throw new Error("ai_task_paused");
-      throw error;
-    });
+    }).catch(requestFailed);
     const body = await readAiProviderResponse(
       response,
       MAX_RESPONSE_BYTES,
       "cloud_asr_response_too_large",
-    );
+    ).catch(requestFailed);
     signal.throwIfAborted();
     if (!response.ok) throw new Error(`cloud_asr_http_${response.status}`);
     let payload: { text?: unknown };
@@ -198,8 +213,8 @@ export class AiTranscriptionProviderStore {
     } catch {
       throw new Error("cloud_asr_invalid_response");
     }
-    if (typeof payload.text !== "string" || !payload.text.trim()) {
-      throw new Error("cloud_asr_empty_response");
+    if (typeof payload.text !== "string") {
+      throw new Error("cloud_asr_invalid_response");
     }
     return { text: payload.text, modelName: model };
   }
@@ -207,7 +222,7 @@ export class AiTranscriptionProviderStore {
   private async read(): Promise<StoredTranscriptionProvider | undefined> {
     let encrypted: Buffer;
     try {
-      encrypted = await readFile(this.filePath);
+      encrypted = await readBoundedProviderFile(this.filePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
@@ -216,9 +231,48 @@ export class AiTranscriptionProviderStore {
       throw new Error("custom_asr_encryption_unavailable");
     }
     try {
-      const value = JSON.parse(
-        this.secureStorage.decryptString(encrypted),
-      ) as StoredTranscriptionProvider;
+      let plaintext: string;
+      try {
+        plaintext = this.secureStorage.decryptString(encrypted);
+      } catch {
+        const appData = app.getPath("appData");
+        const profile = path.dirname(path.dirname(this.filePath));
+        if (
+          path.dirname(profile) !== appData ||
+          !["shanghao", "shanghao-desktop"].includes(path.basename(profile))
+        )
+          throw Error("recovery_scope_invalid");
+        const recovered = await recoverAndMigrateProvider(
+          this.filePath,
+          encrypted,
+          appData,
+          (input) => {
+            const config = input as StoredTranscriptionProvider;
+            const keyValid = (key: unknown) =>
+              typeof key === "string" && key.trim().length > 0 && key.length <= 512;
+            if (
+              !config ||
+              (!config.cloudApiKey && !config.custom) ||
+              (config.cloudApiKey !== undefined && !keyValid(config.cloudApiKey))
+            )
+              throw Error("recovery_config_invalid");
+            if (config.custom) {
+              if (
+                typeof config.custom.baseUrl !== "string" ||
+                typeof config.custom.model !== "string" ||
+                !config.custom.model.trim() ||
+                config.custom.model.length > 120 ||
+                !keyValid(config.custom.apiKey)
+              )
+                throw Error("recovery_config_invalid");
+              normalizeBaseUrl(config.custom.baseUrl);
+            }
+          },
+          (value) => this.secureStorage.encryptString(value),
+        );
+        plaintext = recovered;
+      }
+      const value = JSON.parse(plaintext) as StoredTranscriptionProvider;
       if (
         (value.cloudApiKey !== undefined && typeof value.cloudApiKey !== "string") ||
         (value.custom !== undefined &&

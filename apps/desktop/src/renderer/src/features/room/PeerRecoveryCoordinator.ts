@@ -25,6 +25,7 @@ export class PeerRecoveryCoordinator {
   private readonly watchdogs = new Map<string, number>();
   private readonly attempts = new Map<string, number>();
   private readonly lastRecoveryAt = new Map<string, string>();
+  private readonly lastQualityRecoveryAt = new Map<string, number>();
 
   constructor(private readonly options: PeerRecoveryCoordinatorOptions) {}
 
@@ -55,13 +56,21 @@ export class PeerRecoveryCoordinator {
     this.watchdogs.set(peerId, watchdog);
   }
 
-  schedule(peerId: string, reason: string): void {
+  schedule(peerId: string, reason: string): boolean {
     if (
       this.timers.has(peerId) ||
       !this.options.canRecover() ||
       !this.options.remotePeerIds.has(peerId)
     ) {
-      return;
+      return false;
+    }
+    if (reason.endsWith("playout_degraded")) {
+      const now = Date.now(),
+        previous = this.lastQualityRecoveryAt.get(peerId);
+      if (previous !== undefined && now - previous < 30000) return false;
+      for (const [id, time] of this.lastQualityRecoveryAt)
+        if (now - time >= 30000) this.lastQualityRecoveryAt.delete(id);
+      this.lastQualityRecoveryAt.set(peerId, now);
     }
     const attempt = (this.attempts.get(peerId) ?? 0) + 1;
     this.attempts.set(peerId, attempt);
@@ -76,19 +85,20 @@ export class PeerRecoveryCoordinator {
     const timer = window.setTimeout(() => {
       this.timers.delete(peerId);
       this.lastRecoveryAt.set(peerId, new Date().toISOString());
-      void this.enqueue(peerId, "recover_peer", () => this.recover(peerId, reason)).catch(
-        (error) => {
-          void writeRendererLog("webrtc", "warn", "Peer media recovery failed", {
-            targetPeerId: peerId,
-            attempt,
-            reason,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          this.schedule(peerId, "recovery_failed");
-        },
-      );
+      void this.enqueue(peerId, "recover_peer", () =>
+        this.recover(peerId, reason, reason === "outbound_playout_degraded"),
+      ).catch((error) => {
+        void writeRendererLog("webrtc", "warn", "Peer media recovery failed", {
+          targetPeerId: peerId,
+          attempt,
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.schedule(peerId, "recovery_failed");
+      });
     }, delay);
     this.timers.set(peerId, timer);
+    return true;
   }
 
   async handleRemoteRequest(payload: PeerRestartRequestMessage): Promise<void> {
@@ -131,6 +141,7 @@ export class PeerRecoveryCoordinator {
   }
 
   clearAll(): void {
+    this.lastQualityRecoveryAt.clear();
     for (const peerId of new Set([...this.timers.keys(), ...this.watchdogs.keys()])) {
       this.clear(peerId, true);
     }

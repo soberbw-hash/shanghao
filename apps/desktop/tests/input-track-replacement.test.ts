@@ -58,7 +58,9 @@ function load<T>(relativePath: string): T {
       require: (id: string) =>
         id.endsWith("/replaceOutgoingAudioTrack")
           ? load("../src/renderer/src/features/audio/replaceOutgoingAudioTrack.ts")
-          : { writeRendererLog: async () => undefined },
+          : id.endsWith("/audioSendGate")
+            ? load("../src/renderer/src/features/audio/audioSendGate.ts")
+            : { writeRendererLog: async () => undefined },
       MediaStream: Stream,
       AudioContext: Context,
     },

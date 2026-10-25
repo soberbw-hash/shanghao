@@ -20,7 +20,7 @@ import type {
   RecordingLibrarySnapshot,
   RecordingMarker,
 } from "@private-voice/shared";
-import { isStoredRoomId } from "@private-voice/shared";
+import { isStoredRoomId, isTemporaryRoomSessionId } from "@private-voice/shared";
 
 export const RECORDING_MEDIA_PROTOCOL = "shanghao-recording";
 export const RECORDING_MEDIA_MIME_TYPE = "audio/mp4";
@@ -177,7 +177,9 @@ const readLibraryMetadata = async (directory: string): Promise<RecordingLibraryM
             typeof entry.title === "string" &&
             (entry.isCustomTitle === undefined || typeof entry.isCustomTitle === "boolean") &&
             typeof entry.createdAt === "string" &&
-            (entry.roomId === undefined || isStoredRoomId(entry.roomId)) &&
+            (entry.roomId === undefined ||
+              isStoredRoomId(entry.roomId) ||
+              isTemporaryRoomSessionId(entry.roomId)) &&
             (entry.roomName === undefined ||
               (typeof entry.roomName === "string" && entry.roomName.length <= 64)),
         )))
@@ -404,7 +406,11 @@ export const saveRecordingOriginInDirectory = async (
   roomId: string,
   roomName: string,
 ): Promise<void> => {
-  if (!isStoredRoomId(roomId) || typeof roomName !== "string" || roomName.length > 64)
+  if (
+    (!isStoredRoomId(roomId) && !isTemporaryRoomSessionId(roomId)) ||
+    typeof roomName !== "string" ||
+    roomName.length > 64
+  )
     throw new Error("invalid_recording_origin");
   const recordingId = await registerRecordingInDirectory(directory, filePath);
   await mutateDirectory(directory, async () => {

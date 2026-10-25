@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import type { RoomMember } from "@private-voice/shared";
 
 import { memberStatus } from "../../features/voice-scene/activityRules";
@@ -18,6 +18,21 @@ export const SceneCharacterLabel = ({
   member: RoomMember;
   isAway: boolean;
 }) => {
+  const [, tick] = useReducer((value: number) => value + 1, 0);
+  const timed =
+    member.gameSession?.phase === "in-game" && member.gameSession.startedAt !== undefined;
+  useEffect(() => {
+    if (!timed) return;
+    const refresh = () => {
+      if (!document.hidden) tick();
+    };
+    const timer = setInterval(refresh, 15_000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [timed]);
   const status = memberStatus(member);
   const statusLabel = status.label === "等待中" ? "摸鱼中" : status.label;
   const isReconnecting = status.tone === "reconnecting";

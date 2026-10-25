@@ -5,12 +5,14 @@ import { useAppStore } from "../store/appStore";
 import { desktopApi } from "../utils/desktopApi";
 import { useRoomStore } from "../store/roomStore";
 import { playUiSound } from "../features/audio/uiSound";
+import { setAudioSendEnabled } from "../features/audio/audioSendGate";
 
 export function usePhoneModeSync(): void {
   useEffect(() => {
     if (!desktopApi.phoneMode) return;
     let verifiedActive = false;
     let eventRevision = 0;
+    let confirmedActive = useAudioStore.getState().phoneModeActive ?? false;
     let lastEntryCue = 0;
     const apply = (
       state: { active: boolean; busy?: boolean; error?: string; entryCue?: number },
@@ -19,7 +21,7 @@ export function usePhoneModeSync(): void {
       if (state.active) {
         // Shut the outgoing track immediately, before React's transport effect.
         for (const track of useRoomStore.getState().localStream?.getAudioTracks() ?? [])
-          track.enabled = false;
+          setAudioSendEnabled(track, false);
       }
       useAudioStore.getState().setPhoneMode(state.active);
       if (
@@ -31,7 +33,14 @@ export function usePhoneModeSync(): void {
         state.entryCue !== lastEntryCue
       ) {
         lastEntryCue = state.entryCue;
+        // This is an entering cue before Windows mutes outputs, not success.
         playUiSound("phone-mode-enter");
+      }
+      if (!state.busy && !state.error) {
+        // Busy/error states represent the privacy gate, not a completed native
+        // transition. Reconciliation and duplicate acknowledgements stay quiet.
+        if (live && !state.active && confirmedActive) playUiSound("phone-mode-exit");
+        confirmedActive = state.active;
       }
       if (state.error)
         useAppStore

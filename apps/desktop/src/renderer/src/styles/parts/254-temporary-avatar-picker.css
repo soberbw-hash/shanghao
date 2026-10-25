@@ -1,0 +1,58 @@
+.temporary-avatar-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.temporary-avatar-portraits {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 3px;
+}
+.temporary-avatar-portraits > * {
+  flex: 0 0 auto;
+}
+.temporary-avatar-option {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 2px;
+}
+.temporary-avatar-option[aria-pressed="true"] {
+  background: #dfedff;
+  border-color: #8eb8eb;
+}
+.temporary-avatar-option img {
+  display: block;
+  border-radius: 8px;
+}
+.temporary-avatar-option:focus-visible,
+.temporary-avatar-upload:focus-within {
+  outline: 2px solid #4b98eb;
+  outline-offset: 1px;
+}
+.temporary-avatar-option:disabled {
+  opacity: 0.5;
+}
+.temporary-entry .temporary-avatar-upload {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid #c7daf1;
+  border-radius: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.temporary-entry .temporary-avatar-upload input {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}

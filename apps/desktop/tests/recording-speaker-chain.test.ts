@@ -151,5 +151,5 @@ test("recording reuses final remote playback PCM and keeps only one composite pe
   assert.equal(source.includes("MAX_PARTICIPANT_TRACK_SEGMENT_MS = 5 * 60_000"), true);
   assert.equal(source.includes("SPEAKER_SEGMENT_BITS_PER_SECOND = 32_000"), true);
   assert.equal(source.includes("PARTICIPANT_TRACK_BITS_PER_SECOND = 32_000"), true);
-  assert.equal(source.includes("stopParticipantCapture(source).then"), true);
+  assert.equal(source.includes("startParticipantCapture(source);"), true);
 });

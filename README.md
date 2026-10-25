@@ -8,7 +8,7 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.12.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.13.md) · [看技术结构](#声音到底经过了什么)
 
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
@@ -76,11 +76,19 @@
 
 ![录音语音记忆演示：文字、摘要与标记](./docs/assets/releases/v3.4.12/voice-memory-demo.png)
 
-这些截图使用隔离演示数据。新设置默认开启自动转录和自动整理；云端不等待游戏，本地保留资源调度。超过单次限制的云录音自动分段合并，纯文本云模型位置是估算，本地精细时间轴能力按模型标明。正式版和开发版共用本机结果，并保护并发写入版本。
+这些截图使用隔离演示数据。默认自动转录，转录后自动生成云端摘要，离开录音库后继续。云端不等待游戏，本地保留资源调度。音频发送至所选转录服务商，摘要与问答使用所选文本模型；摘要保存在本机，只有手动上传才分享给录音所属房间，原音频仍保存在本机。
 
-**19 · 长录音可以继续整理。** 转录后可以整理要点、查找片段；房间问答可查询游戏攻略和资料。AI 结果需要自己核对，连接云端问答时也应留意服务器的数据边界。
+**云端＋本地辅助默认开启，可关闭**：辅助模型独立选择，默认千问 0.6B＋ForcedAligner，也可选更强模型。缺模型时提示下载，先只用云端，不自动下载或悄悄换模型。云端、本地原稿分别保留，融合校对逐段生成，自动优先显示融合稿，完成前先显示云端；可切换三稿，查看实际来源、修改和时间依据。无法确定的差异保留复核标记，不用大模型猜时间。已有成员独立音轨时按成员分别转录，再按时间合并并绑定昵称；旧混音不能保证还原真实身份。
 
-**20 · 房间记录按天回看。** 成员、活跃时长、游戏、消息数与屏幕分享情况会形成每日记录，当天首次开启时弹出；设置页不再重复提供入口。整理摘要默认留在本机，点击“上传到服务器”后才进入录音原房间的共享记录；也可按需开启默认关闭的自动上传。
+![3.4.13 录音库：摘要、稿件来源与紧凑阅读](./docs/assets/releases/v3.4.13/recording-library.png)
+
+![3.4.13 AI 设置：独立选择云端与本地辅助模型](./docs/assets/releases/v3.4.13/release-ai-settings.png)
+
+![3.4.13 模型配置](./docs/assets/releases/v3.4.13/release-models.png)
+
+**19 · 长录音可以接着处理。** 分段保存进度，临时故障有限重试，已完成文字保留；摘要自动提取具体事件、原话和有依据的开黑趣事，避免泛泛地说“大家在打游戏”。点击文字可回听，云端估算位置与本地声学对齐分别标示。房间问答可查询攻略与资料，AI 结果仍需核对。
+
+**20 · 房间记录按天回看。** 成员、活跃时长、游戏、消息数与屏幕分享情况会形成每日记录，当天首次开启时弹出；设置页不再重复提供入口。摘要默认留在本机，点击“上传到服务器”后才进入录音原房间的共享记录。
 
 ## 3.4.9 更新
 
@@ -231,7 +239,7 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 ## 下载与使用
 
-当前仓库版本为 **3.4.12**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.12 更新公告](./docs/release-notes/v3.4.12.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.13**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.13 更新公告](./docs/release-notes/v3.4.13.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 
@@ -248,4 +256,4 @@ corepack pnpm typecheck
 corepack pnpm --dir apps/desktop test:smoke
 ```
 
-Windows 是正式支持平台；macOS 保留能力降级边界。开发规则见 [AGENTS.md](./AGENTS.md)。代码采用 [GNU AGPL-3.0-or-later](./LICENSE.md)；第三方音频、模型、角色与品牌资源各有使用边界，不能一概视为可自由再分发。问题和脱敏后的诊断可提交到 [Issues](https://github.com/soberbw-hash/shanghao/issues)。
+Windows 是正式支持平台；macOS 保留能力降级边界。开发规则见 [AGENTS.md](./AGENTS.md)。自研代码按 [AGPL-3.0-or-later](./LICENSE.md) 开源，[shanghao](https://github.com/soberbw-hash/shanghao) 统一提供源码、安装包、截图和问题反馈；临时下载仓库保留为 [shanghao-downloads](https://github.com/soberbw-hash/shanghao-downloads) 存档。历史版本适用其发布时附带的许可，第三方音频、模型、角色与品牌资源仍遵守各自许可。问题和脱敏后的诊断可提交到 [Issues](https://github.com/soberbw-hash/shanghao/issues)。

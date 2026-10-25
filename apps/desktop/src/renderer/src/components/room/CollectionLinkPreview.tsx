@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Globe2, Link2 } from "lucide-react";
+import { Globe2, Link2, Music2 } from "lucide-react";
+import { identifyMusicLink } from "../../features/chat/musicLink";
 import { formatCompactUrl, getMessageUrlDetails } from "../../features/chat/linkPreview";
 
 type Preview = Awaited<ReturnType<Window["desktopApi"]["app"]["getChatLinkPreview"]>>;
@@ -33,6 +34,7 @@ export const CollectionLinkPreview = ({
   const preview = result?.url === url ? result.preview : {};
   const loading = result?.url !== url || result.loading;
   const hostname = getMessageUrlDetails(url)?.hostname ?? "网页链接";
+  const music = identifyMusicLink(url);
   const heading = preview.title || title || hostname;
   const image = preview.imageDataUrl !== failedImage ? preview.imageDataUrl : undefined;
   return (
@@ -55,6 +57,8 @@ export const CollectionLinkPreview = ({
             decoding="async"
             onError={() => setFailedImage(image)}
           />
+        ) : music ? (
+          <Music2 />
         ) : (
           <Link2 />
         )}
@@ -62,11 +66,12 @@ export const CollectionLinkPreview = ({
       <span className="collection-link-details">
         <span className="collection-link-site">
           <Globe2 aria-hidden="true" />
-          {preview.siteName || hostname}
+          {music?.platform || preview.siteName || hostname}
         </span>
         <strong>{heading}</strong>
         <span className="collection-link-description" aria-live="polite">
-          {preview.description || (loading ? "正在读取网页信息…" : "暂无网页简介，点击查看原文。")}
+          {preview.description ||
+            (loading ? "正在读取信息…" : music ? "打开音乐平台收听" : "点击查看原文")}
         </span>
         <span className="collection-link-address">{formatCompactUrl(url)}</span>
       </span>

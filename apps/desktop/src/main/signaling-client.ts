@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { WebSocket as NodeWebSocket, type RawData } from "ws";
 import { isStoredRoomId } from "@private-voice/shared";
+import { SignalingMembership } from "./signaling-membership";
 
 import type {
   DailyRoomRecordingRecap,
@@ -42,6 +43,13 @@ const sanitizeSignalingUrl = (value: string): string => {
 };
 
 export class SignalingClientBridge extends EventEmitter {
+  readonly controlMembership = new SignalingMembership();
+  private acquireTemporarySocket?: (url: string) => Promise<NodeWebSocket | undefined>;
+  setTemporaryConnectionProvider(
+    provider: (url: string) => Promise<NodeWebSocket | undefined>,
+  ): void {
+    this.acquireTemporarySocket = provider;
+  }
   private socket?: NodeWebSocket;
   private sessionId?: string;
   private socketGeneration = 0;
@@ -73,6 +81,7 @@ export class SignalingClientBridge extends EventEmitter {
   }
 
   async connect(signalingUrl: string, sessionId: string): Promise<void> {
+    this.controlMembership.clear();
     const generation = ++this.socketGeneration;
     const isCurrentAttempt = () =>
       generation === this.socketGeneration && this.sessionId === sessionId;
@@ -104,14 +113,20 @@ export class SignalingClientBridge extends EventEmitter {
     // socket. This is important for CloudBase sessions restored after a long
     // idle period and also prevents concurrent reconnects from using an
     // already-expired bearer token.
-    const accountAccessToken = await this.getAccountAccessToken();
+    const temporarySocket = await this.acquireTemporarySocket?.(signalingUrl);
+    if (!isCurrentAttempt()) throw new Error("signaling_session_superseded");
+    const accountAccessToken = temporarySocket ? undefined : await this.getAccountAccessToken();
     if (!isCurrentAttempt()) throw new Error("signaling_session_superseded");
 
     await new Promise<void>((resolve, reject) => {
-      const socket = new NodeWebSocket(signalingUrl, {
-        handshakeTimeout: 8_000,
-        headers: accountAccessToken ? { Authorization: `Bearer ${accountAccessToken}` } : undefined,
-      });
+      const socket =
+        temporarySocket ??
+        new NodeWebSocket(signalingUrl, {
+          handshakeTimeout: 8_000,
+          headers: accountAccessToken
+            ? { Authorization: `Bearer ${accountAccessToken}` }
+            : undefined,
+        });
       this.socket = socket;
       let settled = false;
       let opened = false;
@@ -130,7 +145,8 @@ export class SignalingClientBridge extends EventEmitter {
         reject(error);
       };
 
-      socket.once("open", () => {
+      const onOpen = () => {
+        if (opened) return;
         if (!isCurrentSocket()) {
           rejectOnce(new Error("signaling_session_superseded"));
           socket.close();
@@ -145,11 +161,14 @@ export class SignalingClientBridge extends EventEmitter {
           context: { signalingUrl: safeSignalingUrl, mode },
         });
         resolveOnce();
-      });
+      };
+      socket.once("open", onOpen);
+      if (temporarySocket?.readyState === NodeWebSocket.OPEN) queueMicrotask(onOpen);
 
       socket.on("message", (data: RawData) => {
         if (!isCurrentSocket()) return;
         const payloadText = data.toString();
+        if (temporarySocket && payloadText.startsWith('{"type":"temporary_room_')) return;
         if (this.handleBridgeMessage(payloadText)) return;
         this.emitEvent(sessionId, {
           type: "message",
@@ -170,6 +189,7 @@ export class SignalingClientBridge extends EventEmitter {
         }
         this.socket = undefined;
         this.joinedRoom = undefined;
+        this.controlMembership.clear();
         this.rejectPendingCloudAi("cloud_ai_connection_closed");
         this.rejectPendingRecordingRecaps("recording_recap_connection_closed");
         if (!opened) rejectOnce(new Error("signaling_socket_closed"));
@@ -227,7 +247,10 @@ export class SignalingClientBridge extends EventEmitter {
     this.socket.send(payload);
     try {
       const message = JSON.parse(payload) as { type?: string };
-      if (message.type === "leave_channel") this.joinedRoom = undefined;
+      if (message.type === "leave_channel") {
+        this.joinedRoom = undefined;
+        this.controlMembership.clear();
+      }
     } catch {
       // Renderer payload validation happens in IPC before this bridge is called.
     }
@@ -274,6 +297,7 @@ export class SignalingClientBridge extends EventEmitter {
     this.socketGeneration += 1;
     this.sessionId = undefined;
     this.joinedRoom = undefined;
+    this.controlMembership.clear();
     this.rejectPendingCloudAi("cloud_ai_connection_closed");
     this.rejectPendingRecordingRecaps("recording_recap_connection_closed");
     await this.closeSocket();
@@ -284,6 +308,7 @@ export class SignalingClientBridge extends EventEmitter {
     this.socketGeneration += 1;
     this.sessionId = undefined;
     this.joinedRoom = undefined;
+    this.controlMembership.clear();
     this.rejectPendingCloudAi("cloud_ai_connection_closed");
     this.rejectPendingRecordingRecaps("recording_recap_connection_closed");
     return this.closeSocket(4002, "client_updating");
@@ -449,7 +474,10 @@ export class SignalingClientBridge extends EventEmitter {
 
   private handleBridgeMessage(payloadText: string): boolean {
     try {
-      const message = JSON.parse(payloadText) as {
+      // Membership is observed before forwarding any renderer callback.
+      const envelope: unknown = JSON.parse(payloadText);
+      this.controlMembership.observe(envelope);
+      const message = envelope as {
         type?: string;
         roomId?: string;
         peerId?: string;

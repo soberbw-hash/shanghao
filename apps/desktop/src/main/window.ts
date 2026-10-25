@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { remoteControlViewerBinding } from "./remote-control-viewer-binding";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -108,9 +109,12 @@ const isTrustedRendererUrl = (value: string): boolean => {
   }
 };
 
+export const getScreenShareViewerWindow = () => screenShareViewerWindow;
+
 export const openScreenShareViewer = async ({
   title,
   sessionId,
+  peerId,
 }: ScreenShareViewerOpenRequest): Promise<void> => {
   const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   const viewerBounds = {
@@ -157,6 +161,12 @@ export const openScreenShareViewer = async ({
   applyBrandIdentity(viewer);
   screenShareViewerWindow = viewer;
   screenShareViewerSessionId = sessionId;
+  const viewerContentsId = viewer.webContents.id;
+  remoteControlViewerBinding.bind(viewerContentsId, sessionId, peerId);
+  viewer.on("blur", () => remoteControlViewerBinding.stop(viewerContentsId));
+  viewer.webContents.on("render-process-gone", () =>
+    remoteControlViewerBinding.clear(viewerContentsId),
+  );
   // The detached viewer must never be captured into its own stream. Without
   // content protection, sharing a display creates the familiar infinite mirror.
   viewer.setContentProtection(true);
@@ -164,9 +174,11 @@ export const openScreenShareViewer = async ({
   viewer.setAutoHideMenuBar(true);
   viewer.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   viewer.webContents.on("will-navigate", (event, url) => {
+    remoteControlViewerBinding.clear(viewerContentsId);
     if (!isTrustedRendererUrl(url)) event.preventDefault();
   });
   viewer.on("closed", () => {
+    remoteControlViewerBinding.clear(viewerContentsId);
     if (screenShareViewerWindow === viewer) {
       screenShareViewerWindow = null;
       screenShareViewerSessionId = undefined;
@@ -211,6 +223,8 @@ export const isScreenShareViewerSender = (webContentsId: number, sessionId: stri
   );
 
 export const closeScreenShareViewer = (): void => {
+  const contentsId = screenShareViewerWindow?.webContents.id;
+  if (contentsId !== undefined) remoteControlViewerBinding.clear(contentsId);
   screenShareViewerSessionId = undefined;
   const viewer = screenShareViewerWindow;
   screenShareViewerWindow = null;
@@ -236,7 +250,7 @@ const createFallbackHtml = (title: string, description: string, logsDirectory?: 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${APP_NAME}</title>
     <style>
-      :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; }
+      :root { color-scheme: light; font-family: "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7fa; color: #111827; }
       .card { width: min(580px, calc(100vw - 32px)); border: 1px solid #e7ecf2; border-radius: 24px; background: #fff; padding: 28px; box-shadow: 0 20px 60px rgba(17,24,39,.08); }
       h1 { margin: 0; font-size: 26px; }
@@ -479,6 +493,7 @@ export const createMainWindow = ({
         sourceKind: selectedSource.id.startsWith("screen:") ? "screen" : "window",
         audioRequested: request.audioRequested,
       });
+      screenCaptureService.remoteControl.approve(selectedSource);
       callback({
         video: selectedSource,
         audio:

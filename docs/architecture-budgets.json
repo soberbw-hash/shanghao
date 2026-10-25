@@ -192,5 +192,18 @@
   "apps/desktop/src/main/public-network.ts": 220,
   "apps/desktop/src/renderer/src/features/room/roomQuestionHistory.ts": 90,
   "apps/desktop/src/renderer/src/components/settings/TranscriptionTimingNotice.tsx": 25,
-  "packages/signaling/src/room-memory-jobs.ts": 200
+  "packages/signaling/src/room-memory-jobs.ts": 200,
+  "apps/desktop/src/renderer/src/styles/parts/201-settings-hierarchy.css": 60,
+  "apps/desktop/src/renderer/src/styles/parts/209-recording-library-clean.css": 219,
+  "apps/desktop/src/renderer/src/styles/fonts.css": 35,
+  "apps/desktop/src/renderer/src/components/settings/RecordingOverview.tsx": 72,
+  "apps/desktop/src/renderer/src/styles/parts/248-temporary-rooms.css": 127,
+  "apps/desktop/src/renderer/src/styles/parts/249-application-audio.css": 57,
+  "apps/desktop/src/renderer/src/styles/parts/253-application-audio-picker.css": 411,
+  "apps/desktop/src/renderer/src/styles/parts/250-remote-control.css": 94,
+  "apps/desktop/src/renderer/src/styles/parts/254-recording-storage.css": 65,
+  "apps/desktop/src/renderer/src/styles/parts/254-temporary-avatar-picker.css": 59,
+  "apps/desktop/src/main/private-room-auth.ts": 62,
+  "packages/shared/src/constants/music-apps.ts": 22,
+  "apps/desktop/src/renderer/src/styles/parts/255-recording-list-cards.css": 38
 }

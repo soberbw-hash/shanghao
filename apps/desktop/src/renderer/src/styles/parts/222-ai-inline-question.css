@@ -1,18 +1,10 @@
 .chat-ai-welcome-copy {
-  font-family: "HarmonyOS Sans SC", "Noto Sans SC Variable", "Microsoft YaHei", sans-serif;
+  font-family: var(--sg-font-family);
 }
 
 .chat-title-actions {
   gap: 10px;
   padding-left: 4px;
-}
-
-@font-face {
-  font-family: "HarmonyOS Sans SC";
-  src: url("/src/assets/fonts/HarmonyOS_Sans_SC_Medium.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
 }
 
 .chat-ai-welcome-action {

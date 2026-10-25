@@ -7,6 +7,9 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+mod process_audio;
+mod remote_input;
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 enum CoreCommand {
@@ -362,6 +365,13 @@ fn handle(command: &CoreCommand) -> CoreResponse {
 }
 
 fn main() {
+    if let Some(code) = remote_input::dispatch_worker(&std::env::args().skip(1).collect::<Vec<_>>())
+    {
+        std::process::exit(code);
+    }
+    if let Some(code) = process_audio::dispatch(std::env::args().skip(1).collect()) {
+        std::process::exit(code);
+    }
     for line in io::stdin().lock().lines() {
         let response = match line {
             Ok(line) if line.len() <= 1024 * 1024 => {

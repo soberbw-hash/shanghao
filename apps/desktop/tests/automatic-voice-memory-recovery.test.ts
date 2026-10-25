@@ -24,6 +24,7 @@ const fixture = async () => {
   wav.writeUInt16LE(16, 34);
   wav.write("data", 36);
   wav.writeUInt32LE(32_000, 40);
+  for (let offset = 44; offset < wav.length; offset += 2) wav.writeInt16LE(100, offset);
   await writeFile(audio, wav);
   const state = {
     asrReady: false,
@@ -31,6 +32,7 @@ const fixture = async () => {
     organizeEnabled: true,
     asrCalls: 0,
     textCalls: 0,
+    failAsr: false,
   };
   const services: AiVoiceMemoryService[] = [];
   const open = async () => {
@@ -60,6 +62,7 @@ const fixture = async () => {
         status: async () => ({ cloudConfigured: state.asrReady }),
         transcribe: async () => {
           state.asrCalls++;
+          if (state.failAsr) throw new Error("cloud_asr_http_500");
           return { text: "这是用于验证后台恢复的合成语音内容。", modelName: "synthetic ASR" };
         },
       } as never,
@@ -92,6 +95,43 @@ const fixture = async () => {
   };
 };
 
+test("transient ASR recovery survives restart, waits for its deadline and stops after two rounds", async () => {
+  const f = await fixture();
+  try {
+    f.state.asrReady = true;
+    f.state.failAsr = true;
+    const first = await f.open();
+    const waiting = await first.service.process(f.request);
+    assert.equal(waiting.errorMessage, "deferred:cloud_asr_http_500");
+    assert.equal(waiting.remoteTranscriptionRetry?.attempts, 1);
+    first.service.stop();
+    const restored = await f.open();
+    const calls = f.state.asrCalls;
+    await restored.retry();
+    assert.equal(f.state.asrCalls, calls, "restart cannot bypass the saved backoff");
+    for (let round = 1; round <= 2; round++) {
+      const current = (await restored.store.get("synthetic"))!;
+      await restored.store.save({
+        ...current,
+        remoteTranscriptionRetry: { attempts: round, nextAttemptAt: 0 },
+      });
+      await restored.retry();
+    }
+    const exhausted = (await restored.store.get("synthetic"))!;
+    assert.equal(exhausted.phase, "error");
+    assert.equal(exhausted.remoteTranscriptionRetry?.attempts, 2);
+    const failedCalls = f.state.asrCalls;
+    await restored.retry();
+    assert.equal(f.state.asrCalls, failedCalls);
+    f.state.failAsr = false;
+    const completed = await restored.service.process({ ...f.request, manual: true });
+    assert.equal(completed.phase, "ready");
+    assert.equal(completed.remoteTranscriptionRetry, undefined);
+  } finally {
+    await f.close();
+  }
+});
+
 test("deferred ASR preserves each recording's organization opt-out across store restart", async () => {
   const f = await fixture();
   try {
@@ -108,6 +148,31 @@ test("deferred ASR preserves each recording's organization opt-out across store 
     assert.equal(record?.autoOrganizeRequested, false);
     assert.equal(f.state.asrCalls, 1);
     assert.equal(f.state.textCalls, 0, "opt-out never sends the transcript to a text provider");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a foreground transcription always follows with a summary even for a legacy false choice", async () => {
+  const f = await fixture();
+  try {
+    f.state.asrReady = true;
+    f.state.textReady = true;
+    const { service, store } = await f.open();
+    const finished = new Promise<void>((resolve) => {
+      const stop = service.onStatus((record) => {
+        if (record.phase === "ready" && record.organization?.status === "completed") {
+          stop();
+          resolve();
+        }
+      });
+    });
+    const accepted = await service.start({ ...f.request, manual: true, organize: false });
+    assert.equal(accepted.autoOrganizeRequested, true);
+    await finished;
+    assert.equal((await store.get("synthetic"))?.organization?.status, "completed");
+    assert.equal(f.state.asrCalls, 1);
+    assert.ok(f.state.textCalls > 0);
   } finally {
     await f.close();
   }

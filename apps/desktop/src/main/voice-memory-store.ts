@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   evaluateVoiceMemoryTranscriptionValidity,
+  AI_ASR_MODEL_NAMES,
   hasInvalidVoiceMemoryResult,
   mergeTranscriptIntoSentences,
   type VoiceMemoryRecord,
@@ -37,6 +38,7 @@ interface PersistedVoiceMemorySummaries {
 }
 
 export interface VoiceMemorySaveOptions {
+  onlyIfMissing?: boolean;
   clearTranscriptionEvents?: boolean;
   publicationFor?: { roomId?: string; organizedAt?: string };
 }
@@ -101,6 +103,99 @@ const isTranscriptSegment = (value: unknown): boolean =>
           isFiniteNumber(word.endMs),
       )));
 
+const isRemoteState = (record: Partial<VoiceMemoryRecord>): boolean => {
+  if (
+    record.remoteTranscription?.partMs !== undefined &&
+    ![30000, 300000].includes(record.remoteTranscription.partMs)
+  )
+    return false;
+  const retry = record.remoteTranscriptionRetry;
+  if (
+    retry !== undefined &&
+    (!isObject(retry) ||
+      !Number.isSafeInteger(retry.attempts) ||
+      retry.attempts < 0 ||
+      retry.attempts > 2 ||
+      (retry.nextAttemptAt !== undefined &&
+        (!isFiniteNumber(retry.nextAttemptAt) || retry.nextAttemptAt < 0)))
+  )
+    return false;
+  const fusion = record.transcriptionFusion;
+  if (
+    fusion !== undefined &&
+    (!isObject(fusion) ||
+      !["running", "completed", "failed"].includes(fusion.status) ||
+      typeof fusion.sourceSignature !== "string" ||
+      !/^[a-f0-9]{64}$/.test(fusion.sourceSignature) ||
+      !Number.isSafeInteger(fusion.completedBatches) ||
+      !Number.isSafeInteger(fusion.totalBatches) ||
+      fusion.completedBatches < 0 ||
+      fusion.totalBatches < 1 ||
+      fusion.completedBatches > fusion.totalBatches ||
+      !Array.isArray(fusion.transcript) ||
+      !fusion.transcript.every(isTranscriptSegment) ||
+      !Array.isArray(fusion.speakers))
+  )
+    return false;
+  const remote = record.remoteTranscription;
+  const assist = record.transcriptionAssist;
+  if (
+    assist !== undefined &&
+    (!isObject(assist) ||
+      !["running", "completed", "failed", "unavailable"].includes(assist.status) ||
+      !["siliconflow-sensevoice-small", "custom-asr-api"].includes(assist.cloudModelId) ||
+      typeof assist.localModelId !== "string" ||
+      !Object.hasOwn(AI_ASR_MODEL_NAMES, assist.localModelId))
+  )
+    return false;
+  return (
+    remote === undefined ||
+    (isObject(remote) &&
+      ["siliconflow-sensevoice-small", "custom-asr-api"].includes(remote.modelId) &&
+      isFiniteNumber(remote.audioDurationMs) &&
+      remote.audioDurationMs > 0 &&
+      (remote.sources === undefined ||
+        (Array.isArray(remote.sources) &&
+          remote.sources.length > 0 &&
+          new Set(remote.sources.map((source) => source?.id)).size === remote.sources.length &&
+          remote.sources.every(
+            (source) =>
+              isObject(source) &&
+              typeof source.id === "string" &&
+              source.id.length > 0 &&
+              typeof source.speakerId === "string" &&
+              source.speakerId.length > 0 &&
+              typeof source.displayNameSnapshot === "string" &&
+              isFiniteNumber(source.startMs) &&
+              source.startMs >= 0 &&
+              isFiniteNumber(source.durationMs) &&
+              source.durationMs > 0 &&
+              source.startMs + source.durationMs <= remote.audioDurationMs + 1,
+          ))) &&
+      Array.isArray(remote.parts) &&
+      remote.parts.every(
+        (part) =>
+          isObject(part) &&
+          typeof part.text === "string" &&
+          typeof part.modelName === "string" &&
+          (remote.sources === undefined
+            ? part.sourceId === undefined
+            : remote.sources.some(
+                (source) =>
+                  source.id === part.sourceId &&
+                  part.startMs >= source.startMs &&
+                  part.startMs + part.durationMs <= source.startMs + source.durationMs + 1,
+              )) &&
+          (part.emptyRechecked === undefined || typeof part.emptyRechecked === "boolean") &&
+          isFiniteNumber(part.startMs) &&
+          part.startMs >= 0 &&
+          isFiniteNumber(part.durationMs) &&
+          part.durationMs > 0 &&
+          part.startMs + part.durationMs <= remote.audioDurationMs + 1,
+      ))
+  );
+};
+
 const hasIndexableEntries = (value: unknown, timeField: "startMs" | "offsetMs"): boolean =>
   value === undefined ||
   (Array.isArray(value) &&
@@ -116,6 +211,7 @@ export const isVoiceMemoryRecord = (value: unknown): value is VoiceMemoryRecord 
   const legacyRecord = record.schemaVersion === undefined;
   return (
     compatibleVersion &&
+    isRemoteState(record) &&
     (record.autoOrganizeRequested === undefined ||
       typeof record.autoOrganizeRequested === "boolean") &&
     typeof record.recordingId === "string" &&
@@ -360,6 +456,7 @@ export class VoiceMemoryStore {
         throw new Error("voice_memory_record_unreadable");
       }
       const current = await this.get(record.recordingId);
+      if (options.onlyIfMissing && current) throw new Error("voice_memory_record_exists");
       if (options.publicationFor) {
         if (
           !current ||

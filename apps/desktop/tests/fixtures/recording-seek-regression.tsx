@@ -40,6 +40,7 @@ window.desktopApi = {
     listVoiceMemories: async () => [],
     getSnapshot: async () => ({ models: [] }),
     onVoiceMemoryStatus: noSubscription,
+    onStatus: noSubscription,
   },
   app: { writeLog: async () => {} },
 } as unknown as typeof window.desktopApi;

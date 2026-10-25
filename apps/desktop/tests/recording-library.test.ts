@@ -52,23 +52,29 @@ test("recording cleanup marks recordings below ten minutes, silent media, or unr
   assert.equal(parseRecordingProbeOutput("invalid media", 1).reason, "unreadable");
 });
 
-test("automatic cleanup leaves unreadable recordings for manual review", () => {
+test("automatic cleanup preserves audible short and unreadable recordings", () => {
   assert.equal(
     isAutomaticWasteCandidate({ filePath: "recording.m4a", reason: "unreadable" }),
     false,
   );
-  assert.equal(isAutomaticWasteCandidate({ filePath: "recording.m4a", reason: "too_short" }), true);
+  assert.equal(
+    isAutomaticWasteCandidate({ filePath: "recording.m4a", reason: "too_short" }),
+    false,
+  );
   assert.equal(isAutomaticWasteCandidate({ filePath: "recording.m4a", reason: "silent" }), true);
 });
 
-test("sub-ten-minute recordings are waste while ten minutes and longer need silence to qualify", () => {
+test("short audible recordings are manual review candidates and never automatic waste", () => {
   for (const duration of ["00:00:10.00", "00:01:00.00", "00:05:00.00", "00:09:59.99"]) {
     const result = parseRecordingProbeOutput(
       `Duration: ${duration}, start: 0\nmax_volume: -25.0 dB`,
       0,
     );
     assert.equal(result.reason, "too_short");
-    assert.equal(isAutomaticWasteCandidate({ filePath: "short.m4a", reason: result.reason }), true);
+    assert.equal(
+      isAutomaticWasteCandidate({ filePath: "short.m4a", reason: result.reason }),
+      false,
+    );
   }
   for (const duration of ["00:10:00.00", "00:10:00.01", "01:00:00.00"]) {
     assert.equal(
@@ -84,6 +90,24 @@ test("sub-ten-minute recordings are waste while ten minutes and longer need sile
     parseRecordingProbeOutput("Duration: 01:00:00.00, start: 0\nmax_volume: -inf dB", 0).reason,
     "silent",
   );
+});
+
+test("short recordings need the same complete silence evidence as long recordings", () => {
+  for (const duration of ["00:00:08.40", "00:05:00.00", "00:10:00.00"]) {
+    const silent = parseRecordingProbeOutput(
+      `Duration: ${duration}, start: 0\nmax_volume: -inf dB`,
+      0,
+    );
+    assert.equal(silent.reason, "silent");
+    assert.equal(
+      isAutomaticWasteCandidate({ filePath: "silent.m4a", reason: silent.reason }),
+      true,
+    );
+    assert.equal(
+      parseRecordingProbeOutput(`Duration: ${duration}, start: 0`, 0).reason,
+      "unreadable",
+    );
+  }
 });
 
 test("manual waste recycling rechecks file identity, favorites and markers", async () => {

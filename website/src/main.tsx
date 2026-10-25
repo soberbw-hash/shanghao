@@ -106,12 +106,12 @@ function Hero({ onDownload }: { onDownload: () => void }) {
             <Download size={18} />
             下载 Windows 版
           </Button>
-          <Button href={GITHUB_URL} variant="secondary">
+          <Button href={RELEASES_URL} variant="secondary">
             <Github size={18} />
-            查看源码
+            查看版本与更新
           </Button>
         </div>
-        <p className="hero-note">支持 Windows 10 / 11 x64，开源且免费。</p>
+        <p className="hero-note">支持 Windows 10 / 11 x64，免费下载。</p>
       </div>
       <ProductShot
         className="hero-shot entrance entrance-late"
@@ -311,7 +311,7 @@ function Footer() {
         <a href="/download">下载</a>
         <a href={GITHUB_URL}>GitHub</a>
       </div>
-      <span>© 2026 ShangHao · AGPL-3.0-or-later</span>
+      <span>© 2026 ShangHao</span>
     </footer>
   );
 }
@@ -421,7 +421,7 @@ function DownloadPage({
           </ul>
           <a href={GITHUB_URL}>
             <Github size={16} />
-            查看项目源码
+            查看使用说明与反馈
             <ArrowRight size={15} />
           </a>
         </aside>

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { createHash } from "node:crypto";
 import ts from "typescript";
 
 const fixture = (packaged = false, collision = true) => {
@@ -28,9 +29,17 @@ const fixture = (packaged = false, collision = true) => {
     Date,
     require: (id: string) => {
       if (id === "node:path") return path;
+      if (id === "node:crypto") return { createHash };
       if (id === "node:fs")
         return {
           existsSync: () => true,
+          readFileSync: (file: string) =>
+            file.endsWith(".ps1")
+              ? Buffer.concat([
+                  Buffer.from([255, 254]),
+                  Buffer.from("Write-Output 'fixture launcher'", "utf16le"),
+                ])
+              : Buffer.from("fixture icon"),
           mkdirSync: () => undefined,
           realpathSync: (p: string) => p,
           copyFileSync: (p: string) => moved.push(p),
@@ -73,11 +82,17 @@ test("development shortcuts back up only the conflicting Electron entry and shar
   assert.equal(f.writes.length, 3);
   for (const { options } of f.writes) {
     assert.equal(options.appUserModelId, "com.sober.shanghao.dev");
-    assert.match(options.target, /wscript\.exe$/);
-    assert.match(options.args, /launch-dev\.vbs/);
-    assert.match(options.icon, /shanghao-icon-v4\.ico$/);
+    assert.match(options.target, /powershell\.exe$/);
+    assert.match(options.args, /-NoProfile.*-WindowStyle Hidden -EncodedCommand /);
+    assert.equal(
+      Buffer.from(options.args.split("-EncodedCommand ")[1]!, "base64").toString("utf16le"),
+      "Write-Output 'fixture launcher'",
+    );
+    assert.equal(options.args.includes("ExecutionPolicy"), false);
+    assert.match(options.icon, /ShangHaoDev[\\/]shanghao-dev-[a-f0-9]{12}\.ico$/);
+    assert.equal(options.icon.includes("project"), false);
   }
-  assert.match(f.developmentRelaunchCommand(), /launch-dev\.vbs/);
+  assert.match(f.developmentRelaunchCommand(), /-EncodedCommand /);
 });
 test("development repair leaves unrelated Electron entries and packaged installs alone", () => {
   const unrelated = fixture(false, false);

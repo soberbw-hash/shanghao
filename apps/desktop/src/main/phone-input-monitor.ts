@@ -5,6 +5,8 @@ import { app } from "electron";
 import { platformService } from "./platform/PlatformService";
 import type { PhoneShortcut, PhonePhysicalInput } from "./phone-shortcut";
 
+export type PhoneInputStatus = { inputDesktopAvailable: boolean; foregroundHigher?: boolean };
+
 /** Independent native sampling survives a silently removed low-level hook. */
 export class PhoneInputMonitor {
   private child?: ChildProcessWithoutNullStreams;
@@ -14,8 +16,14 @@ export class PhoneInputMonitor {
   private binding?: PhoneShortcut;
   private lastMessage = 0;
   private failures = 0;
+  private rawInput = false;
+  private status?: PhoneInputStatus;
   constructor(
-    private readonly availability: (ready: boolean, rawInput?: boolean) => void,
+    private readonly availability: (
+      ready: boolean,
+      rawInput?: boolean,
+      status?: PhoneInputStatus,
+    ) => void,
     private readonly acceptSample: (sampledAt: number) => boolean = () => true,
   ) {}
 
@@ -48,6 +56,8 @@ export class PhoneInputMonitor {
       child.kill();
       if (generation !== this.generation) return;
       this.availability(false); // Retain press ownership; falling back must not unmute.
+      this.status = undefined;
+      this.rawInput = false;
       if (this.timer) clearInterval(this.timer);
       this.timer = undefined;
       this.child = undefined;
@@ -63,13 +73,32 @@ export class PhoneInputMonitor {
           ready?: boolean;
           rawInput?: boolean;
           sampledAt?: number;
+          inputDesktopAvailable?: boolean;
+          foregroundHigher?: boolean;
         };
         if (value.ready === true) {
           ready = true;
           this.failures = 0;
           this.lastMessage = Date.now();
-          this.availability(true, value.rawInput === true);
-        } else if (
+          this.rawInput = value.rawInput === true;
+          this.availability(true, this.rawInput);
+        }
+        if (ready && typeof value.inputDesktopAvailable === "boolean") {
+          this.lastMessage = Date.now(); // Secure desktop is not a crashed listener or a release.
+          const status: PhoneInputStatus = {
+            inputDesktopAvailable: value.inputDesktopAvailable,
+            foregroundHigher: Object.hasOwn(value, "foregroundHigher")
+              ? typeof value.foregroundHigher === "boolean"
+                ? value.foregroundHigher
+                : undefined
+              : this.status?.foregroundHigher,
+          };
+          if (JSON.stringify(status) !== JSON.stringify(this.status)) {
+            this.status = status;
+            this.availability(true, this.rawInput, status);
+          }
+        }
+        if (
           ready &&
           [value.down, value.ctrlKey, value.altKey, value.shiftKey, value.metaKey].every(
             (field) => typeof field === "boolean",
@@ -101,6 +130,8 @@ export class PhoneInputMonitor {
     if (this.retry) clearTimeout(this.retry);
     this.timer = this.retry = undefined;
     this.binding = undefined;
+    this.rawInput = false;
+    this.status = undefined;
     this.availability(false);
     if (this.child) {
       this.child.stdin.end();

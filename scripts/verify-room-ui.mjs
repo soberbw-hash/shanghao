@@ -67,15 +67,25 @@ try {
   await run("electron-member-availability-smoke.cjs");
   await run("electron-collection-preview-smoke.cjs");
   await run("electron-settings-feedback-smoke.cjs");
+  await run("electron-microphone-level.cjs");
+  await run("electron-microphone-level.cjs", ["--reduce-motion"]);
   await run("electron-automatic-settings-optout.cjs");
   await run("electron-recording-library-feedback.cjs");
+  await run("electron-recording-model-sync.cjs");
+  await run("electron-summary-retry.cjs");
+  await run("electron-temporary-and-audio.cjs");
+  await run("electron-muted-speech-reminder.cjs");
   await run("electron-room-entry-performance.cjs", ["--assert-continuity", "--assert-cue"]);
+  await run("electron-ui-sound-scheduling.cjs");
   await run("electron-room-entry-performance.cjs", [
     "--assert-continuity",
     "--assert-cue",
     "--reduce-motion",
   ]);
   await run("electron-detached-screen-share-smoke.cjs");
+  await run("electron-remote-control-ui.cjs");
+  await run("electron-detached-remote-control-ui.cjs");
+  await run("electron-detached-control-ipc.cjs");
   console.log("Room UI, persistent status and forwarded screen checks passed.");
 } finally {
   server.kill();

@@ -1,4 +1,4 @@
-import type { ChatMessage } from "@private-voice/shared";
+import { isTemporaryRoomSessionId, type ChatMessage } from "@private-voice/shared";
 
 import { useRoomStore } from "../../store/roomStore";
 import { writeRendererLog } from "../../utils/logger";
@@ -22,6 +22,7 @@ export const createPersistableChatHistory = (messages: ChatMessage[]): ChatMessa
 };
 
 export const persistChatHistory = (serverUrl: string, channelId: ChannelId): void => {
+  if (isTemporaryRoomSessionId(channelId)) return;
   const saveChatHistory = window.desktopApi?.app?.saveChatHistory;
   if (typeof saveChatHistory !== "function") return;
   const messages = createPersistableChatHistory(useRoomStore.getState().chatMessages);

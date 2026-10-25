@@ -12,10 +12,13 @@ import { cn } from "@private-voice/ui";
 import { AudioControlPopover } from "../audio/AudioControlPopover";
 import type { MicrophoneTestControls } from "../audio/AudioControlPopover";
 import { MuteButton } from "../audio/MuteButton";
+import { MicrophoneLevelFill } from "../audio/MicrophoneLevelFill";
+import { ApplicationAudioControl } from "../audio/ApplicationAudioControl";
 import { RecordingButton } from "../audio/RecordingButton";
 import { Button } from "../base/Button";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
 import { MorphingIcon } from "../icons/MorphingIcon";
+import { useMicrophoneStatus } from "../../features/audio/useMicrophoneStatus";
 import {
   clearGlassPointerHighlight,
   refreshGlassPointerHighlightBounds,
@@ -76,6 +79,7 @@ interface RoomDockProps {
   onResetSpeakerVolume: () => void;
   onToggleRecording: () => void;
   onToggleScreenShare: () => void;
+  onApplicationAudioTrack?: (track?: MediaStreamTrack, sourceName?: string) => Promise<void>;
   onToggleOverlay: () => void;
   onLeave: () => void;
 }
@@ -115,9 +119,11 @@ export const RoomDock = ({
   onResetSpeakerVolume,
   onToggleRecording,
   onToggleScreenShare,
+  onApplicationAudioTrack,
   onToggleOverlay,
   onLeave,
 }: RoomDockProps) => {
+  const microphoneStatus = useMicrophoneStatus(isMuted);
   const [activeAudioPanel, setActiveAudioPanel] = useState<AudioPanel>();
   const [mountedAudioPanels, setMountedAudioPanels] = useState<Set<Exclude<AudioPanel, undefined>>>(
     () => new Set(),
@@ -163,16 +169,22 @@ export const RoomDock = ({
       onPointerLeave={(event) => clearGlassPointerHighlight(event.currentTarget)}
     >
       <div className="voice-primary-controls">
-        <div className="voice-segmented-control audio-control-anchor" data-audio-control-root>
+        <div
+          className={`voice-segmented-control audio-control-anchor microphone-meter-shell${isMuted ? " is-muted" : ""}`}
+          data-audio-control-root
+        >
+          <MicrophoneLevelFill muted={isMuted} />
           <MuteButton
             isMuted={isMuted}
             onClick={onToggleMicrophone}
-            className="voice-segmented-main"
+            className="voice-segmented-main z-[1]"
+            showLevelFill={false}
+            status={microphoneStatus}
           />
           <button
             type="button"
             className={cn(
-              "audio-control-trigger voice-segmented-arrow",
+              "audio-control-trigger voice-segmented-arrow relative z-[1]",
               activeAudioPanel === "microphone" && "is-active",
             )}
             title="麦克风设备、处理、说话模式与体检"
@@ -273,6 +285,9 @@ export const RoomDock = ({
       </div>
       <div className="flex-1" />
       <div className="voice-action-group voice-session-actions" aria-label="分享与录音">
+        {onApplicationAudioTrack && window.desktopApi.applicationAudio && (
+          <ApplicationAudioControl onTrack={onApplicationAudioTrack} disabled={isLeaving} />
+        )}
         <Button
           variant={localScreenShareActive ? "secondary" : "ghost"}
           data-icon-motion="screen-share"

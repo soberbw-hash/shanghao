@@ -20,6 +20,14 @@ import { formatRecordingMarkerLabel } from "../../features/recording/recordingMa
 import { TranscriptionTimingNotice } from "./TranscriptionTimingNotice";
 import { transcriptionProviderError } from "../../features/ai/transcriptionProviderError";
 import { useSettingsStore } from "../../store/settingsStore";
+import { RecordingTranscriptionModelSelect } from "./RecordingTranscriptionModelSelect";
+import { TranscriptSourceControl } from "./TranscriptSourceControl";
+import { RecordingOverview } from "./RecordingOverview";
+import {
+  resolveTranscriptView,
+  transcriptViewOptions,
+  type TranscriptViewChoice,
+} from "../../features/ai/transcriptView";
 
 interface VoiceMemoryDetailProps {
   recording: RecordingLibraryItem;
@@ -131,6 +139,12 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   if (message.includes("custom_ai_not_configured")) {
     return "转录文字已经保留。请先到“AI 功能”中保存自定义 API。";
   }
+  if (message.includes("custom_ai_content_rejected"))
+    return "整理服务没有处理这段内容，原始文字已保留。可在 AI 功能中选择其他已配置的整理模型后重试。";
+  if (message.includes("custom_ai_account_unavailable"))
+    return "整理服务的账户暂不可用，请检查服务商账户状态，或选择其他已配置的模型。";
+  if (message.includes("custom_ai_rate_limited"))
+    return "整理服务请求较多，已有结果已保存，可以稍后继续。";
   if (message.includes("custom_ai_request_failed")) {
     return "转录文字已经保留。自定义 API 暂时无法连接，请检查地址、模型和密钥。";
   }
@@ -145,6 +159,9 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   }
   if (message.includes("ai_task_paused")) return "任务已暂停，需要时可以继续处理。";
   if (message.includes("voice_memory_transcript_required")) return "请先完成转录，再整理内容。";
+  if (message.includes("fusion_unreviewed"))
+    return "本次未得到有效校对结果，两份原稿与保留稿均已保留，可重试融合校对。";
+  if (message.includes("fusion_")) return "融合校对未完成，两份原稿已保留，可以继续重试。";
   if (message.includes("recording_recap_join_matching_room"))
     return "请先进入这条录音对应的房间，再上传整理结果。";
   if (message.includes("recording_recap_join_required"))
@@ -161,8 +178,14 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   if (message.includes("recording_recap_storage_failed"))
     return "服务器暂时没有保存成功，本地整理结果已保留，请稍后重试。";
   if (message.includes("recording_recap")) return "上传没有完成，请检查房间连接后重试。";
+  if (
+    message.includes("custom_ai_invalid_json") ||
+    message.includes("custom_ai_response_truncated") ||
+    message.includes("ai_invalid_json_response")
+  )
+    return "整理服务返回的结果暂时无法读取，文字稿和已完成部分已保留。可点“重试摘要”继续。";
   if (message.includes("organize_failed") || message.includes("ai_runtime_timeout")) {
-    return "转录文字已经保留，内容整理没有完成；你仍然可以直接查看文字，稍后再点重新整理。";
+    return "文字稿和已完成部分已保留，摘要还没有完成。可点“重试摘要”继续。";
   }
   if (message.includes("recording_file_unavailable")) return "录音文件已被移动或无法读取。";
   return message
@@ -181,13 +204,19 @@ export const VoiceMemoryDetail = ({
     (state) => state.settings?.aiTranscriptionProvider ?? "cloud",
   );
   const [record, setRecordState] = useState<VoiceMemoryRecord>();
+  const [viewChoice, setViewChoice] = useState<{ id: string; choice: TranscriptViewChoice }>();
+  const activeViewChoice = viewChoice?.id === recording.recordingId ? viewChoice.choice : "auto";
+  const textView = useMemo(
+    () => resolveTranscriptView(record, activeViewChoice),
+    [record, activeViewChoice],
+  );
   const setRecord = useCallback(
     (value: VoiceMemoryRecord | undefined) =>
       setRecordState((previous) => reuseVoiceMemoryReferences(previous, value)),
     [],
   );
   const [busy, setBusy] = useState(false);
-  const [queuedAction, setQueuedAction] = useState<"transcribe" | "organize">();
+  const [queuedAction, setQueuedAction] = useState<"transcribe" | "organize" | "fuse">();
   const [error, setError] = useState<string>();
   const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
   const previousPhaseRef = useRef<VoiceMemoryRecord["phase"] | undefined>(undefined);
@@ -240,7 +269,7 @@ export const VoiceMemoryDetail = ({
     ? selectedAsrModel
     : DEFAULT_ASR_MODEL_ID;
 
-  const process = async (action: "transcribe" | "organize") => {
+  const process = async (action: "transcribe" | "organize" | "fuse") => {
     setBusy(true);
     setQueuedAction(action);
     setError(undefined);
@@ -252,7 +281,8 @@ export const VoiceMemoryDetail = ({
         roomName,
         manual: true,
         transcribe: action === "transcribe",
-        organize: action === "organize",
+        organize: true,
+        fuse: action === "fuse",
         restartTranscription: action === "transcribe",
         asrModelId:
           action === "transcribe" && transcriptionProvider === "local"
@@ -265,6 +295,7 @@ export const VoiceMemoryDetail = ({
         })),
       });
       setRecord(accepted);
+      if (action === "fuse") setViewChoice({ id: recording.recordingId, choice: "auto" });
       if (accepted.phase !== "idle" || accepted.taskStatus !== "pending")
         setQueuedAction(undefined);
     } catch (cause) {
@@ -306,40 +337,55 @@ export const VoiceMemoryDetail = ({
   };
 
   const invalidTranscript = useMemo(
-    () => Boolean(record && hasInvalidVoiceMemoryResult(record)),
-    [record],
+    () =>
+      Boolean(
+        record &&
+        hasInvalidVoiceMemoryResult({
+          ...record,
+          transcript: textView?.transcript ?? record.transcript,
+          errorMessage:
+            textView && textView.transcript !== record.transcript ? undefined : record.errorMessage,
+        }),
+      ),
+    [record, textView],
   );
   const displayParagraphs = useMemo(
-    () => buildReadableTranscriptParagraphs(record?.transcript ?? []),
-    [record?.transcript],
+    () => buildReadableTranscriptParagraphs(textView?.transcript ?? record?.transcript ?? []),
+    [textView?.transcript, record?.transcript],
   );
   const knownSpeakerNames = useMemo(
     () =>
       new Map(
-        (record?.speakers ?? []).flatMap((speaker) => {
+        (textView?.speakers ?? record?.speakers ?? []).flatMap((speaker) => {
           const name = speaker.nickname?.trim() || speaker.displayNameSnapshot?.trim();
           return name ? [[speaker.speakerId, name] as const] : [];
         }),
       ),
-    [record?.speakers],
+    [textView?.speakers, record?.speakers],
   );
 
   if (!record) {
+    if (recording.voiceMemoryRecovery === "legacy_unverified")
+      return (
+        <section className="voice-memory-empty" role="status">
+          <BrainCircuit aria-hidden="true" />
+          <div>
+            <strong>旧稿待核验</strong>
+            <span>找到旧稿，但录音身份无法确认，未自动套用</span>
+          </div>
+        </section>
+      );
     return (
       <section className="voice-memory-empty">
         <BrainCircuit aria-hidden="true" />
         <div>
-          <strong>这条录音还没有整理</strong>
-          <span>先转录为文字，再整理成摘要，最后按需上传到服务器。</span>
+          <strong>还没有文字稿</strong>
+          <span>转录完成后，自动生成录音摘要。</span>
         </div>
         <div className="voice-memory-header-actions">
           <button type="button" disabled={busy} onClick={() => void process("transcribe")}>
             <FileText aria-hidden="true" />
             {queuedAction === "transcribe" ? "排队中" : "开始转录"}
-          </button>
-          <button type="button" disabled aria-label="需要先转录才能整理">
-            <Sparkles aria-hidden="true" />
-            整理内容
           </button>
           <RecordingUploadAction
             key={recording.recordingId}
@@ -349,6 +395,10 @@ export const VoiceMemoryDetail = ({
             onError={setError}
           />
         </div>
+        <RecordingTranscriptionModelSelect
+          disabled={busy || Boolean(queuedAction)}
+          onError={setError}
+        />
         {error ? <p role="alert">{describeError(error, false)}</p> : null}
       </section>
     );
@@ -364,7 +414,6 @@ export const VoiceMemoryDetail = ({
       record.taskStatus === "pending");
   const working = processing && !comparisonOwnsTask;
   const transcriptionFinished = record.transcript.length > 0 && !invalidTranscript;
-  const organizationFailed = record.errorMessage?.startsWith("organize_failed:") === true;
   const pausedOrganization = record.phase === "paused" && record.processingStage === "organize";
   const resumableTranscription =
     !comparisonOwnsTask &&
@@ -399,6 +448,13 @@ export const VoiceMemoryDetail = ({
     : undefined;
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
+      {/^deferred:(?:cloud|custom)_asr_(?:http_|network_error|timeout)/.test(
+        record.errorMessage ?? "",
+      ) ? (
+        <p role="status" className="text-sm text-[#718096]">
+          云端服务暂时不可用，稍后自动继续，已完成片段保留。
+        </p>
+      ) : null}
       {record.errorMessage?.startsWith("deferred:") &&
       /(?:_key_required|_not_configured|_not_installed|_runtime_not_ready)$/.test(
         record.errorMessage,
@@ -411,10 +467,10 @@ export const VoiceMemoryDetail = ({
         <p role="status">多次尝试后仍无法整理，请点重新整理。</p>
       ) : null}
       <header>
-        <div className="voice-memory-title">
-          <Sparkles aria-hidden="true" />
-          <strong>语音记忆</strong>
-        </div>
+        <RecordingTranscriptionModelSelect
+          disabled={busy || Boolean(queuedAction) || processing || comparisonOwnsTask}
+          onError={setError}
+        />
         {comparisonOwnsTask ? (
           <div className="voice-memory-header-actions">
             <button type="button" className="voice-memory-quiet-action" disabled>
@@ -423,13 +479,15 @@ export const VoiceMemoryDetail = ({
             </button>
           </div>
         ) : working ? (
-          <button
-            type="button"
-            onClick={() => void window.desktopApi.ai.pauseTask(record.recordingId)}
-          >
-            <Pause />
-            暂停
-          </button>
+          <div className="voice-memory-header-actions">
+            <button
+              type="button"
+              onClick={() => void window.desktopApi.ai.pauseTask(record.recordingId)}
+            >
+              <Pause />
+              暂停
+            </button>
+          </div>
         ) : (
           <div className="voice-memory-header-actions">
             <button
@@ -447,21 +505,6 @@ export const VoiceMemoryDetail = ({
                     ? "重新转录"
                     : "开始转录"}
             </button>
-            <button
-              type="button"
-              className="voice-memory-quiet-action"
-              disabled={busy || Boolean(queuedAction) || !transcriptionFinished}
-              onClick={() => void (pausedOrganization ? resume() : process("organize"))}
-            >
-              {pausedOrganization ? <Play /> : <Sparkles />}
-              {queuedAction === "organize"
-                ? "排队中"
-                : pausedOrganization
-                  ? "继续整理"
-                  : record.organizedAt || organizationFailed
-                    ? "重新整理"
-                    : "整理内容"}
-            </button>
             <RecordingUploadAction
               key={recording.recordingId}
               record={record}
@@ -469,17 +512,37 @@ export const VoiceMemoryDetail = ({
               onRecord={setRecord}
               onError={setError}
             />
+            {record.transcriptionAssist?.status === "completed" &&
+            (record.transcriptionFusion?.status !== "completed" ||
+              record.transcriptionFusion.transcript.some((s) => s.fusionUncertain)) ? (
+              <button
+                type="button"
+                className="voice-memory-quiet-action"
+                disabled={busy || Boolean(queuedAction)}
+                onClick={() => void process("fuse")}
+              >
+                <Sparkles />
+                {record.transcriptionFusion?.status === "completed" ? "重试未校对" : "融合校对"}
+              </button>
+            ) : null}
           </div>
         )}
       </header>
-      <TranscriptionTimingNotice record={record} />
+      <RecordingOverview
+        record={record}
+        busy={busy || Boolean(queuedAction) || working}
+        onRetry={() => void (pausedOrganization ? resume() : process("organize"))}
+        onSeek={onSeek}
+      />
       {processing ? (
         <div className={`voice-memory-working is-${record.phase}`}>
-          <div className="voice-memory-audio-trajectory" aria-hidden="true">
-            {Array.from({ length: 16 }, (_, index) => (
-              <i key={index} />
-            ))}
-          </div>
+          {record.phase === "transcribing" || record.transcriptionFusion?.status === "running" ? (
+            <p className="text-xs leading-relaxed text-[#526b87]" role="status">
+              {record.transcriptionFusion?.status === "running"
+                ? `正在融合校对 ${record.transcriptionFusion.completedBatches}/${record.transcriptionFusion.totalBatches} 段`
+                : (record.diagnostic?.runtimeMessage ?? "正在准备音频并转录，请稍候…")}
+            </p>
+          ) : null}
           <div
             className="voice-memory-progress"
             role="progressbar"
@@ -497,11 +560,15 @@ export const VoiceMemoryDetail = ({
         (record.errorMessage && !record.errorMessage.startsWith("deferred:")) ||
         error) ? (
         <p className="voice-memory-error" role="alert">
-          {invalidTranscript
-            ? record.errorMessage === "no_reliable_speech"
-              ? describeError(record.errorMessage, transcriptionFinished)
-              : "这条是旧版空结果，或包含乱码、明显重复内容，已停止展示。请重新转录。"
-            : describeError(record.errorMessage ?? error ?? "", transcriptionFinished)}
+          {record.errorMessage === "voice_memory_shared_result_changed"
+            ? describeError(record.errorMessage, transcriptionFinished)
+            : invalidTranscript
+              ? record.errorMessage === "no_reliable_speech"
+                ? describeError(record.errorMessage, transcriptionFinished)
+                : record.errorMessage === "partial_transcription"
+                  ? "部分音频片段尚未完成，已保留当前文字。可以继续转录。"
+                  : "本次结果中有无法可靠识别的内容，暂未展示。可以重试或切换转录模型。"
+              : describeError(record.errorMessage ?? error ?? "", transcriptionFinished)}
         </p>
       ) : null}
 
@@ -514,8 +581,34 @@ export const VoiceMemoryDetail = ({
           )}
         </p>
       ) : null}
+      {!invalidTranscript && displayParagraphs.length ? (
+        <>
+          {textView ? (
+            <TranscriptSourceControl
+              view={textView}
+              options={transcriptViewOptions(record)}
+              choice={activeViewChoice}
+              onChange={(choice) => setViewChoice({ id: recording.recordingId, choice })}
+            />
+          ) : null}
+          {record.transcriptionFusion?.status === "failed" ? (
+            <p className="text-xs text-[#996925]" role="status">
+              {describeError(record.transcriptionFusion.errorCode ?? "fusion_failed", true)}
+            </p>
+          ) : null}
+          <TranscriptParagraphList
+            key={`${record.recordingId}:${textView?.kind ?? "current"}`}
+            paragraphs={displayParagraphs}
+            names={knownSpeakerNames}
+            multipleSpeakers={(textView?.speakers.length ?? record.speakers.length) > 1}
+            onSeek={onSeek}
+          />
+        </>
+      ) : null}
+      <TranscriptionTimingNotice record={record} />
       {organization ? (
-        <div className={`voice-memory-organization is-${organization.status}`}>
+        <details className={`voice-memory-organization is-${organization.status}`}>
+          <summary>处理详情</summary>
           <div className="voice-memory-organization-overview">
             <div>
               <strong>{organizationStatus}</strong>
@@ -597,7 +690,7 @@ export const VoiceMemoryDetail = ({
               </dl>
             </details>
           ) : null}
-        </div>
+        </details>
       ) : null}
 
       {!invalidTranscript && pendingSpeakers.length ? (
@@ -649,15 +742,6 @@ export const VoiceMemoryDetail = ({
           ))}
         </div>
       ) : null}
-      {!invalidTranscript && displayParagraphs.length ? (
-        <TranscriptParagraphList
-          key={record.recordingId}
-          paragraphs={displayParagraphs}
-          names={knownSpeakerNames}
-          multipleSpeakers={hasMultipleSpeakers}
-          onSeek={onSeek}
-        />
-      ) : null}
       {!invalidTranscript && record.highlights.length ? (
         <div className="voice-memory-highlights">
           <h4>精彩片段</h4>
@@ -667,20 +751,6 @@ export const VoiceMemoryDetail = ({
               <span>
                 {clock(item.startMs)} · {item.description}
               </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {!invalidTranscript && record.summary.length ? (
-        <div className="voice-memory-summary">
-          <h4>今晚聊了什么</h4>
-          {record.summary.map((item, index) => (
-            <button
-              type="button"
-              key={`${item.text}-${index}`}
-              onClick={() => item.sourceStartMs !== undefined && onSeek(item.sourceStartMs)}
-            >
-              {item.text}
             </button>
           ))}
         </div>

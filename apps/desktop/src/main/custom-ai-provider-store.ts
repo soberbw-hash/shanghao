@@ -1,9 +1,11 @@
 import { fetchPublicUrl, resolvePublicAddress } from "./public-network";
+import { customAiHttpError } from "./custom-ai-error";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { app, safeStorage } from "electron";
+import { readBoundedProviderFile, recoverAndMigrateProvider } from "./provider-encryption-recovery";
 
 import type {
   AiCustomProviderInput,
@@ -21,6 +23,7 @@ interface GenerateRequest {
   prompt: string;
   maxNewTokens: number;
   signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 const MAX_PROVIDER_RESPONSE_BYTES = 512 * 1024;
@@ -83,8 +86,18 @@ const extractJsonObject = <T>(value: string): T => {
   if (start < 0 || end <= start) throw new Error("custom_ai_invalid_json");
   try {
     return JSON.parse(value.slice(start, end + 1)) as T;
-  } catch {
-    throw new Error("custom_ai_invalid_json");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const jsonSyntax = message.includes("double-quoted property")
+      ? "object_key"
+      : message.includes("Expected ','")
+        ? "delimiter"
+        : message.includes("control character")
+          ? "control_character"
+          : message.includes("Unterminated string")
+            ? "unterminated_string"
+            : "other";
+    throw Object.assign(new Error("custom_ai_invalid_json"), { jsonSyntax });
   }
 };
 
@@ -152,6 +165,17 @@ export class CustomAiProviderStore {
     const config = await this.requireConfig();
     await validatePublicProviderHost(config.baseUrl);
     const requestUrl = `${config.baseUrl}/chat/completions`;
+    const timeoutMs = Math.max(10000, Math.min(180000, request.timeoutMs ?? 60000));
+    const requestSignal = request.signal
+      ? AbortSignal.any([request.signal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs);
+    const requestFailed = (error: unknown): never => {
+      if (request.signal?.aborted) throw new Error("ai_task_paused");
+      if (requestSignal.aborted) throw new Error("custom_ai_timeout");
+      if (error instanceof TypeError && /fetch failed|terminated/i.test(error.message))
+        throw new Error("custom_ai_network_error");
+      throw error;
+    };
     const fetcher = isBuiltInProviderUrl(config.baseUrl) ? fetch : fetchPublicUrl;
     const response = await fetcher(requestUrl, {
       method: "POST",
@@ -174,31 +198,54 @@ export class CustomAiProviderStore {
         response_format: { type: "json_object" },
         stream: false,
       }),
-      signal: request.signal
-        ? AbortSignal.any([request.signal, AbortSignal.timeout(60_000)])
-        : AbortSignal.timeout(60_000),
-    }).catch((error) => {
-      if (request.signal?.aborted) throw new Error("ai_task_paused");
-      throw error;
-    });
-    const payloadText = await readBoundedText(response);
+      signal: requestSignal,
+    }).catch(requestFailed);
+    const payloadText = await readBoundedText(response).catch(requestFailed);
     if (!response.ok) {
-      await this.log("warn", "Custom AI provider request failed", { status: response.status });
-      throw new Error(`custom_ai_http_${response.status}`);
+      const failure = customAiHttpError(config.baseUrl, response.status, payloadText);
+      await this.log("warn", "Custom AI provider request failed", {
+        status: response.status,
+        businessCode: failure.businessCode,
+      });
+      throw new Error(failure.message);
     }
     let content: unknown;
+    let finishReason: string | undefined;
     try {
       const payload = JSON.parse(payloadText) as {
-        choices?: Array<{ message?: { content?: unknown } }>;
+        choices?: Array<{ finish_reason?: string; message?: { content?: unknown } }>;
       };
+      if (payload.choices?.[0]?.finish_reason === "length")
+        throw new Error("custom_ai_response_truncated");
+      finishReason = ["stop", "length", "sensitive", "content_filter"].includes(
+        payload.choices?.[0]?.finish_reason ?? "",
+      )
+        ? payload.choices?.[0]?.finish_reason
+        : "other";
       content = payload.choices?.[0]?.message?.content;
-    } catch {
+    } catch (error) {
+      if ((error as Error).message === "custom_ai_response_truncated") throw error;
+      // Parser errors can contain a provider response excerpt. Keep diagnostics content-free.
+      // eslint-disable-next-line preserve-caught-error
       throw new Error("custom_ai_invalid_response");
     }
     if (typeof content !== "string" || !content.trim()) {
       throw new Error("custom_ai_empty_response");
     }
-    return extractJsonObject<T>(content);
+    try {
+      return extractJsonObject<T>(content);
+    } catch (error) {
+      await this.log("warn", "Custom AI provider returned invalid JSON", {
+        contentLength: content.length,
+        startsObject: content.trimStart().startsWith("{"),
+        endsObject: content.trimEnd().endsWith("}"),
+        startsArray: content.trimStart().startsWith("["),
+        markdownFence: content.trimStart().startsWith("```"),
+        finishReason,
+        jsonSyntax: (error as { jsonSyntax?: string })?.jsonSyntax ?? "object_boundary",
+      });
+      throw new Error("custom_ai_invalid_json", { cause: error });
+    }
   }
 
   private async requireConfig(): Promise<StoredCustomProvider> {
@@ -210,7 +257,7 @@ export class CustomAiProviderStore {
   private async read(): Promise<StoredCustomProvider | undefined> {
     let encrypted: Buffer;
     try {
-      encrypted = await readFile(this.filePath);
+      encrypted = await readBoundedProviderFile(this.filePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
@@ -220,9 +267,41 @@ export class CustomAiProviderStore {
     }
     let parsed: Partial<StoredCustomProvider>;
     try {
-      parsed = JSON.parse(
-        this.secureStorage.decryptString(encrypted),
-      ) as Partial<StoredCustomProvider>;
+      let plaintext: string;
+      try {
+        plaintext = this.secureStorage.decryptString(encrypted);
+      } catch {
+        const appData = app.getPath("appData");
+        const profile = path.dirname(path.dirname(this.filePath));
+        if (
+          path.dirname(profile) !== appData ||
+          !["shanghao", "shanghao-desktop"].includes(path.basename(profile))
+        )
+          throw Error("recovery_scope_invalid");
+        const recovered = await recoverAndMigrateProvider(
+          this.filePath,
+          encrypted,
+          appData,
+          (value) => {
+            const config = value as Partial<StoredCustomProvider>;
+            if (
+              !config ||
+              typeof config.baseUrl !== "string" ||
+              typeof config.model !== "string" ||
+              !config.model.trim() ||
+              config.model.length > 120 ||
+              typeof config.apiKey !== "string" ||
+              !config.apiKey.trim() ||
+              config.apiKey.length > 512
+            )
+              throw Error("recovery_config_invalid");
+            normalizeProviderUrl(config.baseUrl);
+          },
+          (value) => this.secureStorage.encryptString(value),
+        );
+        plaintext = recovered;
+      }
+      parsed = JSON.parse(plaintext) as Partial<StoredCustomProvider>;
     } catch {
       throw new Error("custom_ai_config_unreadable");
     }

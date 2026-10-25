@@ -18,6 +18,7 @@ import type {
   ScreenShareTransitionOrigin,
 } from "../../features/screen-share/types";
 import { recordScreenSharePresentation } from "../../features/screen-share/screenSharePresentationMetrics";
+import { RemoteControlViewer } from "./RemoteControlViewer";
 
 interface VideoFrameCallbackMetadata {
   width?: number;
@@ -444,6 +445,9 @@ const ScreenSharePanelSurface = ({
       ) : null}
       <div className="screen-share-video-shell" aria-busy={!primaryPresentation}>
         <ScreenShareMedia item={primaryItem} onPresentation={handlePresentation} />
+        {!primaryItem.isLocal && primaryItem.transport === "webrtc" && (
+          <RemoteControlViewer peerId={primaryItem.id} />
+        )}
       </div>
       {items.length > 1 ? (
         <div className="screen-share-stack" role="tablist" aria-label="切换共享画面">

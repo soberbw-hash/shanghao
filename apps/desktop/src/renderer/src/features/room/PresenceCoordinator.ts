@@ -10,6 +10,7 @@ interface DesiredPresenceState {
   sceneZone?: SceneZoneId;
   gameName?: string;
   gameIconDataUrl?: string;
+  gameSession?: import("@private-voice/shared").GameSessionActivity;
   musicActivity?: MusicActivity;
   key: string;
 }
@@ -23,6 +24,14 @@ interface PresenceCoordinatorOptions {
 
 /** Coalesces local activity changes and publishes only the newest presence snapshot. */
 export class PresenceCoordinator {
+  private applicationAudioName = "";
+  setApplicationAudioName(name = ""): void {
+    this.applicationAudioName = name.trim().slice(0, 64);
+    this.lastPublishedKey = undefined;
+    this.pendingKey = undefined;
+    this.generation++;
+    void this.publish();
+  }
   private desired?: DesiredPresenceState;
   private lastPublishedKey?: string;
   private pendingKey?: string;
@@ -44,6 +53,7 @@ export class PresenceCoordinator {
     musicActivity?: MusicActivity,
     gameIconDataUrl?: string,
     callModeActive = this.desired?.callModeActive ?? false,
+    gameSession?: import("@private-voice/shared").GameSessionActivity,
   ): void {
     const normalizedGameName = normalizePresenceGameName(gameName);
     const normalizedGameIconDataUrl = normalizePresenceGameIconDataUrl(
@@ -58,6 +68,7 @@ export class PresenceCoordinator {
       normalizedGameName ?? null,
       normalizedGameIconDataUrl ?? null,
       musicActivity ?? null,
+      gameSession ?? null,
     ]);
     this.desired = {
       callModeActive,
@@ -66,6 +77,7 @@ export class PresenceCoordinator {
       sceneZone,
       gameName: normalizedGameName,
       gameIconDataUrl: normalizedGameIconDataUrl,
+      gameSession: normalizedGameName === "英雄联盟" ? gameSession : undefined,
       musicActivity,
       key,
     };
@@ -79,8 +91,9 @@ export class PresenceCoordinator {
    */
   enrichPartialMessage(message: MemberStateMessage): MemberStateMessage {
     const desired = this.desired;
-    if (!desired) return message;
+    if (!desired) return { ...message, applicationAudioName: this.applicationAudioName };
     return {
+      applicationAudioName: this.applicationAudioName,
       ...message,
       isDeafened: message.isDeafened ?? desired.isDeafened,
       callModeActive: message.callModeActive ?? desired.callModeActive,
@@ -88,6 +101,8 @@ export class PresenceCoordinator {
       sceneZone: message.sceneZone ?? desired.sceneZone,
       gameName: message.gameName ?? desired.gameName ?? "",
       gameIconDataUrl: message.gameIconDataUrl ?? desired.gameIconDataUrl ?? null,
+      gameSession:
+        message.gameSession === undefined ? (desired.gameSession ?? null) : message.gameSession,
       musicActivity: message.musicActivity ?? desired.musicActivity ?? null,
     };
   }
@@ -106,6 +121,7 @@ export class PresenceCoordinator {
     const publicationGeneration = this.generation;
     this.pendingKey = desired.key;
     const sent = await this.options.send({
+      applicationAudioName: this.applicationAudioName,
       type: "member_state",
       roomId: this.options.roomId,
       peerId: this.options.peerId,
@@ -115,6 +131,7 @@ export class PresenceCoordinator {
       sceneZone: desired.sceneZone,
       gameName: desired.gameName ?? "",
       gameIconDataUrl: desired.gameIconDataUrl ?? null,
+      gameSession: desired.gameSession ?? null,
       musicActivity: desired.musicActivity ?? null,
     });
 

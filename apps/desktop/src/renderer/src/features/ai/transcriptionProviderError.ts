@@ -1,6 +1,18 @@
 /** Provider codes only; never show an API response or credentials in the UI. */
 export const transcriptionProviderError = (message: string): string | undefined => {
+  if (message.includes("participant_track_room_mismatch"))
+    return "成员音轨与这条录音所属房间不一致，已停止上传。原录音和已有文字均已保留。";
+  if (message.includes("participant_track_audio_missing"))
+    return "这条录音的成员音轨有文件缺失，已停止转录以避免漏掉成员。请检查录音数据是否被移动。";
+  if (
+    /participant_track_(?:path_invalid|manifest_invalid|manifest_missing|unindexed_audio)/.test(
+      message,
+    )
+  )
+    return "成员音轨索引无法安全读取，已停止上传。请保留原录音与本机数据，不要删除后重试。";
   if (!/(?:cloud|custom|remote)_asr_/.test(message)) return undefined;
+  if (message.includes("network_error") || message.includes("timeout"))
+    return "转录网络连接中断或超时，自动重试后仍未完成。请稍后继续或切换本地模型。";
   if (message.includes("http_402"))
     return "转录服务返回账户余额不足。免费模型也可能受账户欠费限制，请在服务商控制台核对余额、实名认证和权限后重试。";
   if (message.includes("model_comparison_not_supported"))

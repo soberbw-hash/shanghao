@@ -5,13 +5,21 @@ import { resolveFfmpegExecutable } from "./media-runtime";
 import { runLocalProcess } from "./local-process";
 import { mainResourceScheduler } from "./main-resource-scheduler";
 
-const PART_MS = 15 * 60_000;
-export const remoteTranscriptionRanges = (durationMs: number) => {
+const PART_MS = 5 * 60_000;
+interface RemotePart {
+  startMs: number;
+  durationMs: number;
+  text: string;
+  modelName: string;
+}
+export const remoteTranscriptionRanges = (durationMs: number, partMs = PART_MS) => {
   if (!Number.isFinite(durationMs) || durationMs <= 0)
     throw new Error("recording_duration_unavailable");
-  return Array.from({ length: Math.ceil(durationMs / PART_MS) }, (_, index) => ({
-    startMs: index * PART_MS,
-    durationMs: Math.min(PART_MS, durationMs - index * PART_MS),
+  if (!Number.isFinite(partMs) || partMs <= 0 || partMs > PART_MS)
+    throw new Error("invalid_remote_part_duration");
+  return Array.from({ length: Math.ceil(durationMs / partMs) }, (_, index) => ({
+    startMs: index * partMs,
+    durationMs: Math.min(partMs, durationMs - index * partMs),
   }));
 };
 
@@ -22,15 +30,29 @@ export const transcribeRemoteParts = async (
   signal: AbortSignal,
   transcribe: (file: string, duration: number) => Promise<{ text: string; modelName: string }>,
   onPart: (index: number, count: number) => Promise<void>,
+  onCompleted?: (part: RemotePart, index: number, count: number) => Promise<void>,
+  cached?: (startMs: number, durationMs: number) => RemotePart | undefined,
+  partMs = PART_MS,
+  forceConvert = false,
+  audioOffsetMs = 0,
 ) => {
+  if (!Number.isFinite(audioOffsetMs) || audioOffsetMs < 0)
+    throw Error("invalid_remote_audio_offset");
   const size = (await stat(filePath)).size;
   const ranges =
-    durationMs <= 60 * 60_000 && size <= 50 * 1024 * 1024
+    durationMs <= partMs && size <= 50 * 1024 * 1024
       ? [{ startMs: 0, durationMs }]
-      : remoteTranscriptionRanges(durationMs);
-  if (ranges.length === 1 && size <= 50 * 1024 * 1024) {
+      : remoteTranscriptionRanges(durationMs, partMs);
+  if (!forceConvert && !audioOffsetMs && ranges.length === 1 && size <= 50 * 1024 * 1024) {
     signal.throwIfAborted();
-    return [{ ...(await transcribe(filePath, durationMs)), ...ranges[0]! }];
+    await onPart(1, 1);
+    const part = cached?.(0, durationMs) ?? {
+      ...(await transcribe(filePath, durationMs)),
+      ...ranges[0]!,
+    };
+    signal.throwIfAborted();
+    await onCompleted?.(part, 1, 1);
+    return [part];
   }
   const executable = resolveFfmpegExecutable();
   if (!executable) throw new Error("ffmpeg_missing");
@@ -41,6 +63,12 @@ export const transcribeRemoteParts = async (
     for (const [index, range] of ranges.entries()) {
       signal.throwIfAborted();
       await onPart(index + 1, ranges.length);
+      const saved = cached?.(range.startMs, range.durationMs);
+      if (saved) {
+        await onCompleted?.(saved, index + 1, ranges.length);
+        results.push(saved);
+        continue;
+      }
       const output = path.join(directory, "part.wav");
       await mainResourceScheduler.runWork(
         "recording-export",
@@ -54,7 +82,7 @@ export const transcribeRemoteParts = async (
               "error",
               "-y",
               "-ss",
-              String(range.startMs / 1000),
+              String((audioOffsetMs + range.startMs) / 1000),
               "-i",
               filePath,
               "-t",
@@ -77,7 +105,10 @@ export const transcribeRemoteParts = async (
       );
       signal.throwIfAborted();
       const result = await transcribe(output, range.durationMs);
-      results.push({ ...range, ...result });
+      signal.throwIfAborted();
+      const part = { ...range, ...result };
+      await onCompleted?.(part, index + 1, ranges.length);
+      results.push(part);
     }
     return results;
   } finally {

@@ -1,38 +1,66 @@
-// Read-only input companion. It observes only the configured key, never audio or text.
+// Read-only input companion. Only the binding and modifier states are retained, never text.
 using System;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
+sealed class PhoneKeyState {
+    readonly int key;
+    readonly System.Collections.Generic.Dictionary<int,bool> states = new System.Collections.Generic.Dictionary<int,bool>();
+    public PhoneKeyState(int virtualKey) { key=virtualKey; }
+    public void Keyboard(int virtualKey, int scan, int flags) {
+        int side=virtualKey;
+        if(virtualKey==0x10) side=scan==0x36 ? 0xA1 : 0xA0;
+        if(virtualKey==0x11) side=(flags&2)!=0 ? 0xA3 : 0xA2;
+        if(virtualKey==0x12) side=(flags&2)!=0 ? 0xA5 : 0xA4;
+        if(virtualKey==key || (side>=0xA0 && side<=0xA5) || side==0x5B || side==0x5C)
+            states[side]=(flags&1)==0;
+    }
+    public void Mouse(int flags) {
+        int press=key==5 ? 0x40 : key==6 ? 0x100 : 0;
+        if(press==0) return;
+        if((flags&press)!=0) states[key]=true;
+        if((flags&(press<<1))!=0) states[key]=false;
+    }
+    public bool Read(int virtualKey, bool sampled) {
+        bool value;
+        return states.TryGetValue(virtualKey,out value) ? value : sampled;
+    }
+}
+
 // Message-only Raw Input is independent of low-level hooks and foreground focus.
-// Discard every key except the configured binding; never record text or suppress input.
+// Discard other keys; never record text or suppress input in the foreground application.
 sealed class PhoneRawInput : NativeWindow, IDisposable {
     [StructLayout(LayoutKind.Sequential)] struct Device { public ushort page, usage; public uint flags; public IntPtr target; }
     [StructLayout(LayoutKind.Sequential)] struct Header { public uint type, size; public IntPtr device, parameter; }
     [DllImport("user32.dll", SetLastError=true)] static extern bool RegisterRawInputDevices(Device[] devices, uint count, uint size);
     [DllImport("user32.dll")] static extern uint GetRawInputData(IntPtr input, uint command, IntPtr data, ref uint size, uint headerSize);
-    readonly int key;
-    bool? down;
+    readonly PhoneKeyState state;
+    readonly bool mouse;
     public bool Registered { get; private set; }
     public PhoneRawInput(int virtualKey) {
-        key=virtualKey;
-        if(key<=6) return; // Mouse buttons keep the physical sampling path.
+        state=new PhoneKeyState(virtualKey);
+        mouse=virtualKey<=6;
         CreateHandle(new CreateParams { Parent=new IntPtr(-3) });
         var device=new Device { page=1, usage=6, flags=0x100, target=Handle };
-        Registered=RegisterRawInputDevices(new [] {device},1,(uint)Marshal.SizeOf(typeof(Device)));
+        var devices=mouse ? new [] {device,new Device {page=1,usage=2,flags=0x100,target=Handle}} : new [] {device};
+        Registered=RegisterRawInputDevices(devices,(uint)devices.Length,(uint)Marshal.SizeOf(typeof(Device)));
     }
-    public bool Read(bool sampled) { Application.DoEvents(); return Registered && down.HasValue ? down.Value : sampled; }
+    public void Pump() { Application.DoEvents(); }
+    public bool Read(int key, bool sampled) { return Registered ? state.Read(key,sampled) : sampled; }
     protected override void WndProc(ref Message message) {
         if(message.Msg==0xFF) {
             uint size=0, headerSize=(uint)Marshal.SizeOf(typeof(Header));
             if(GetRawInputData(message.LParam,0x10000003,IntPtr.Zero,ref size,headerSize)==0 && size>=headerSize+16 && size<=1024) {
                 IntPtr data=Marshal.AllocHGlobal((int)size);
                 try {
-                    if(GetRawInputData(message.LParam,0x10000003,data,ref size,headerSize)==size && Marshal.ReadInt32(data)==1) {
+                    if(GetRawInputData(message.LParam,0x10000003,data,ref size,headerSize)==size) {
                         int offset=(int)headerSize;
-                        int virtualKey=Marshal.ReadInt16(data,offset+6)&0xFFFF;
-                        if(virtualKey==key) down=(Marshal.ReadInt16(data,offset+2)&1)==0;
+                        if(Marshal.ReadInt32(data)==1)
+                            state.Keyboard(Marshal.ReadInt16(data,offset+6)&0xFFFF,Marshal.ReadInt16(data,offset)&0xFFFF,Marshal.ReadInt16(data,offset+2)&0xFFFF);
+                        else if(mouse && Marshal.ReadInt32(data)==0 && size>=headerSize+24)
+                            state.Mouse(Marshal.ReadInt16(data,offset+4)&0xFFFF);
                     }
                 } finally { Marshal.FreeHGlobal(data); }
             }
@@ -40,7 +68,11 @@ sealed class PhoneRawInput : NativeWindow, IDisposable {
         base.WndProc(ref message);
     }
     public void Dispose() {
-        if(Registered) RegisterRawInputDevices(new [] {new Device {page=1,usage=6,flags=1,target=IntPtr.Zero}},1,(uint)Marshal.SizeOf(typeof(Device)));
+        if(Registered) {
+            var keyboard=new Device {page=1,usage=6,flags=1,target=IntPtr.Zero};
+            var devices=mouse ? new [] {keyboard,new Device {page=1,usage=2,flags=1,target=IntPtr.Zero}} : new [] {keyboard};
+            RegisterRawInputDevices(devices,(uint)devices.Length,(uint)Marshal.SizeOf(typeof(Device)));
+        }
         Registered=false;
         if(Handle!=IntPtr.Zero) DestroyHandle();
     }
@@ -50,7 +82,28 @@ class PhoneInput {
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] static extern IntPtr OpenInputDesktop(uint flags, bool inherit, uint access);
     [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr desktop);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint process);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("advapi32.dll")] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll")] static extern bool GetTokenInformation(IntPtr token, int kind, out int value, int length, out int required);
+    static bool? Elevated(uint process) {
+        IntPtr handle=OpenProcess(0x1000,false,process), token=IntPtr.Zero;
+        if(handle==IntPtr.Zero) return null;
+        try {
+            if(!OpenProcessToken(handle,8,out token)) return null;
+            int value,required;
+            return GetTokenInformation(token,20,out value,4,out required) ? (bool?)(value!=0) : null;
+        } finally { if(token!=IntPtr.Zero) CloseHandle(token); CloseHandle(handle); }
+    }
+    static bool? ForegroundHigher(bool? elevated) {
+        uint process; GetWindowThreadProcessId(GetForegroundWindow(),out process);
+        bool? foreground=process==0 ? null : Elevated(process);
+        return elevated.HasValue && foreground.HasValue ? (bool?)(!elevated.Value && foreground.Value) : null;
+    }
     static bool Down(int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; }
+    static bool Modifier(PhoneRawInput raw, int left, int right) { return raw.Read(left,Down(left)) || raw.Read(right,Down(right)); }
     static volatile bool closing;
     [STAThread] static int Main() {
         try {
@@ -66,16 +119,31 @@ class PhoneInput {
             Console.WriteLine(json.Serialize(new { ready=true, rawInput=raw.Registered })); Console.Out.Flush();
             string previous = null;
             var heartbeat = System.Diagnostics.Stopwatch.StartNew();
+            var diagnostics = System.Diagnostics.Stopwatch.StartNew();
+            bool? elevated=Elevated((uint)System.Diagnostics.Process.GetCurrentProcess().Id);
+            bool blocked=false;
             while(!closing) {
                 // Secure desktop / screen lock is not a user key release.
                 IntPtr desktop=OpenInputDesktop(0,false,0x0101);
-                if(desktop==IntPtr.Zero) { Thread.Sleep(50); continue; }
+                if(desktop==IntPtr.Zero) {
+                    if(!blocked || heartbeat.ElapsedMilliseconds>=1000) {
+                        Console.WriteLine("{\"inputDesktopAvailable\":false}"); Console.Out.Flush(); heartbeat.Restart();
+                    }
+                    blocked=true; Thread.Sleep(50); continue;
+                }
                 CloseDesktop(desktop);
-                bool down=raw.Read(Down(key));
+                if(diagnostics.ElapsedMilliseconds>=1000) {
+                    Console.WriteLine(json.Serialize(new { inputDesktopAvailable=true, foregroundHigher=ForegroundHigher(elevated) }));
+                    Console.Out.Flush(); diagnostics.Restart();
+                }
+                // Do not turn an inaccessible desktop into a synthetic key release.
+                if(blocked) { previous=null; blocked=false; }
+                raw.Pump();
+                bool down=raw.Read(key,Down(key));
                 long sampledAt=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string state=json.Serialize(new { down=down, ctrlKey=down && Down(0x11),
-                    shiftKey=down && Down(0x10), altKey=down && Down(0x12),
-                    metaKey=down && (Down(0x5B) || Down(0x5C)) });
+                string state=json.Serialize(new { down=down, ctrlKey=down && Modifier(raw,0xA2,0xA3),
+                    shiftKey=down && Modifier(raw,0xA0,0xA1), altKey=down && Modifier(raw,0xA4,0xA5),
+                    metaKey=down && Modifier(raw,0x5B,0x5C), inputDesktopAvailable=true });
                 if(state!=previous || heartbeat.ElapsedMilliseconds>=1000) {
                     Console.WriteLine(state.Substring(0,state.Length-1)+",\"sampledAt\":"+sampledAt+"}");
                     Console.Out.Flush(); previous=state; heartbeat.Restart();

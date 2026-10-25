@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Maximize2, Minimize2, X } from "lucide-react";
 
@@ -6,11 +6,29 @@ import {
   APPLE_MOTION_DURATION,
   APPLE_MOTION_EASE,
   type ScreenShareViewerSignal,
+  type RemoteControlViewerClient,
 } from "@private-voice/shared";
 
 import { usePrefersReducedMotion as useReducedMotion } from "../hooks/usePrefersReducedMotion";
+import { RemoteControlViewer } from "../components/room/RemoteControlViewer";
+import { useRemoteControlState } from "../features/screen-share/useRemoteControlState";
 
 export const ScreenShareViewerPage = () => {
+  const client = useMemo<RemoteControlViewerClient | undefined>(() => {
+    const control = window.screenShareViewerApi.control;
+    if (!control) return;
+    return {
+      get: control.get,
+      onState: control.onState,
+      request: () => control.request(),
+      cancel: () => control.cancel(),
+      stopControlling: () => control.stop(),
+      remoteFrame: () => control.frame(),
+      input: (_peer, event, lane) => control.input(event, lane),
+    };
+  }, []);
+  const controlState = useRemoteControlState(client);
+  const controlPeer = Object.keys(controlState.remoteShares)[0];
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream>();
   const [fallbackFrame, setFallbackFrame] = useState<string>();
@@ -44,6 +62,13 @@ export const ScreenShareViewerPage = () => {
     };
     const createPeer = () => {
       const next = new RTCPeerConnection({ iceServers: [] });
+      next.onconnectionstatechange = () => {
+        if (disposed || peer !== next) return;
+        if (["disconnected", "failed", "closed"].includes(next.connectionState)) {
+          void client?.stopControlling("").catch(() => undefined);
+          setStream(undefined);
+        }
+      };
       next.ontrack = ({ streams }) => {
         if (disposed || peer !== next) return;
         const nextStream = streams[0];
@@ -70,6 +95,7 @@ export const ScreenShareViewerPage = () => {
       if (signal.title) setTitle(signal.title.replace(/^上号\s*·\s*/, ""));
       void (async () => {
         if (signal.type === "ready") {
+          void client?.stopControlling("").catch(() => undefined);
           // A new publisher has a new DTLS identity. Its ready handshake must
           // replace the previous receiver rather than renegotiate that identity
           // into an already established connection and leave the viewer loading.
@@ -105,6 +131,7 @@ export const ScreenShareViewerPage = () => {
             pendingCandidates.push(candidate);
           }
         } else if (signal.type === "fallback-frame" && signal.frameDataUrl) {
+          void client?.stopControlling("").catch(() => undefined);
           setStream(undefined);
           setFallbackFrame(signal.frameDataUrl);
         } else if (signal.type === "closed") {
@@ -117,9 +144,10 @@ export const ScreenShareViewerPage = () => {
       disposed = true;
       unsubscribe();
       peer.close();
+      void client?.stopControlling("").catch(() => undefined);
       void send({ type: "closed" });
     };
-  }, [sessionId]);
+  }, [sessionId, client]);
 
   useEffect(() => {
     if (stream || fallbackFrame) {
@@ -194,7 +222,9 @@ export const ScreenShareViewerPage = () => {
       }`}
       onPointerMove={revealControls}
       onPointerDown={revealControls}
-      onDoubleClick={() => void toggleImmersive()}
+      onDoubleClick={() => {
+        if (!controlPeer || !controlState.remoteGrants[controlPeer]) void toggleImmersive();
+      }}
       initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.992 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{
@@ -231,6 +261,13 @@ export const ScreenShareViewerPage = () => {
           </motion.header>
         ) : null}
       </AnimatePresence>
+      {client && controlPeer && (
+        <RemoteControlViewer
+          peerId={controlPeer}
+          client={client}
+          enabled={Boolean(stream && !fallbackFrame)}
+        />
+      )}
       {stream ? (
         <motion.video
           ref={videoRef}

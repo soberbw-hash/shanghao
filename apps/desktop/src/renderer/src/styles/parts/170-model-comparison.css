@@ -319,7 +319,7 @@
 .model-comparison-timeline time,
 .model-comparison-transcript time {
   color: #3880d0;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--sg-font-family);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }

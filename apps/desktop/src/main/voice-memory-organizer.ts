@@ -83,6 +83,20 @@ const mergeOrganizationMetrics = (
 
 const MAX_ORGANIZATION_REDUCTION_INPUT_TOKENS = 5_000;
 
+const hasOrganizationContent = (value: unknown): value is VoiceMemoryOrganizationResult => {
+  if (!value || typeof value !== "object") return false;
+  const result = value as Partial<VoiceMemoryOrganizationResult>;
+  return Boolean(
+    result.description?.trim() ||
+    result.summary?.length ||
+    result.topics?.length ||
+    result.highlights?.length ||
+    result.funnyMoments?.length ||
+    result.importantInformation?.length ||
+    result.timeline?.length,
+  );
+};
+
 const estimateOrganizationPromptTokens = (value: string): number => {
   const han = (value.match(/[\p{Script=Han}]/gu) ?? []).length;
   return han + Math.ceil(Math.max(0, value.length - han) / 3.5);
@@ -148,6 +162,30 @@ export class VoiceMemoryOrganizer {
     manual: boolean,
     signal: AbortSignal,
   ): Promise<VoiceMemoryRecord> {
+    const fused =
+      record.transcriptionAssist?.status === "completed" &&
+      record.transcriptionFusion?.status === "completed"
+        ? record.transcriptionFusion.transcript
+        : undefined;
+    if (!fused?.length) return this.organizeSource(record, manual, signal);
+    const original = record.transcript;
+    const sourceOrganizer = new VoiceMemoryOrganizer(this.textGateway, async (next) => {
+      const committed = await this.persist({ ...next, transcript: original });
+      return { ...committed, transcript: next.transcript };
+    });
+    const result = await sourceOrganizer.organizeSource(
+      { ...record, transcript: fused },
+      manual,
+      signal,
+    );
+    return { ...result, transcript: original };
+  }
+
+  private async organizeSource(
+    record: VoiceMemoryRecord,
+    manual: boolean,
+    signal: AbortSignal,
+  ): Promise<VoiceMemoryRecord> {
     if (signal.aborted) throw new Error("ai_task_paused");
     if (record.transcript.length === 0) return record;
     if (manual && record.organizationSinglePassRetry) {
@@ -190,15 +228,7 @@ export class VoiceMemoryOrganizer {
       record.organization.modelRevision === modelRevision;
     let chunks = materializeOrganizationChunks(
       plans,
-      compatibleRun
-        ? record.organization?.chunks
-        : record.organization?.chunks.map((chunk) => ({
-            ...chunk,
-            result: undefined,
-            status: organizationExhausted(chunk)
-              ? ("unrecoverable" as const)
-              : ("pending" as const),
-          })),
+      compatibleRun ? record.organization?.chunks : undefined,
     );
     let metrics = compatibleRun
       ? (record.organization?.metrics ?? createOrganizationMetrics())
@@ -220,8 +250,8 @@ export class VoiceMemoryOrganizer {
         status: "running",
         completedChunks: chunks.filter((chunk) => chunk.status === "completed").length,
         chunks,
-        reductionRetries: record.organization?.reductionRetries,
-        finalResult: compatibleRun ? record.organization?.finalResult : undefined,
+        reductionRetries: compatibleRun ? record.organization?.reductionRetries : undefined,
+        finalResult: record.organization?.finalResult,
         metrics,
         startedAt,
         updatedAt: new Date().toISOString(),
@@ -249,7 +279,8 @@ export class VoiceMemoryOrganizer {
     for (let index = 0; index < chunks.length; index += 1) {
       const currentChunk = chunks[index];
       if (!currentChunk) continue;
-      if (currentChunk.status === "completed" && currentChunk.result) continue;
+      if (currentChunk.status === "completed" && hasOrganizationContent(currentChunk.result))
+        continue;
       let completed = false;
       let lastError: unknown;
       for (let attempt = 0; attempt < MAX_ORGANIZATION_ATTEMPTS_PER_RUN; attempt += 1) {
@@ -312,18 +343,16 @@ export class VoiceMemoryOrganizer {
           if (signal.aborted) throw new Error("ai_task_paused");
           const result = normalizeOrganizationResult(
             generated.value,
-            record,
+            {
+              ...record,
+              transcript: record.transcript.filter((segment) =>
+                running.sourceSegmentIds.includes(segment.id),
+              ),
+            },
             running.startMs,
             running.endMs,
           );
-          if (
-            !result.description &&
-            !result.summary.length &&
-            !result.topics.length &&
-            !result.highlights.length &&
-            !result.funnyMoments.length
-          )
-            throw new Error("organization_empty_result");
+          if (!hasOrganizationContent(result)) throw new Error("organization_empty_result");
           if (generated.metrics) metrics = mergeOrganizationMetrics(metrics, generated.metrics);
           metrics = { ...metrics, chunkCount: metrics.chunkCount + 1 };
           const finished = {
@@ -351,6 +380,7 @@ export class VoiceMemoryOrganizer {
           break;
         } catch (error) {
           lastError = error;
+          if (error instanceof Error && error.message === "custom_ai_content_rejected") break;
           if (signal.aborted || (error instanceof Error && error.message === "ai_task_paused"))
             break;
           if (attempt + 1 < MAX_ORGANIZATION_ATTEMPTS_PER_RUN) {
@@ -425,12 +455,19 @@ export class VoiceMemoryOrganizer {
         for (let groupIndex = 0; groupIndex < effectiveGroups.length; groupIndex += 1) {
           const group = effectiveGroups[groupIndex];
           if (!group) continue;
+          if (group.length === 1 && hasOrganizationContent(group[0])) {
+            nextLevel.push(group[0]);
+            continue;
+          }
           let reduced: VoiceMemoryOrganizationResult | undefined;
           let groupError: unknown;
           const retryKey = `${reductionLevel}:${groupIndex}:${createHash("sha256").update(JSON.stringify(group)).digest("hex").slice(0, 16)}`;
+          const savedRetry = record.organization?.reductionRetries?.[retryKey];
           try {
             reduced = await runOrganizationWithRetry(
-              record.organization?.reductionRetries?.[retryKey],
+              savedRetry?.status === "completed" && !hasOrganizationContent(savedRetry.value)
+                ? { attempts: 0, status: "pending", value: undefined }
+                : savedRetry,
               async (state) => {
                 record = await this.save({
                   ...record,
@@ -460,7 +497,10 @@ export class VoiceMemoryOrganizer {
                 });
                 if (generation.metrics)
                   metrics = mergeOrganizationMetrics(metrics, generation.metrics);
-                return normalizeOrganizationResult(generation.value, record);
+                const normalized = normalizeOrganizationResult(generation.value, record);
+                if (!hasOrganizationContent(normalized))
+                  throw new Error("organization_empty_result");
+                return normalized;
               },
               signal,
             );
@@ -478,6 +518,10 @@ export class VoiceMemoryOrganizer {
         reductionLevel += 1;
       }
       finalResult = reductionResults[0];
+      if (!hasOrganizationContent(finalResult)) {
+        finalResult = undefined;
+        throw new Error("organization_empty_result");
+      }
     } catch (error) {
       finalError = error;
     }

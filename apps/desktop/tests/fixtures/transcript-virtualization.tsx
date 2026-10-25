@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { buildReadableTranscriptParagraphs } from "@private-voice/shared";
 import { TranscriptParagraphList } from "../../src/renderer/src/components/settings/TranscriptParagraphList";
-import "../../src/renderer/src/styles/parts/130-final-material.css";
+import "../../src/renderer/src/styles/index.css";
 
 const names = new Map([["user", "测试说话人"]]);
 const data = buildReadableTranscriptParagraphs(

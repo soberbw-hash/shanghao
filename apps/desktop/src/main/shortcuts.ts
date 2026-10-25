@@ -9,7 +9,7 @@ import {
 
 import { sendToWindow } from "./safe-web-contents";
 import { PhoneShortcut } from "./phone-shortcut";
-import { PhoneInputMonitor } from "./phone-input-monitor";
+import { PhoneInputMonitor, type PhoneInputStatus } from "./phone-input-monitor";
 
 type ShortcutOwner = "mute" | "recording-marker" | "push-to-talk" | `quick-message:${number}`;
 
@@ -105,11 +105,24 @@ export class ShortcutController {
   private phoneAccelerator = "";
   private phoneNativeReady = false;
   private phoneRawInputReady = false;
+  private phoneInputStatus?: PhoneInputStatus;
   private lastPhoneHookAt = 0;
   private readonly phoneInput = new PhoneInputMonitor(
-    (ready, rawInput) => {
+    (ready, rawInput, status) => {
       this.phoneNativeReady = ready;
       this.phoneRawInputReady = ready && rawInput === true;
+      if (status && status.foregroundHigher !== this.phoneInputStatus?.foregroundHigher) {
+        void this.writeLog?.({
+          category: "app",
+          level: status.foregroundHigher ? "warn" : "info",
+          message: "phone shortcut foreground privilege changed",
+          context: {
+            foregroundHigher: status.foregroundHigher ?? null,
+            rawInputReady: this.phoneRawInputReady,
+          },
+        });
+      }
+      this.phoneInputStatus = ready ? (status ?? this.phoneInputStatus) : undefined;
     },
     (sampledAt) => sampledAt > this.lastPhoneHookAt,
   );
@@ -169,6 +182,8 @@ export class ShortcutController {
         inputPath: this.phoneNativeReady ? "hook+windows-native" : "hook",
         nativeInputReady: this.phoneNativeReady,
         rawInputReady: this.phoneRawInputReady,
+        inputDesktopAvailable: this.phoneInputStatus?.inputDesktopAvailable ?? null,
+        foregroundHigher: this.phoneInputStatus?.foregroundHigher ?? null,
       },
     };
   }

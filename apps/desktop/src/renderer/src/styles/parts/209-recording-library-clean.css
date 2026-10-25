@@ -1,0 +1,229 @@
+.recording-library-page .voice-memory-detail {
+  padding: 8px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.recording-library-page .voice-memory-detail header {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.voice-memory-header-actions {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.recording-library-page .voice-memory-header-actions button {
+  min-height: 32px;
+  padding: 5px 8px;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.recording-model-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  width: min(620px, calc(100vw - 120px));
+  min-width: 0;
+  padding: 12px;
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  border: 1px solid #c7daf1;
+  border-radius: 12px;
+  background: #f4f9ff;
+  box-shadow: 0 12px 28px rgb(69 105 145 / 12%);
+}
+
+.recording-transcription-model > span,
+.cloud-local-assist > span {
+  white-space: nowrap;
+}
+
+.recording-model-controls .cloud-local-assist {
+  flex: 1 1 400px;
+  min-width: 0;
+}
+
+.recording-model-controls .cloud-local-assist select {
+  width: 100%;
+  min-height: 34px;
+  font-size: 11px;
+}
+
+.transcript-source-control {
+  display: flex;
+  align-items: center;
+  margin: 12px 0 4px;
+  color: #60728a;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.transcript-source-control strong {
+  color: #24384f;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.transcript-source-control select {
+  min-height: 30px;
+}
+
+.voice-memory-transcript .transcript-paragraph {
+  grid-template-columns: 48px 64px minmax(0, 1fr);
+  padding: 6px;
+  gap: 6px;
+  border-radius: 8px;
+}
+
+.voice-memory-transcript span {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.voice-memory-transcript time,
+.voice-memory-transcript strong {
+  padding-top: 1px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.recording-processing-settings {
+  position: relative;
+  color: #526b87;
+  font-size: 12px;
+}
+
+.recording-processing-settings > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.recording-processing-settings > summary small {
+  font-size: 11px;
+}
+
+.recording-processing-settings > summary svg {
+  width: 15px;
+  height: 15px;
+}
+
+.recording-processing-settings[open] > summary > svg:last-child {
+  transform: rotate(180deg);
+}
+
+.recording-overview {
+  margin: 6px 0;
+  color: #283b51;
+}
+
+.recording-overview > summary,
+.recording-overview-pending {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 12px;
+  list-style: none;
+}
+.recording-overview > summary {
+  cursor: pointer;
+}
+.recording-overview > summary > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+.recording-overview svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.recording-overview[open] > summary > svg {
+  transform: rotate(180deg);
+}
+.recording-overview p,
+.recording-overview li {
+  max-width: 80ch;
+  font-size: 13px;
+  line-height: 1.85;
+}
+
+.recording-overview ul {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.recording-overview li button {
+  text-align: left;
+}
+
+.recording-overview-pending button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  color: #3978bd;
+  font-size: 12px;
+}
+
+.recording-overview .recording-overview-status {
+  color: #526b87;
+  font-size: 12px;
+}
+
+.recording-library-page .voice-memory-organization > summary {
+  color: #60728a;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.recording-summary-provider {
+  flex-basis: 100%;
+}
+.recording-library-page .voice-memory-working {
+  margin: 4px 0;
+  gap: 4px;
+}
+
+@media (min-width: 1250px) {
+  .recording-library-workspace {
+    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  }
+}
+
+.voice-memory-transcript strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+@media (max-width: 1050px) {
+  .recording-model-controls .cloud-local-assist {
+    flex-basis: 100%;
+  }
+
+  .voice-memory-transcript .transcript-paragraph {
+    grid-template-columns: 48px 56px minmax(0, 1fr);
+  }
+}

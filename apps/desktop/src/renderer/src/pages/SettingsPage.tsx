@@ -1,23 +1,12 @@
 import { GeneralSettingsCard } from "../components/settings/GeneralSettingsCard";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  Activity,
-  Headphones,
-  Info,
-  Library,
-  MonitorCog,
-  Sparkles,
-  Zap,
-  UserRound,
-} from "lucide-react";
 import { gsap } from "gsap";
-import { LayoutGroup, motion } from "framer-motion";
 
 import type { AppSettings, WindowsIntegrationStatus } from "@private-voice/shared";
 import { cn } from "@private-voice/ui";
 
 import { playUiSound } from "../features/audio/uiSound";
-import { motionCurve, motionDuration, motionEase } from "../features/motion/motionSystem";
+import { motionDuration, motionEase } from "../features/motion/motionSystem";
 import { interactionPerformanceMonitor } from "../features/diagnostics/interactionPerformanceMonitor";
 import { rendererPerformanceMonitor } from "../features/diagnostics/rendererPerformanceMonitor";
 import { useRenderProfiler } from "../features/diagnostics/renderProfiler";
@@ -35,6 +24,10 @@ import { AboutSettingsCard } from "../components/settings/AboutSettingsCard";
 import { AccountSettingsCard } from "../components/settings/AccountSettingsCard";
 import { SettingsDiagnosticsSection } from "../components/settings/SettingsDiagnosticsSection";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
+import {
+  SettingsNavigation,
+  settingsSections as sections,
+} from "../components/settings/SettingsNavigation";
 import { QuickMessageSettingsCard } from "../components/settings/QuickMessageSettingsCard";
 import {
   preloadRecordingLibrary,
@@ -50,17 +43,6 @@ import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { toUserFacingError } from "../utils/userFacingError";
-
-const sections = [
-  { id: "account", label: "账号", icon: UserRound },
-  { id: "general", label: "通用", icon: MonitorCog },
-  { id: "audio", label: "语音", icon: Headphones },
-  { id: "quickMessages", label: "快捷消息", icon: Zap },
-  { id: "recordings", label: "录音库", icon: Library },
-  { id: "ai", label: "AI 功能", icon: Sparkles },
-  { id: "about", label: "关于上号", icon: Info },
-  { id: "diagnostics", label: "诊断", icon: Activity },
-] satisfies Array<{ id: SettingsSectionId; label: string; icon: typeof Headphones }>;
 
 const RecordingLibrarySettingsCard = memo(RecordingLibrarySettingsCardView);
 const AiVoiceMemorySettingsCard = memo(AiVoiceMemorySettingsCardView);
@@ -404,41 +386,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
               activeSection === "recordings" ? "settings-recording-layout" : ""
             }`}
           >
-            <nav
-              data-gsap-settings="nav"
-              className="settings-nav glass-panel h-fit rounded-[22px] p-2"
-            >
-              <LayoutGroup id="settings-section-navigation">
-                {sections.map(({ id, label, icon: Icon }) => {
-                  const active = activeSection === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      data-ui-sound="handled"
-                      aria-current={active ? "page" : undefined}
-                      onClick={() => selectSection(id)}
-                      className={`settings-nav-item relative isolate flex w-full items-center gap-3 whitespace-nowrap rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold transition-colors duration-100 ${
-                        active ? "text-[#3f6ed7]" : "text-[#718096] hover:bg-white/70"
-                      }`}
-                    >
-                      {active ? (
-                        <motion.span
-                          className="settings-nav-active-pill"
-                          layoutId="settings-active-section"
-                          transition={{
-                            duration: motionDuration.normal,
-                            ease: motionCurve.spatial,
-                          }}
-                        />
-                      ) : null}
-                      <Icon className="relative z-[1] h-4 w-4" />
-                      <span className="relative z-[1]">{label}</span>
-                    </button>
-                  );
-                })}
-              </LayoutGroup>
-            </nav>
+            <SettingsNavigation activeSection={activeSection} onSelect={selectSection} />
             <div className="min-w-0">
               {sections.map(({ id }) => {
                 if (!settingsView.visitedSections.has(id)) return null;

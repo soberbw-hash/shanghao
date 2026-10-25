@@ -40,6 +40,7 @@ export async function runOrganizationWithRetry<T>(
         errorMessage: String(error),
       };
       await save(state);
+      if (error instanceof Error && error.message === "custom_ai_content_rejected") throw error;
       if (signal.aborted || index + 1 === MAX_ORGANIZATION_ATTEMPTS_PER_RUN) throw error;
     }
   }

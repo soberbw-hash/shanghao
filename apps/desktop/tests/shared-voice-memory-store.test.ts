@@ -24,6 +24,27 @@ const fixture = async () => {
   };
 };
 
+test("identity recovery cannot replace an existing record even with its exact current revision", async () => {
+  const f = await fixture();
+  try {
+    for (const Store of [VoiceMemoryStore, SharedVoiceMemoryStore]) {
+      const store = new Store(path.join(f.root, Store.name));
+      await store.initialize();
+      const current = await store.save(fixtureRecord("stable", "稳定身份的胜出原文"));
+      await assert.rejects(
+        store.save(
+          { ...current, transcript: [{ ...current.transcript[0]!, text: "迟到的旧稿不能覆盖" }] },
+          { onlyIfMissing: true },
+        ),
+        /voice_memory_record_exists/,
+      );
+      assert.deepEqual(await store.get("stable"), JSON.parse(JSON.stringify(current)));
+    }
+  } finally {
+    await rm(f.root, { recursive: true, force: true });
+  }
+});
+
 test("legacy complete results import, newer empty failures never replace shared success", async () => {
   const f = await fixture();
   try {

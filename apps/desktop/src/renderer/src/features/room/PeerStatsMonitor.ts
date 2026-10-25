@@ -3,6 +3,10 @@ import {
   advancePeerHealth,
   createPeerHealthState,
   evaluateInboundAudioFlow,
+  intervalPeerAudioStats,
+  evaluatePeerPlayoutQuality,
+  evaluatePeerOutboundQuality,
+  type PeerPlayoutState,
   type InboundAudioFlowEvaluation,
   type InboundAudioProgress,
   type MeshPeerConnection,
@@ -13,6 +17,18 @@ import {
 } from "@private-voice/webrtc";
 import { writeRendererLog } from "../../utils/logger";
 
+export const logPeerConnectionDiagnostic = (
+  event: string,
+  context: Record<string, unknown>,
+): void => {
+  void writeRendererLog(
+    "webrtc",
+    event === "connection_state" && context.state === "failed" ? "warn" : "info",
+    `WebRTC ${event}`,
+    context,
+  );
+};
+
 interface PeerStatsMonitorOptions {
   getPeers: () => Iterable<[string, MeshPeerConnection]>;
   getPeerState: (peerId: string) => {
@@ -21,6 +37,7 @@ interface PeerStatsMonitorOptions {
     hasRemoteAudio: boolean;
     isRemoteMuted: boolean;
     isRemoteSpeaking: boolean;
+    isLocalSpeaking?: boolean;
     iceState: RTCIceConnectionState;
   };
   getRecovery: (peerId: string) => { count: number; lastRecoveryAt?: string };
@@ -76,6 +93,11 @@ export class PeerStatsMonitor {
   private readonly connectedAt = new Map<string, number>();
   private readonly adaptationTiers = new Map<string, NetworkAdaptationTier>();
   private readonly healthStates = new Map<string, PeerHealthState>();
+  private readonly counterSamples = new Map<string, PeerAudioStats>();
+  private readonly playoutStates = new Map<string, PeerPlayoutState>();
+  private readonly outboundStates = new Map<string, PeerPlayoutState>();
+  private generation = 0;
+  private collecting?: symbol;
   private resourceStartedAt = 0;
   private lastResourceSampleAt = 0;
   private readonly resourceTrend: LongSessionAudioSnapshot[] = [];
@@ -93,6 +115,11 @@ export class PeerStatsMonitor {
   }
 
   stop(): void {
+    this.generation++;
+    this.collecting = undefined;
+    this.counterSamples.clear();
+    this.playoutStates.clear();
+    this.outboundStates.clear();
     if (this.timer) {
       window.clearInterval(this.timer);
       this.timer = undefined;
@@ -108,16 +135,25 @@ export class PeerStatsMonitor {
   }
 
   markConnected(peerId: string): void {
+    this.counterSamples.delete(peerId);
+    this.playoutStates.delete(peerId);
+    this.outboundStates.delete(peerId);
     this.connectedAt.set(peerId, Date.now());
     this.progress.delete(peerId);
   }
 
   markDisconnected(peerId: string): void {
+    this.counterSamples.delete(peerId);
+    this.playoutStates.delete(peerId);
+    this.outboundStates.delete(peerId);
     this.progress.delete(peerId);
     this.connectedAt.delete(peerId);
   }
 
   forgetPeer(peerId: string): void {
+    this.counterSamples.delete(peerId);
+    this.playoutStates.delete(peerId);
+    this.outboundStates.delete(peerId);
     this.stats.delete(peerId);
     this.progress.delete(peerId);
     this.connectedAt.delete(peerId);
@@ -146,41 +182,58 @@ export class PeerStatsMonitor {
   }
 
   private async collect(): Promise<void> {
-    await Promise.all(
-      [...this.options.getPeers()].map(async ([peerId, peer]) => {
-        try {
-          const stats = await collectPeerAudioStats(peer.connection);
-          const flow = this.evaluateAudioFlow(peerId, stats);
-          const peerState = this.options.getPeerState(peerId);
-          const recovery = this.options.getRecovery(peerId);
-          this.healthStates.set(
-            peerId,
-            advancePeerHealth(this.healthStates.get(peerId) ?? createPeerHealthState(), {
+    if (this.collecting) return;
+    const collectionId = Symbol(),
+      generation = this.generation;
+    this.collecting = collectionId;
+    const current = (peerId: string, peer: MeshPeerConnection) =>
+      generation === this.generation &&
+      [...this.options.getPeers()].some(([id, active]) => id === peerId && active === peer);
+    try {
+      await Promise.all(
+        [...this.options.getPeers()].map(async ([peerId, peer]) => {
+          try {
+            const raw = await collectPeerAudioStats(peer.connection);
+            if (!current(peerId, peer)) return;
+            const stats = intervalPeerAudioStats(raw, this.counterSamples.get(peerId));
+            this.counterSamples.set(peerId, raw);
+            const flow = this.evaluateAudioFlow(peerId, stats);
+            const peerState = this.options.getPeerState(peerId);
+            const recovery = this.options.getRecovery(peerId);
+            this.healthStates.set(
               peerId,
-              stats,
-              iceState: peerState.iceState,
-              packetsProgressing: flow?.progressed ?? false,
-              recoveryCount: recovery.count,
-              lastRecoveryAt: recovery.lastRecoveryAt,
-            }),
-          );
-          this.stats.set(peerId, stats);
-          this.options.onLatency?.(peerId, stats.roundTripTimeMs);
-          const previousTier = this.adaptationTiers.get(peerId);
-          const nextTier = await peer.adaptToNetwork(stats);
-          this.adaptationTiers.set(peerId, nextTier);
-          if (previousTier && previousTier !== nextTier) {
-            this.options.onAdaptationChanged?.(peerId, previousTier, nextTier, stats);
+              advancePeerHealth(this.healthStates.get(peerId) ?? createPeerHealthState(), {
+                peerId,
+                stats,
+                iceState: peerState.iceState,
+                packetsProgressing: flow?.progressed ?? false,
+                recoveryCount: recovery.count,
+                lastRecoveryAt: recovery.lastRecoveryAt,
+              }),
+            );
+            this.stats.set(peerId, stats);
+            this.options.onLatency?.(peerId, stats.roundTripTimeMs);
+            const previousTier = this.adaptationTiers.get(peerId);
+            const nextTier = await peer.adaptToNetwork(stats);
+            if (!current(peerId, peer)) return;
+            this.adaptationTiers.set(peerId, nextTier);
+            if (previousTier && previousTier !== nextTier) {
+              this.options.onAdaptationChanged?.(peerId, previousTier, nextTier, stats);
+            }
+          } catch {
+            if (!current(peerId, peer)) return;
+            this.stats.delete(peerId);
+            this.adaptationTiers.delete(peerId);
+            this.options.onLatency?.(peerId, undefined);
           }
-        } catch {
-          this.stats.delete(peerId);
-          this.adaptationTiers.delete(peerId);
-          this.options.onLatency?.(peerId, undefined);
-        }
-      }),
-    );
-    this.captureResourceTrend();
-    this.options.onStats?.(this.getStats());
+        }),
+      );
+      if (generation !== this.generation) return;
+      this.captureResourceTrend();
+      this.options.onStats?.(this.getStats());
+    } finally {
+      if (this.collecting === collectionId) this.collecting = undefined;
+    }
   }
 
   private captureResourceTrend(): void {
@@ -224,7 +277,7 @@ export class PeerStatsMonitor {
     stats: PeerAudioStats,
   ): InboundAudioFlowEvaluation | undefined {
     const peerState = this.options.getPeerState(peerId);
-    if (!peerState.isRemotePeer || !peerState.isConnected || !peerState.hasRemoteAudio) {
+    if (!peerState.isRemotePeer || !peerState.isConnected) {
       return undefined;
     }
 
@@ -237,11 +290,55 @@ export class PeerStatsMonitor {
       isRemoteMuted: peerState.isRemoteMuted,
       isRemoteSpeaking: peerState.isRemoteSpeaking,
     });
+    const playout = evaluatePeerPlayoutQuality(stats, this.playoutStates.get(peerId), {
+      speaking: peerState.isRemoteSpeaking,
+      muted: peerState.isRemoteMuted,
+      packetsProgressing: evaluation.progressed,
+    });
+    this.playoutStates.set(peerId, playout);
+    if (playout.stalled && evaluation.status !== "muted") {
+      evaluation.status = "stalled";
+      evaluation.reason = "playout_degraded";
+    }
+    const outbound = evaluatePeerOutboundQuality(
+      stats,
+      this.outboundStates.get(peerId),
+      peerState.isLocalSpeaking === true,
+    );
+    this.outboundStates.set(peerId, outbound);
+    if (outbound.stalled && evaluation.status !== "stalled")
+      evaluation.reason = "outbound_degraded";
+    if (!peerState.hasRemoteAudio && evaluation.reason !== "outbound_degraded") return undefined;
     stats.inboundAudioFlow = evaluation.status;
     this.progress.set(peerId, evaluation.next);
     this.options.onFlowEvaluation(peerId, stats, evaluation);
     return evaluation;
   }
+}
+
+export function logPeerAudioRecovery(
+  peerId: string,
+  stats: PeerAudioStats,
+  evaluation: InboundAudioFlowEvaluation,
+): void {
+  void writeRendererLog(
+    "webrtc",
+    "warn",
+    evaluation.reason === "outbound_degraded"
+      ? "Outgoing voice degraded; repairing only the affected peer"
+      : evaluation.reason === "playout_degraded"
+        ? "Remote audio playout degraded; switching to relay and repairing the peer"
+        : "Remote audio RTP stopped; switching to relay and repairing the peer",
+    {
+      peerId,
+      packetsReceived: stats.packetsReceived,
+      bytesReceived: stats.bytesReceived,
+      stagnantSamples: evaluation.next.stagnantSamples,
+      concealmentPercent: stats.concealmentPercent,
+      averageJitterBufferDelayMs: stats.averageJitterBufferDelayMs,
+      outboundPacketLossPercent: stats.outboundPacketLossPercent,
+    },
+  );
 }
 
 export const logPeerNetworkAdaptation = (
@@ -255,6 +352,7 @@ export const logPeerNetworkAdaptation = (
     previousTier,
     nextTier,
     packetLossPercent: stats.packetLossPercent,
+    outboundPacketLossPercent: stats.outboundPacketLossPercent,
     jitterMs: stats.jitterMs,
     roundTripTimeMs: stats.roundTripTimeMs,
     concealmentPercent: stats.concealmentPercent,

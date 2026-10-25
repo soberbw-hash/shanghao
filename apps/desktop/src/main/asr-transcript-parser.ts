@@ -89,12 +89,17 @@ export const parseVibeVoiceOutput = (
     .replace(/---END---/g, "")
     .replace(/^assistant\s*/i, "")
     .trim();
-  if (!sawTimestampOutput && !segments.length && plain && isAcceptedTranscript(plain, durationMs)) {
+  if (
+    !sawTimestampOutput &&
+    !segments.length &&
+    plain &&
+    isReliableTranscriptText(plain, durationMs)
+  ) {
     const sentences = plain
       .split(/(?<=[。！？!?])\s*|\n+/u)
       .map((sentence) => sentence.trim())
-      .filter(Boolean);
-    const parts = sentences.length ? sentences : [plain];
+      .filter((sentence) => sentence && isAcceptedTranscript(sentence, durationMs));
+    const parts = sentences;
     const totalCharacters = Math.max(
       1,
       parts.reduce((sum, part) => sum + part.length, 0),

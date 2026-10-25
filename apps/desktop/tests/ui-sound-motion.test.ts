@@ -45,7 +45,9 @@ test("semantic UI sound engine stays bounded, routed, and free of hover or typin
 
 test("major flows expose semantic motion and state feedback instead of isolated samples", () => {
   const account = readSource("src/renderer/src/pages/AccountPage.tsx");
-  const settings = readSource("src/renderer/src/pages/SettingsPage.tsx");
+  const settings =
+    readSource("src/renderer/src/pages/SettingsPage.tsx") +
+    readSource("src/renderer/src/components/settings/SettingsNavigation.tsx");
   const models = readSource("src/renderer/src/components/settings/AiVoiceMemorySettingsCard.tsx");
   const voiceMemory = readSource("src/renderer/src/components/settings/VoiceMemoryDetail.tsx");
   const recording = readSource(

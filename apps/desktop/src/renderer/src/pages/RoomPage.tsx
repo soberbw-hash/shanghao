@@ -1,4 +1,5 @@
 import { useRecordingSpeakingTimeline } from "../hooks/useRecordingSpeakingTimeline";
+import { RemoteControlStatus } from "../components/room/RemoteControlStatus";
 import { MemberAvailabilityControls } from "../components/chat/MemberAvailabilityControls";
 import type { AwaySession } from "../features/room/autoAway";
 import { writeRendererLog } from "../utils/logger";
@@ -53,6 +54,7 @@ import { useRoomPageSettings } from "../hooks/useRoomPageSettings";
 import { useRecordingController } from "../hooks/useRecordingController";
 import { useRoomCollection } from "../hooks/useRoomCollection";
 import { useRoomState } from "../hooks/useRoomState";
+import { useTemporaryRoomState } from "../hooks/useTemporaryRoomState";
 import { useTrayRoomCommands } from "../hooks/useTrayBackground";
 import { useAppStore } from "../store/appStore";
 import { useAudioStore } from "../store/audioStore";
@@ -89,10 +91,12 @@ export const RoomPage = () => {
     setMemberVolume,
     startScreenShare,
     stopScreenShare,
+    setApplicationAudioTrack,
     setScreenShareViewingActive,
     addRoomCollectionItem,
     removeRoomCollectionItem,
   } = useRoomState();
+  useTemporaryRoomState(leaveRoom);
   useTrayRoomCommands(leaveRoom, () => setRoomPickerOpen(true));
   const pushToast = useAppStore((state) => state.pushToast);
   const navigate = useAppStore((state) => state.navigate);
@@ -1254,7 +1258,9 @@ export const RoomPage = () => {
         }
       />
 
+      <RemoteControlStatus />
       <RoomDock
+        onApplicationAudioTrack={setApplicationAudioTrack}
         settings={roomDockSettings}
         selectedInputDeviceId={phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId}
         inputDevices={inputDevices}

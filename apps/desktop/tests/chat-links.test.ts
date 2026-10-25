@@ -50,21 +50,32 @@ test("Douyin live-room links keep their room path and query instead of becoming 
 
 test("right-clicking a link preview copies immediately and reports success", () => {
   const source = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/MessageLinkPreview.tsx"),
     "utf8",
   );
   assert.equal(source.includes("onContextMenu={(event) =>"), true);
-  assert.equal(source.includes("window.desktopApi.clipboard.writeText(url)"), true);
-  assert.equal(source.includes('title: "已复制链接"'), true);
+  assert.equal(source.includes("onCopy(url)"), true);
+  const owner = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+    "utf8",
+  );
+  assert.equal(owner.includes("window.desktopApi.clipboard.writeText(url)"), true);
+  assert.equal(owner.includes('title: "已复制链接"'), true);
+  assert.equal(owner.includes("onCopy={copyLink}"), true);
   assert.equal(source.includes("getLinkPreviewIcon"), false);
   assert.equal(source.includes("<Link2 />"), true);
 });
 
 test("chat text, images and links can be dragged into the persistent room collection", () => {
-  const source = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
-    "utf8",
-  );
+  const source =
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+      "utf8",
+    ) +
+    readFileSync(
+      path.resolve(process.cwd(), "src/renderer/src/components/chat/MessageLinkPreview.tsx"),
+      "utf8",
+    );
   const shelfSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomCollectionShelf.tsx"),
     "utf8",

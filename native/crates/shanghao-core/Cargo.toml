@@ -2,7 +2,7 @@
 name = "shanghao-core"
 version = "0.1.0"
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
 rust-version.workspace = true
 
 [dependencies]
@@ -10,11 +10,23 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]
+windows-core = "0.62.2"
+windows-version = "0.1.7"
+windows = { version = "0.62.2", features = [
+  "Win32_Foundation",
+  "Win32_Media_Audio",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+] }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Security",
   "Win32_Storage_FileSystem",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_Threading",
+  "Win32_System_LibraryLoader",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_StationsAndDesktops",
 ] }

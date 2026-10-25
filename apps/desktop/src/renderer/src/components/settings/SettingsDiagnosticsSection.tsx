@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import type {
   AppSettings,
   RendererDiagnosticsSummary,
@@ -15,7 +16,6 @@ import {
   getAudioRuntimeSnapshot,
   getRoomRuntimeDiagnostics,
   getRoomSessionTimeline,
-  injectRealtimeFault,
 } from "../../hooks/useRoomState";
 import { useAppStore } from "../../store/appStore";
 import { useAudioStore } from "../../store/audioStore";
@@ -44,6 +44,8 @@ export const SettingsDiagnosticsSection = ({
   const navigate = useAppStore((state) => state.navigate);
   const pushToast = useAppStore((state) => state.pushToast);
   const resetSettings = useSettingsStore((state) => state.resetSettings);
+  const exporting = useRef(false);
+  const [isExportingBundle, setExportingBundle] = useState(false);
   const outputDeviceCount = useAudioStore((state) => state.outputDevices.length);
   const localAudioDiagnostics = useAudioStore((state) => state.localDiagnostics);
   const {
@@ -112,12 +114,19 @@ export const SettingsDiagnosticsSection = ({
   };
 
   const handleExportBundle = () => {
+    if (exporting.current) return;
+    exporting.current = true;
+    setExportingBundle(true);
     void window.desktopApi.diagnostics
       .exportBundle(buildRendererDiagnostics())
       .then(() =>
         pushToast({ tone: "success", title: "诊断包已导出", description: "已保存到诊断目录。" }),
       )
-      .catch(() => pushToast({ tone: "danger", title: "导出失败", description: "请稍后再试。" }));
+      .catch(() => pushToast({ tone: "danger", title: "导出失败", description: "请稍后再试。" }))
+      .finally(() => {
+        exporting.current = false;
+        setExportingBundle(false);
+      });
   };
 
   const handleCopyDiagnostics = () => {
@@ -166,6 +175,7 @@ export const SettingsDiagnosticsSection = ({
         windowsStatus={windowsStatus}
         onOpenLogs={() => void window.desktopApi.diagnostics.openLogsDirectory()}
         onExportBundle={handleExportBundle}
+        isExportingBundle={isExportingBundle}
         onCopySummary={handleCopyDiagnostics}
         onOpenAudioSettings={onOpenAudioSettings}
         onOpenAiSettings={onOpenAiSettings}
@@ -178,23 +188,6 @@ export const SettingsDiagnosticsSection = ({
         checkFeedback={checkFeedback}
         onRepairFirewall={onRepairFirewall}
         isRepairingFirewall={isRepairingFirewall}
-        onInjectFault={(kind) =>
-          void injectRealtimeFault({ kind })
-            .then(() =>
-              pushToast({
-                tone: "success",
-                title: "故障已注入",
-                description: `Fault Lab：${kind}`,
-              }),
-            )
-            .catch(() =>
-              pushToast({
-                tone: "danger",
-                title: "故障注入失败",
-                description: "测试命令没有执行，详细原因已写入诊断日志。",
-              }),
-            )
-        }
       />
       <section className="settings-reset-section">
         <div>
@@ -217,7 +210,10 @@ export const SettingsDiagnosticsSection = ({
                 pushToast({
                   tone: "danger",
                   title: "设置重置失败",
-                  description: error instanceof Error ? error.message : String(error),
+                  description:
+                    error instanceof Error && error.message === "ai_model_configuration_in_use"
+                      ? "AI 任务还在进行，请在任务结束后再重置。"
+                      : "设置未重置，请稍后重试或导出诊断包。",
                 }),
               );
           }}

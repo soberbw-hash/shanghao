@@ -17,7 +17,7 @@ app.whenReady().then(async () => {
     height: 1080,
     useContentSize: true,
     show: false,
-    webPreferences: { backgroundThrottling: false },
+    webPreferences: { backgroundThrottling: false, offscreen: true },
   });
   try {
     window.webContents.on("console-message", (event) => {
@@ -29,13 +29,35 @@ app.whenReady().then(async () => {
     await window.loadURL(
       `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5195"}/@fs/${fixture}`,
     );
-    window.showInactive();
     await window.webContents.executeJavaScript(
-      `(async()=>{for(let i=0;i<150;i++){if(document.querySelector('.recording-timeline')?.max==='800'&&document.querySelector('.voice-memory-summary'))return;await new Promise(r=>setTimeout(r,40));}throw Error('recording fixture did not mount')})()`,
+      `(async()=>{for(let i=0;i<150;i++){if(document.querySelector('.recording-timeline')?.max==='800'&&document.querySelector('.recording-overview')&&document.querySelector('.transcript-paragraph')){await document.fonts.ready;return;}await new Promise(r=>setTimeout(r,40));}throw Error('recording fixture did not mount')})()`,
     );
     await window.webContents.executeJavaScript(
       "document.querySelector('.recording-detail-swap').getAnimations().forEach(animation=>animation.finish())",
     );
+    await window.webContents.executeJavaScript(`(()=>{
+      const text=document.querySelector('.voice-memory-detail');
+      const clips=document.querySelector('.recording-clips-panel');
+      if(!text.textContent.includes('先集合、补足河道视野'))throw Error('saved legacy summary disappeared');
+      if(!(text.compareDocumentPosition(clips)&Node.DOCUMENT_POSITION_FOLLOWING))throw Error('clip tools push transcript below the first screen');
+    })()`);
+    const readingLayout = await window.webContents.executeJavaScript(`(()=>{
+      const rect=selector=>document.querySelector(selector).getBoundingClientRect();
+      const toolbar=rect('.recording-library-toolbar'), first=rect('.transcript-paragraph');
+      const text=rect('.voice-memory-detail'), panel=rect('.recording-library-panel');
+      if(toolbar.height>40)throw Error('library storage header consumes a separate card');
+      if(first.top>panel.top+280)throw Error('transcript still pushed below controls');
+      if(panel.bottom-first.top<innerHeight*.45)throw Error('transcript gets too little first-screen reading space');
+      const source=document.querySelector('.transcript-source-control');
+      const timeline=document.querySelector('.voice-memory-timeline');
+      if(!(source.compareDocumentPosition(timeline)&Node.DOCUMENT_POSITION_FOLLOWING))throw Error('timeline appears before text');
+      const storage=document.querySelector('.recording-storage-settings');
+      storage.querySelector('summary').click();
+      if(!document.querySelector('[aria-label="录音库自动清理容量上限"]').checkVisibility())throw Error('storage controls cannot open');
+      if(rect('.transcript-paragraph').top!==first.top)throw Error('storage settings displaced transcript');
+      storage.querySelector('summary').click();
+      return {toolbarHeight:toolbar.height,firstParagraphTop:first.top,readingSpace:panel.bottom-first.top};
+    })()`);
     await pause(100);
     const version = require("../package.json").version;
     if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error("invalid_release_version");
@@ -105,7 +127,7 @@ app.whenReady().then(async () => {
       const cueVisible=!!document.querySelector('.recording-marker-cue');await pause(2600);
       const after=slot.getBoundingClientRect();
       return {cueVisible,cueExpired:!document.querySelector('.recording-marker-cue'),slotStable:before.height===after.height&&before.top===after.top,
-        autoCleanup:document.querySelector('[aria-label="自动清理不足10分钟或静音的录音"]')?.getAttribute('aria-pressed')==='true',
+        autoCleanup:document.querySelector('[aria-label="自动清理整段静音的录音"]')?.getAttribute('aria-pressed')==='true',
         noManualCleanup:![...document.querySelectorAll('button')].some(button=>/扫描|清理废录音|手动清理/.test(button.textContent)),
         transcriptVisible:document.body.textContent.includes('演示：大家先在中路集合')};
     })()`);
@@ -132,13 +154,96 @@ app.whenReady().then(async () => {
       path.join(assetDirectory, "voice-memory-demo.png"),
       (await window.webContents.capturePage(region)).toPNG(),
     );
+    window.setContentSize(1120, 950);
+    await pause(120);
+    const narrow = await window.webContents.executeJavaScript(`(()=>{
+      document.querySelector('.recording-processing-settings').open=true;
+      const paragraph=document.querySelector('.transcript-paragraph span');
+      return {
+        noOverflow:document.documentElement.scrollWidth<=innerWidth,
+        readableText:parseFloat(getComputedStyle(paragraph).fontSize)>=14,
+        transcriptWidth:paragraph.getBoundingClientRect().width,
+      };
+    })()`);
+    check(
+      narrow.noOverflow && narrow.readableText && narrow.transcriptWidth > 300,
+      "narrow recording layout: " + JSON.stringify(narrow),
+    );
+    await pause(60);
+    await fs.writeFile(
+      path.join(assetDirectory, "recording-library-narrow.png"),
+      (await window.webContents.capturePage()).toPNG(),
+    );
+    const summaryStates = [];
+    await window.webContents.executeJavaScript(
+      "document.querySelector('.recording-processing-settings').open=false",
+    );
+    await pause(80);
+    await fs.writeFile(
+      path.join(assetDirectory, "recording-library-narrow-reading.png"),
+      (await window.webContents.capturePage()).toPNG(),
+    );
+    for (const state of ["organizing", "failed"]) {
+      await window.webContents.executeJavaScript(
+        `window.dispatchEvent(new CustomEvent('recording-fixture-state',{detail:'${state}'}))`,
+      );
+      await pause(80);
+      summaryStates.push(
+        await window.webContents.executeJavaScript(`(()=>{
+        document.querySelector('.recording-library-panel').scrollTop=0;
+        const overview=document.querySelector('.recording-overview'), paragraph=document.querySelector('.transcript-paragraph');
+        const first=paragraph.getBoundingClientRect(), panel=document.querySelector('.recording-library-panel').getBoundingClientRect();
+        if(overview.getBoundingClientRect().height>40)throw Error('empty summary became a large panel');
+        if(first.top>panel.top+280)throw Error('summary state pushes transcript below first screen');
+        if(document.querySelector('.voice-memory-audio-trajectory'))throw Error('decorative processing block restored');
+        const details=document.querySelector('.voice-memory-organization');
+        if(!(paragraph.compareDocumentPosition(details)&Node.DOCUMENT_POSITION_FOLLOWING))throw Error('processing details precede transcript');
+        return {status:overview.textContent,firstParagraphTop:first.top};
+      })()`),
+      );
+      await fs.writeFile(
+        path.join(assetDirectory, `recording-library-${state}.png`),
+        (await window.webContents.capturePage()).toPNG(),
+      );
+    }
+    window.setContentSize(1440, 1080);
+    await window.webContents.executeJavaScript(
+      "window.dispatchEvent(new CustomEvent('recording-fixture-state',{detail:'dense'}));document.querySelector('.recording-library-panel').scrollTop=0",
+    );
+    await pause(250);
+    const density = await window.webContents.executeJavaScript(`(()=>{
+      const rows=[...document.querySelectorAll('.transcript-paragraph')], first=rows[0];
+      const textStyle=getComputedStyle(first.querySelector('span')), rowStyle=getComputedStyle(first);
+      const visibleRows=rows.filter(row=>{const r=row.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}).length;
+      if(parseFloat(textStyle.fontSize)!==14||parseFloat(textStyle.lineHeight)>22.5)throw Error('transcript typography too loose');
+      if(parseFloat(rowStyle.columnGap)>6||parseFloat(rowStyle.paddingTop)>6)throw Error('transcript gutters too loose');
+      if(visibleRows<17)throw Error('too few paragraphs fit in reading viewport: '+visibleRows);
+      return {visibleRows,fontSize:parseFloat(textStyle.fontSize),lineHeight:parseFloat(textStyle.lineHeight),rowHeight:first.getBoundingClientRect().height,columnGap:parseFloat(rowStyle.columnGap)};
+    })()`);
+    await fs.writeFile(
+      path.join(assetDirectory, "recording-library-dense.png"),
+      (await window.webContents.capturePage()).toPNG(),
+    );
     const report = {
       passed: true,
       actualComponent: true,
       syntheticOnly: true,
       geometry,
       ...expiry,
-      screenshots: ["recording-library.png", "voice-memory-demo.png"],
+      narrow,
+      readingLayout,
+      summaryStates,
+      density,
+      screenshotDirectory: assetDirectory,
+      screenshots: [
+        "recording-library.png",
+        "voice-memory-demo.png",
+        "recording-library-narrow.png",
+        "recording-library-narrow-reading.png",
+        "recording-library-organizing.png",
+        "recording-library-failed.png",
+        "recording-library-dense.png",
+      ],
     };
     await fs.writeFile(
       path.join(os.tmpdir(), "shanghao-recording-feedback-result.json"),

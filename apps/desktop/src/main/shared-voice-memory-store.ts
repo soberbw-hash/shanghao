@@ -51,6 +51,7 @@ export class SharedVoiceMemoryStore extends VoiceMemoryStore {
   override async save(record: VoiceMemoryRecord, options: VoiceMemorySaveOptions = {}) {
     return this.transaction(async () => {
       const current = await super.get(record.recordingId);
+      if (options.onlyIfMissing && current) throw new Error("voice_memory_record_exists");
       if (current?.roomId && current.roomId !== record.roomId)
         throw new Error("voice_memory_room_changed");
       // Compare every revision, including equal-length/newer-looking stale results.

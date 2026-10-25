@@ -34,10 +34,12 @@
 @import "./parts/190-room-glass-unification.css";
 @import "./parts/195-phone-mic.css";
 @import "./parts/200-settings-refinement.css";
+@import "./parts/201-settings-hierarchy.css";
 @import "./parts/202-room-navigation.css";
 @import "./parts/203-room-switch-dialog.css";
 @import "./parts/204-scene-foreground-edge.css";
 @import "./parts/205-scene-life.css";
+@import "./parts/209-recording-library-clean.css";
 @import "./parts/210-entry-transitions.css";
 @import "./parts/215-game-artwork.css";
 @import "./parts/216-game-identity.css";

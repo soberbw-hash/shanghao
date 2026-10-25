@@ -120,7 +120,7 @@ test("manual upload sends summary only to original room and original Shanghai da
   assert.equal(f.calls, 1);
 });
 
-test("automatic upload is opt-in and deduplicates automatic/manual clicks", async () => {
+test("completion never publishes even when an older profile enabled automatic upload", async () => {
   const f = fixture();
   let enabled = false;
   const upload = createRecordingRecapUpload(f, () => ({ isAiAutoUploadEnabled: enabled }));
@@ -134,6 +134,8 @@ test("automatic upload is opt-in and deduplicates automatic/manual clicks", asyn
   assert.equal(f.calls, 0);
   upload.onCompleted(f.record);
   upload.onCompleted(f.record);
+  await upload.upload("fixture", true);
+  assert.equal(f.calls, 0);
   await upload.upload("fixture");
   assert.equal(f.calls, 1);
   upload.onCompleted(f.record);
@@ -141,14 +143,14 @@ test("automatic upload is opt-in and deduplicates automatic/manual clicks", asyn
   assert.equal(f.calls, 1);
 });
 
-test("turning off automatic upload before dispatch cancels admission", async () => {
+test("manual publication remains available with automatic upload disabled", async () => {
   const f = fixture();
   let enabled = true;
   const upload = createRecordingRecapUpload(f, () => ({ isAiAutoUploadEnabled: enabled }));
   upload.onCompleted(f.record);
   enabled = false;
   await upload.upload("fixture");
-  assert.equal(f.calls, 0);
+  assert.equal(f.calls, 1);
 });
 
 test("wrong joined room and wrong-room acknowledgments preserve local results and allow retry", async () => {

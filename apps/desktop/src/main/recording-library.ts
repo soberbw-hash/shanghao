@@ -20,7 +20,11 @@ import {
   setRecordingFavoriteInDirectory,
   toRecordingMediaUrl,
 } from "./recording-library-core";
-import { inspectRecordingForCleanup, isAutomaticWasteCandidate } from "./recording-cleanup";
+import { inspectRecordingForCleanup } from "./recording-cleanup";
+import {
+  cleanSilentRecordings,
+  type AutomaticRecordingCleanupResult,
+} from "./automatic-recording-cleanup";
 
 export {
   createRecordingMediaResponse,
@@ -77,13 +81,9 @@ export const enforceRecordingQuota = async (
 ): Promise<RecordingLibraryItem[]> =>
   enforceRecordingQuotaInDirectory(await getUsableRecordingDirectory(configuredDirectory), quotaGb);
 
-export interface AutomaticRecordingCleanupResult {
-  deletedItems: RecordingLibraryItem[];
-  wasteDeletedCount: number;
-  quotaDeletedCount: number;
-}
+export type { AutomaticRecordingCleanupResult };
 
-/** Cleans verified waste first, then applies the storage quota to unprotected oldest files. */
+/** Only verified silent recordings are recycled; audible files survive capacity pressure. */
 export const runAutomaticRecordingCleanup = async (
   configuredDirectory: string | undefined,
   quotaGb: number,
@@ -91,68 +91,23 @@ export const runAutomaticRecordingCleanup = async (
   newestFilePath?: string,
 ): Promise<AutomaticRecordingCleanupResult> => {
   const directory = await getUsableRecordingDirectory(configuredDirectory);
-  const deletedItems: RecordingLibraryItem[] = [];
-  const deletedPaths = new Set<string>();
-  let wasteDeletedCount = 0;
-
-  // Automatic maintenance must be recoverable on Windows. Explicit user deletion
-  // still uses the permanent delete path below; background cleanup goes to Recycle Bin.
-  const moveToRecycleBin = async (directory: string, filePath: string): Promise<void> => {
-    if (!isAllowedRecordingPathInDirectory(directory, filePath)) {
-      throw new Error("invalid_recording_path");
-    }
-    await recycleUnprotectedRecordingInDirectory(directory, filePath, (target) =>
-      shell.trashItem(target),
-    );
-  };
-
-  const deleteItem = async (item: RecordingLibraryItem): Promise<void> => {
-    if (deletedPaths.has(item.filePath)) return;
-    await moveToRecycleBin(directory, item.filePath);
-    deletedPaths.add(item.filePath);
-    deletedItems.push(item);
-  };
-
-  if (cleanWaste) {
-    let snapshot = await readRecordingLibraryFromDirectory(directory, quotaGb);
-    const newest = newestFilePath
-      ? snapshot.items.find(
-          (item) =>
-            item.filePath === newestFilePath && !item.isFavorite && item.markers.length === 0,
-        )
-      : undefined;
-    if (newest) {
-      const candidate = await inspectRecordingForCleanup(newest.filePath).catch(() => undefined);
-      if (isAutomaticWasteCandidate(candidate)) {
-        await deleteItem(newest);
-        wasteDeletedCount += 1;
-      }
-    }
-
-    snapshot = await readRecordingLibraryFromDirectory(directory, quotaGb);
-    if (snapshot.totalBytes > snapshot.quotaBytes) {
-      const scan = await scanWasteRecordings(configuredDirectory, quotaGb);
-      const itemsByPath = new Map(snapshot.items.map((item) => [item.filePath, item]));
-      for (const candidate of scan.candidates) {
-        const item = itemsByPath.get(candidate.filePath);
-        if (!item || !isAutomaticWasteCandidate(candidate)) continue;
-        await deleteItem(item).catch(() => undefined);
-        if (deletedPaths.has(item.filePath)) wasteDeletedCount += 1;
-      }
-    }
-  }
-
-  const quotaDeleted = await enforceRecordingQuotaInDirectory(directory, quotaGb, moveToRecycleBin);
-  for (const item of quotaDeleted) {
-    if (deletedPaths.has(item.filePath)) continue;
-    deletedPaths.add(item.filePath);
-    deletedItems.push(item);
-  }
-  return {
-    deletedItems,
-    wasteDeletedCount,
-    quotaDeletedCount: quotaDeleted.length,
-  };
+  return cleanSilentRecordings({
+    enabled: cleanWaste,
+    newestFilePath,
+    read: () => readRecordingLibraryFromDirectory(directory, quotaGb),
+    inspect: (item) => inspectRecordingForCleanup(item.filePath),
+    recycle: (item) =>
+      recycleUnprotectedRecordingInDirectory(
+        directory,
+        item.filePath,
+        (target) => shell.trashItem(target),
+        {
+          recordingId: item.recordingId,
+          fileSize: item.fileSize,
+          modifiedAt: item.modifiedAt,
+        },
+      ),
+  });
 };
 
 export const deleteRecording = async (

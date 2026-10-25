@@ -37,11 +37,14 @@ const initialSnapshot: AccountSnapshot = {
 let unsubscribeAccountChanges: (() => void) | undefined;
 let hydration: Promise<AccountSnapshot> | undefined;
 
-export const useAccountStore = create<AccountStoreState>((set) => {
-  const run = async <T extends AccountSnapshot>(task: () => Promise<T>): Promise<T> => {
+export const useAccountStore = create<AccountStoreState>((set, get) => {
+  let accountRevision = 0;
+  const run = async (task: () => Promise<AccountSnapshot>): Promise<AccountSnapshot> => {
+    const revision = accountRevision;
     set({ isBusy: true, errorCode: undefined });
     try {
-      const snapshot = await task();
+      const result = await task();
+      const snapshot = revision === accountRevision ? result : get().snapshot;
       set({ snapshot, isBusy: false, errorCode: undefined });
       return snapshot;
     } catch (error) {
@@ -58,13 +61,21 @@ export const useAccountStore = create<AccountStoreState>((set) => {
     hydrate: () => {
       if (hydration) return hydration;
       hydration = (async () => {
+        const revision = accountRevision;
+        const commit = (candidate: AccountSnapshot): AccountSnapshot => {
+          const snapshot = revision === accountRevision ? candidate : get().snapshot;
+          set({ snapshot, isHydrating: false, errorCode: snapshot.message });
+          return snapshot;
+        };
         set({ isHydrating: true });
         unsubscribeAccountChanges?.();
         unsubscribeAccountChanges = window.desktopApi.account.onChanged((snapshot) => {
+          accountRevision++;
           set({ snapshot, errorCode: undefined });
         });
         try {
           let snapshot = await window.desktopApi.account.getSnapshot();
+          if (revision !== accountRevision) return commit(snapshot);
           // One fallback per startup, only after session recovery has definitively failed.
           // A network outage must not trigger password retries or erase saved credentials.
           if (
@@ -75,6 +86,7 @@ export const useAccountStore = create<AccountStoreState>((set) => {
             const remembered = await window.desktopApi.account
               .getRememberedLogin()
               .catch(() => undefined);
+            if (revision !== accountRevision) return commit(snapshot);
             if (remembered) {
               try {
                 snapshot = await window.desktopApi.account.login({
@@ -91,8 +103,7 @@ export const useAccountStore = create<AccountStoreState>((set) => {
               }
             }
           }
-          set({ snapshot, isHydrating: false, errorCode: snapshot.message });
-          return snapshot;
+          return commit(snapshot);
         } catch (error) {
           const errorCode = accountErrorCode(error);
           const snapshot: AccountSnapshot = {
@@ -101,8 +112,7 @@ export const useAccountStore = create<AccountStoreState>((set) => {
             guestAllowed: false,
             message: errorCode,
           };
-          set({ snapshot, isHydrating: false, errorCode });
-          return snapshot;
+          return commit(snapshot);
         }
       })().finally(() => {
         hydration = undefined;

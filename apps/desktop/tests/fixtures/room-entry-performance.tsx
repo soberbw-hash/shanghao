@@ -6,8 +6,13 @@ import {
   cancelDelayedRoomEntryCue,
   playUiSound,
   unlockUiSounds,
+  setUiSoundFeedbackEnabled,
+  stopAllUiSounds,
 } from "../../src/renderer/src/features/audio/uiSound";
-import { loadRoomEntryCue } from "../../src/renderer/src/features/audio/roomEntryCue";
+import {
+  loadRoomEntryCue,
+  loadRoomMemberJoinCue,
+} from "../../src/renderer/src/features/audio/roomEntryCue";
 import { createRecipe, renderRecipe } from "uisfx";
 import "../../src/renderer/src/styles/index.css";
 
@@ -32,6 +37,9 @@ Object.assign(window, {
     unlockUiSounds,
     cancelDelayedRoomEntryCue,
     loadRoomEntryCue,
+    loadRoomMemberJoinCue,
+    setUiSoundFeedbackEnabled,
+    stopAllUiSounds,
     createRecipe,
     renderRecipe,
     getAvailabilityRequests: () => availabilityRequests,

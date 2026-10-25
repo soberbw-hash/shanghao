@@ -1,4 +1,9 @@
 import { validatePasswordResetRequest } from "./password-reset-validation";
+import { registerScreenShareViewerIpc } from "./screen-share-viewer-ipc";
+import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
+import { registerAiTextProviderIpc } from "./ai-model-configuration-ipc";
+import { registerRoomCapabilitiesIpc } from "./room-capabilities-ipc";
+import { reconcileRecordingMemories } from "./recording-memory-recovery";
 import {
   app,
   clipboard,
@@ -29,8 +34,6 @@ import {
   type AccountSnapshot,
   type CloudBaseClientConfig,
   type AppSettings,
-  type AiCustomProviderInput,
-  type AiCustomProviderStatus,
   type AiHuggingFaceAccessInput,
   type AiHuggingFaceAccessStatus,
   type AiAsrModelId,
@@ -57,8 +60,6 @@ import {
   type RuntimeInfo,
   type DesktopApi,
   type RuntimeHealthSnapshot,
-  type ScreenShareViewerOpenRequest,
-  type ScreenShareViewerSignal,
   type SignalingEventPayload,
   type UpdateCheckResult,
   type UpdateStatus,
@@ -129,12 +130,8 @@ import { getChatLinkPreview } from "./chat-link-preview";
 import { readWindowsIntegrationStatus } from "./windows-integration";
 import { registerWindowsIntegrationIpc } from "./windows-integration-ipc";
 import {
-  closeScreenShareViewer,
-  isScreenShareViewerSender,
   listScreenCaptureSources,
-  openScreenShareViewer,
   setScreenCaptureContentProtection,
-  sendScreenShareViewerSignal,
   selectScreenCaptureSource,
 } from "./window";
 
@@ -168,6 +165,7 @@ interface MainProcessServices {
   gameDetection: GameDetectionController;
   aiModels: AiModelManager;
   voiceMemory: AiVoiceMemoryService;
+  onAutomaticTranscriptionChange?: () => void;
   customAiProvider: CustomAiProviderStore;
   transcriptionProvider: AiTranscriptionProviderStore;
   huggingFaceAccess: HuggingFaceAccessStore;
@@ -282,11 +280,17 @@ export const registerIpcHandlers = ({
   gameDetection,
   aiModels,
   voiceMemory,
+  onAutomaticTranscriptionChange,
   customAiProvider,
   transcriptionProvider,
   huggingFaceAccess,
   consumePendingDeepLink,
 }: MainProcessServices) => {
+  registerRoomCapabilitiesIpc(
+    getMainWindow,
+    signalingClient,
+    () => settingsStore.getSnapshot().relayServerUrl ?? "",
+  );
   let settingsMutation: Promise<unknown> = Promise.resolve();
   const serializeSettingsMutation = <T>(operation: () => Promise<T>): Promise<T> => {
     const next = settingsMutation.then(operation, operation);
@@ -324,12 +328,14 @@ export const registerIpcHandlers = ({
   aiModels.onStatus((snapshot) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.ai.status, snapshot);
   });
+  aiModelConfigurationUsage.onChange(() => {
+    sendToWindow(getMainWindow(), IPC_CHANNELS.ai.status, aiModels.getSnapshot());
+  });
   const recapUpload = createRecordingRecapUpload({ voiceMemory, signalingClient }, () =>
     settingsStore.getSnapshot(),
   );
   voiceMemory.onStatus((record) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.ai.voiceMemoryStatus, record);
-    recapUpload.onCompleted(record);
   });
 
   ipcMain.handle(IPC_CHANNELS.app.getRuntimeInfo, async (): Promise<RuntimeInfo> => {
@@ -374,7 +380,7 @@ export const registerIpcHandlers = ({
       if (payload.shakeWindow === true) shakeMainWindow(mainWindow);
       if (payload.showNotification === false) return;
       if (!Notification.isSupported()) return;
-      const notification = new Notification({ title, body, silent: false });
+      const notification = new Notification({ title, body, silent: payload.silent === true });
       systemNotificationDelivery.show(
         notification,
         () => bringWindowToFront(getMainWindow()),
@@ -523,65 +529,7 @@ export const registerIpcHandlers = ({
       setScreenCaptureContentProtection(enabled);
     },
   );
-  ipcMain.handle(
-    IPC_CHANNELS.screenShareViewer.open,
-    async (_event, request: ScreenShareViewerOpenRequest): Promise<void> => {
-      if (!request || typeof request !== "object") throw new Error("invalid_screen_viewer_open");
-      await openScreenShareViewer({
-        title: requireString(request.title, 160, "screen_viewer_title"),
-        sessionId: requireString(request.sessionId, 128, "screen_viewer_session"),
-      });
-    },
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.screenShareViewer.sendSignal,
-    async (event, signal: ScreenShareViewerSignal): Promise<boolean> => {
-      if (!signal || typeof signal !== "object") throw new Error("invalid_screen_viewer_signal");
-      const sessionId = requireString(signal.sessionId, 128, "screen_viewer_session");
-      const sender = signal.sender;
-      const type = signal.type;
-      if (!(["host", "viewer"] as const).includes(sender)) {
-        throw new Error("invalid_screen_viewer_sender");
-      }
-      if (
-        !(["ready", "offer", "answer", "ice", "fallback-frame", "closed"] as const).includes(type)
-      ) {
-        throw new Error("invalid_screen_viewer_signal_type");
-      }
-      const mainWindow = getMainWindow();
-      if (sender === "host") {
-        if (!mainWindow || event.sender.id !== mainWindow.webContents.id) {
-          throw new Error("invalid_screen_viewer_host");
-        }
-      } else if (!isScreenShareViewerSender(event.sender.id, sessionId)) {
-        throw new Error("invalid_screen_viewer_client");
-      }
-
-      const safeSignal: ScreenShareViewerSignal = {
-        sessionId,
-        sender,
-        type,
-        title: signal.title ? requireString(signal.title, 160, "screen_viewer_title") : undefined,
-        sdp: signal.sdp ? requireString(signal.sdp, 128_000, "screen_viewer_sdp") : undefined,
-        candidate: signal.candidate
-          ? requireString(signal.candidate, 8_192, "screen_viewer_candidate")
-          : undefined,
-        sdpMid: typeof signal.sdpMid === "string" ? signal.sdpMid.slice(0, 128) : signal.sdpMid,
-        sdpMLineIndex:
-          typeof signal.sdpMLineIndex === "number" ? signal.sdpMLineIndex : signal.sdpMLineIndex,
-        frameDataUrl: signal.frameDataUrl
-          ? requireString(signal.frameDataUrl, 8 * 1024 * 1024, "screen_viewer_frame")
-          : undefined,
-      };
-
-      if (sender === "host") return sendScreenShareViewerSignal(safeSignal);
-      sendToWindow(mainWindow, IPC_CHANNELS.screenShareViewer.signal, safeSignal);
-      return Boolean(mainWindow && !mainWindow.isDestroyed());
-    },
-  );
-  ipcMain.handle(IPC_CHANNELS.screenShareViewer.close, async (): Promise<void> => {
-    closeScreenShareViewer();
-  });
+  registerScreenShareViewerIpc(getMainWindow, requireString);
 
   ipcMain.handle(IPC_CHANNELS.window.minimize, async (): Promise<void> => {
     getMainWindow()?.minimize();
@@ -728,40 +676,50 @@ export const registerIpcHandlers = ({
         ) {
           throw new Error("invalid_settings_patch");
         }
-        const previousSettings = settingsStore.getSnapshot();
-        const settings = await settingsStore.save(partial);
-        if (partial.aiProcessingMode) aiModels.setProcessingMode(settings.aiProcessingMode);
-        if (partial.aiAsrModel) aiModels.setActiveAsrModel(settings.aiAsrModel);
-        if (typeof partial.isGameDetectionEnabled === "boolean") {
-          await gameDetection.setEnabled(settings.isGameDetectionEnabled);
-        }
-        const rollback = await applyShortcutSettingsPatch(
-          previousSettings,
-          settings,
-          partial,
-          shortcuts,
-        );
-        return Object.keys(rollback).length > 0 ? settingsStore.save(rollback) : settings;
+        return aiModelConfigurationUsage.changeSettings(partial, async () => {
+          const previousSettings = settingsStore.getSnapshot();
+          const settings = await settingsStore.save(partial);
+          if (partial.aiProcessingMode) aiModels.setProcessingMode(settings.aiProcessingMode);
+          if (partial.aiAsrModel) aiModels.setActiveAsrModel(settings.aiAsrModel);
+          if (typeof partial.isGameDetectionEnabled === "boolean") {
+            await gameDetection.setEnabled(settings.isGameDetectionEnabled);
+          }
+          const rollback = await applyShortcutSettingsPatch(
+            previousSettings,
+            settings,
+            partial,
+            shortcuts,
+          );
+          if (
+            Object.hasOwn(partial, "isAiAutoTranscribeEnabled") ||
+            Object.hasOwn(partial, "recordingSaveDirectory")
+          )
+            onAutomaticTranscriptionChange?.();
+          return Object.keys(rollback).length > 0 ? settingsStore.save(rollback) : settings;
+        });
       }),
   );
 
   ipcMain.handle(IPC_CHANNELS.settings.reset, async (): Promise<AppSettings> =>
-    serializeSettingsMutation(async () => {
-      const settings = await settingsStore.reset();
-      aiModels.setProcessingMode(settings.aiProcessingMode);
-      aiModels.setActiveAsrModel(settings.aiAsrModel);
-      await gameDetection.setEnabled(settings.isGameDetectionEnabled);
-      const failed = await reconcileResetShortcuts(settings, shortcuts);
-      if (failed.length) {
-        await diagnostics.writeLog({
-          category: "app",
-          level: "warn",
-          message: "Default shortcuts could not be registered after settings reset",
-          context: { failed },
-        });
-      }
-      return settings;
-    }),
+    serializeSettingsMutation(() =>
+      aiModelConfigurationUsage.change(async () => {
+        const settings = await settingsStore.reset();
+        aiModels.setProcessingMode(settings.aiProcessingMode);
+        aiModels.setActiveAsrModel(settings.aiAsrModel);
+        await gameDetection.setEnabled(settings.isGameDetectionEnabled);
+        const failed = await reconcileResetShortcuts(settings, shortcuts);
+        onAutomaticTranscriptionChange?.();
+        if (failed.length) {
+          await diagnostics.writeLog({
+            category: "app",
+            level: "warn",
+            message: "Default shortcuts could not be registered after settings reset",
+            context: { failed },
+          });
+        }
+        return settings;
+      }),
+    ),
   );
 
   ipcMain.handle(IPC_CHANNELS.profile.pickAvatar, async () =>
@@ -1039,7 +997,7 @@ export const registerIpcHandlers = ({
       recapUpload.upload(requireString(recordingIdValue, 2_048, "recording_id")),
   );
   ipcMain.handle(IPC_CHANNELS.ai.pauseTask, async (_event, recordingId: string): Promise<void> => {
-    voiceMemory.pause(requireString(recordingId, 2_048, "recording_id"));
+    await voiceMemory.pause(requireString(recordingId, 2_048, "recording_id"));
   });
   ipcMain.handle(
     IPC_CHANNELS.ai.resumeTask,
@@ -1096,24 +1054,7 @@ export const registerIpcHandlers = ({
   ipcMain.handle(IPC_CHANNELS.ai.cancelQuestion, async (): Promise<boolean> =>
     voiceMemory.cancelQuestion(),
   );
-  ipcMain.handle(IPC_CHANNELS.ai.getCustomProvider, async (): Promise<AiCustomProviderStatus> =>
-    customAiProvider.status(),
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.ai.saveCustomProvider,
-    async (_event, input: AiCustomProviderInput): Promise<AiCustomProviderStatus> =>
-      customAiProvider.save({
-        baseUrl: requireString(input?.baseUrl, 2_048, "custom_ai_base_url"),
-        model: requireString(input?.model, 120, "custom_ai_model"),
-        apiKey:
-          input?.apiKey === undefined
-            ? undefined
-            : requireString(input.apiKey, 512, "custom_ai_key"),
-      }),
-  );
-  ipcMain.handle(IPC_CHANNELS.ai.clearCustomProvider, async (): Promise<void> => {
-    await customAiProvider.clear();
-  });
+  registerAiTextProviderIpc(customAiProvider);
   registerTranscriptionProviderIpc(transcriptionProvider);
   ipcMain.handle(
     IPC_CHANNELS.ai.getHuggingFaceAccess,
@@ -1258,7 +1199,11 @@ export const registerIpcHandlers = ({
   );
   ipcMain.handle(IPC_CHANNELS.recording.list, async (): Promise<RecordingLibrarySnapshot> => {
     const settings = settingsStore.getSnapshot();
-    return readRecordingLibrary(settings.recordingSaveDirectory, settings.recordingLibraryQuotaGb);
+    const snapshot = await readRecordingLibrary(
+      settings.recordingSaveDirectory,
+      settings.recordingLibraryQuotaGb,
+    );
+    return reconcileRecordingMemories(snapshot, voiceMemory);
   });
   registerRecordingCleanupIpc(() => settingsStore.getSnapshot(), getMainWindow);
   ipcMain.handle(

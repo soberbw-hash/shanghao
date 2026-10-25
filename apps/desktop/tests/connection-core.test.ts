@@ -176,7 +176,7 @@ test("room joining uses acknowledgement and snapshot recovery without logging ra
   assert.equal(presence.includes('gameName: desired.gameName ?? ""'), true);
   assert.equal(client.includes("payload.code === 4400"), true);
   assert.equal(client.includes('new Error("signaling_protocol_rejected")'), true);
-  assert.equal(client.includes("this.rejectPendingConnection(error)"), true);
+  assert.equal(client.includes("this.settlePendingConnection(error)"), true);
   assert.equal(diagnostics.includes("MAX_LOG_FILE_BYTES"), true);
   assert.equal(diagnostics.includes("compactOversizedLogs"), true);
   assert.equal(diagnostics.includes("EXPORT_LOG_TAIL_BYTES"), true);
@@ -288,7 +288,12 @@ test("room invite copies a room website link with a visible success toast", () =
   assert.equal(hook.includes("buildChannelInviteText"), true);
   assert.equal(hook.includes("上号频道码："), false);
   assert.equal(hook.includes("服务器地址："), false);
-  assert.equal(hook.includes("privateRoomInvitationUrl"), true);
+  assert.equal(
+    read("apps/desktop/src/renderer/src/features/room/roomSessionPresentation.ts").includes(
+      "privateRoomInvitationUrl",
+    ),
+    true,
+  );
   assert.equal(invite.includes("shanghao://join?"), true);
   assert.equal(hook.includes("邀请链接已复制"), true);
   assert.equal(deepLink.includes("consumeDeepLink"), true);
@@ -347,7 +352,7 @@ test("native notifications and recording markers use main process IPC", () => {
   const roomState = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const room = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
   assert.equal(ipc.includes("Notification.isSupported"), true);
-  assert.equal(ipc.includes("silent: false"), true);
+  assert.equal(ipc.includes("silent: payload.silent === true"), true);
   assert.equal(ipc.includes("mainWindow.flashFrame(true)"), true);
   assert.equal(ipc.includes('mainWindow.setAlwaysOnTop(true, "floating")'), true);
   assert.equal(roomState.includes("attention: true"), true);
