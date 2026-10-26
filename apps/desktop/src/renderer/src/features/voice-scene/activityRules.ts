@@ -6,6 +6,7 @@ import {
   gameSessionLabel,
 } from "@private-voice/shared";
 import { Gamepad2, Headphones, MicOff, Phone, RotateCw, VolumeX, WifiOff } from "lucide-react";
+import { availabilityLabels } from "../room/memberAvailability";
 
 export const activityLabels: Record<MemberActivity, string> = {
   idle: "等待中",
@@ -33,6 +34,9 @@ export const memberStatus = (member: RoomMember, now = Date.now()): MemberStatus
   }
   if (member.callModeActive) {
     return { label: "通话中", tone: "online", icon: Phone };
+  }
+  if (member.availabilityStatus) {
+    return { label: availabilityLabels[member.availabilityStatus], tone: "online" };
   }
   if (member.isDeafened) {
     return { label: "已关闭扬声器", tone: "deafened", icon: VolumeX };

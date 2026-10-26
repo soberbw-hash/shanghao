@@ -32,10 +32,12 @@ import { FreeTokenLocalLlmProvider } from "./freetoken-local-llm-provider";
 import { FreeTokenManagedRuntime } from "./freetoken-managed-runtime";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
 import { createAutomaticRecordingBacklog } from "./automatic-recording-backlog";
+import { baselineAsrStatus, createDefaultAsrProvisioner } from "./default-asr-provisioner";
 import { AiTextGateway } from "./ai-text-gateway";
 import { registerRoomMemoryIpc } from "./room-memory-ipc";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
+import { BuiltInAiClient } from "./built-in-ai-client";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { preparePersistentAiStorage, resolveVoiceMemoryStoragePath } from "./ai-storage";
 import { registerStorageIpc } from "./storage-ipc";
@@ -393,7 +395,17 @@ const bootstrap = async (): Promise<void> => {
   const customAiProvider = new CustomAiProviderStore(
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
-  const transcriptionProvider = new AiTranscriptionProviderStore();
+  const builtInAi = new BuiltInAiClient(
+    () => settingsStore?.getSnapshot().relayServerUrl,
+    () => accounts.getFreshAccessToken(),
+    (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+  );
+  const transcriptionProvider = new AiTranscriptionProviderStore(
+    undefined,
+    undefined,
+    undefined,
+    builtInAi,
+  );
   const huggingFaceAccess = new HuggingFaceAccessStore(
     app.getPath("userData"),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -417,7 +429,19 @@ const bootstrap = async (): Promise<void> => {
     () => mainWindow,
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
   );
-  registerPhoneMode(() => mainWindow, settingsStore, shortcuts);
+  registerPhoneMode(
+    () => mainWindow,
+    settingsStore,
+    shortcuts,
+    (stage, context) => {
+      void diagnostics?.writeLog({
+        category: "app",
+        level: "info",
+        message: `phone mode ${stage}`,
+        context,
+      });
+    },
+  );
   const failedStartupShortcuts = await reconcileResetShortcuts(settings, shortcuts);
   if (failedStartupShortcuts.length) {
     await diagnostics.writeLog({
@@ -576,6 +600,7 @@ const bootstrap = async (): Promise<void> => {
     customAiProvider,
     freeTokenProvider,
     (roomId, signal) => roomMemories.context(roomId, signal),
+    builtInAi,
   );
   const voiceMemory = new AiVoiceMemoryService(
     aiModels,
@@ -611,6 +636,39 @@ const bootstrap = async (): Promise<void> => {
       });
     },
   });
+  const baselineAsr = createDefaultAsrProvisioner({
+    enabled: () =>
+      settingsStore!.getSnapshot().aiTranscriptionProvider === "cloud" &&
+      settingsStore!.getSnapshot().isAiCloudLocalAssistEnabled === true,
+    model: () => baselineAsrStatus(aiModels.getSnapshot().models),
+    optIn: () => aiModels.requestBaselineAsr(),
+    control: (action) => aiModels.controlModel("qwen3-asr-0.6b-force", action),
+    canPrepare: () => !aiModels.shouldDeferBackgroundDownload(),
+    canAssist: () => aiModels.canRunTask("transcription", false, "qwen3-asr-0.6b-force").runnable,
+    onReady: automaticBacklog.refreshCached,
+  });
+  const offBaseline = aiModels.onStatus(() => baselineAsr.refresh());
+  let followupTimer: NodeJS.Timeout | undefined;
+  const offAutomaticFollowup = voiceMemory.onStatus((record) => {
+    if (
+      record.phase !== "ready" ||
+      record.taskStatus !== "success" ||
+      record.processingStage !== "storage" ||
+      followupTimer
+    )
+      return;
+    followupTimer = setTimeout(() => {
+      followupTimer = undefined;
+      automaticBacklog.refreshCached();
+    }, 150);
+    followupTimer.unref();
+  });
+  app.once("will-quit", () => {
+    baselineAsr.stop();
+    offBaseline();
+    offAutomaticFollowup();
+    if (followupTimer) clearTimeout(followupTimer);
+  });
   shortcutsController = shortcuts;
   overlayController = overlay;
   gameDetectionController = gameDetection;
@@ -632,7 +690,10 @@ const bootstrap = async (): Promise<void> => {
     gameDetection,
     aiModels,
     voiceMemory,
-    onAutomaticTranscriptionChange: automaticBacklog.refresh,
+    onAutomaticTranscriptionChange: () => {
+      automaticBacklog.refresh();
+      baselineAsr.refresh();
+    },
     customAiProvider,
     transcriptionProvider,
     huggingFaceAccess,
@@ -685,7 +746,10 @@ const bootstrap = async (): Promise<void> => {
         voiceMemory.initialize(),
       ]),
     )
-    .then(() => automaticBacklog.initialize())
+    .then(() => {
+      automaticBacklog.initialize();
+      baselineAsr.refresh();
+    })
     .then(
       () =>
         diagnostics?.writeLog({

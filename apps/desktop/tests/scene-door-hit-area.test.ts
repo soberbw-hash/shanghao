@@ -7,7 +7,7 @@ import {
   seatSlots,
 } from "../src/renderer/src/features/voice-scene/sceneZones";
 
-test("door hit area stays centered and is confined to a small rectangle", () => {
+test("legacy away coordinates remain readable while the new door is decorative", async () => {
   const door = activityZones.find((zone) => zone.id === "restroomZone")!;
   assert.equal(door.left, 9);
   assert.equal(door.top, 75);
@@ -17,6 +17,12 @@ test("door hit area stays centered and is confined to a small rectangle", () => 
   assert.deepEqual(characterPositions.restroomZone, { left: 9, top: 75, zIndex: 38, scale: 0.42 });
   assert.equal(seatSlots.length, 5);
   assert.ok(seatSlots.every((slot) => slot.width === 18 && slot.height === 24));
+  const island = await readFile(
+    new URL("../src/renderer/src/components/room/TeamIsland.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(island, /\{seatSlots\.map\(\(zone\)/);
+  assert.doesNotMatch(island, /\{sceneZones\.map/);
 });
 
 test("door art shrinks by 15 percent without letting its hover label extend the hit area", async () => {

@@ -7,6 +7,11 @@ import { RecordingMarkerCue } from "../../src/renderer/src/components/settings/R
 import "../../src/renderer/src/styles/index.css";
 
 const unconfigured = new URLSearchParams(window.location.search).has("unconfigured");
+const readError = new URLSearchParams(window.location.search).has("read-error");
+let providerReadFault = readError;
+window.addEventListener("fixture:provider-recovered", () => {
+  providerReadFault = false;
+});
 let saved = {
   configured: !unconfigured,
   hasApiKey: !unconfigured,
@@ -16,13 +21,16 @@ let saved = {
 window.desktopApi = {
   app: { writeLog: async () => {} },
   ai: {
-    getCustomProvider: async () => saved,
+    getCustomProvider: async () => {
+      if (providerReadFault) throw Error("custom_ai_config_unreadable");
+      return saved;
+    },
     saveCustomProvider: async (input: { baseUrl: string; model: string }) =>
       (saved = { ...saved, ...input }),
-    getTranscriptionProvider: async () => ({
-      cloudConfigured: !unconfigured,
-      customConfigured: !unconfigured,
-    }),
+    getTranscriptionProvider: async () => {
+      if (providerReadFault) throw Error("custom_asr_config_unreadable");
+      return { cloudConfigured: !unconfigured, customConfigured: !unconfigured };
+    },
     getSnapshot: async () => ({
       models: [],
       scheduler: { gameActive: false },

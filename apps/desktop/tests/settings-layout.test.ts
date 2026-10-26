@@ -818,7 +818,9 @@ test("AI voice memory exposes provider readiness and recovers interrupted compar
   assert.equal(source.includes("qwen3-forced-aligner-0.6b"), true);
   assert.equal(source.includes("isDisabled={!activeTranscriptionReady}"), false);
   assert.equal(source.includes("isDisabled={!organizerReady || !activeTranscriptionReady}"), false);
-  assert.equal(source.includes('option value="cloud">房间云端'), true);
+  assert.equal(source.includes('option value="cloud">内置云端'), true);
+  assert.equal(source.includes('<option value="deepseek">'), false);
+  assert.equal(source.includes('<option value="glm">'), false);
   assert.equal(source.includes("云端 API · 无需本地模型"), false);
   assert.equal(source.includes('aria-label="文本整理与问答模型"'), true);
   assert.equal(source.includes('label="录音整理模型"'), false);

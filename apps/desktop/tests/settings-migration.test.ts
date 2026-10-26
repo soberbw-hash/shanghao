@@ -395,7 +395,7 @@ test("quick message volume defaults to 30% without changing saved or legacy leve
   assert.equal(migrateSettings({}).settings.quickMessages.soundVolume, 0.3);
   assert.equal(
     migrateSettings({
-      settingsSchemaVersion: SETTINGS_SCHEMA_VERSION - 1,
+      settingsSchemaVersion: 34,
       quickMessages: {
         ...defaultSettings.quickMessages,
         soundVolume: 0.72,
@@ -528,7 +528,7 @@ test("collection read markers migrate by room without accepting unknown room key
 test("legacy room question providers follow the unified text provider", () => {
   for (const aiRoomAskProvider of ["local", "custom"] as const) {
     const result = migrateSettings({ ...defaultSettings, aiRoomAskProvider });
-    assert.equal(result.settings.aiRoomAskProvider, "custom");
+    assert.equal(result.settings.aiRoomAskProvider, "cloud");
   }
 });
 
@@ -568,6 +568,32 @@ test("migrateSettings preserves the release notes version already shown", () => 
   });
 
   assert.equal(result.settings.lastReleaseNotesVersionSeen, "2.4.0");
+});
+
+test("new installs and the one-time built-in AI upgrade default to cloud, then retain user choices", () => {
+  const fresh = migrateSettings({}).settings;
+  assert.equal(fresh.aiOrganizerProvider, "cloud");
+  assert.equal(fresh.aiRoomAskProvider, "cloud");
+  assert.equal(fresh.aiTranscriptionProvider, "cloud");
+  assert.equal(fresh.aiTextModelPreset, "cloud");
+  const migrated = migrateSettings({
+    ...defaultSettings,
+    settingsSchemaVersion: 35,
+    aiOrganizerProvider: "custom",
+    aiTranscriptionProvider: "local",
+    aiTextModelPreset: "deepseek",
+  }).settings;
+  assert.equal(migrated.aiOrganizerProvider, "cloud");
+  assert.equal(migrated.aiTranscriptionProvider, "cloud");
+  const chosen = migrateSettings({
+    ...migrated,
+    aiOrganizerProvider: "custom",
+    aiTextModelPreset: "custom",
+    aiTranscriptionProvider: "local",
+  }).settings;
+  assert.equal(chosen.aiOrganizerProvider, "custom");
+  assert.equal(chosen.aiTranscriptionProvider, "local");
+  assert.equal(chosen.aiTextModelPreset, "custom");
 });
 
 test("migrateSettings preserves the locally selected recording directory", () => {

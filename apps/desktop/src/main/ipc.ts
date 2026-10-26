@@ -691,8 +691,14 @@ export const registerIpcHandlers = ({
             shortcuts,
           );
           if (
-            Object.hasOwn(partial, "isAiAutoTranscribeEnabled") ||
-            Object.hasOwn(partial, "recordingSaveDirectory")
+            [
+              "isAiAutoTranscribeEnabled",
+              "recordingSaveDirectory",
+              "aiTranscriptionProvider",
+              "isAiCloudLocalAssistEnabled",
+              "aiCloudLocalAsrModel",
+              "aiOrganizerProvider",
+            ].some((key) => Object.hasOwn(partial, key))
           )
             onAutomaticTranscriptionChange?.();
           return Object.keys(rollback).length > 0 ? settingsStore.save(rollback) : settings;

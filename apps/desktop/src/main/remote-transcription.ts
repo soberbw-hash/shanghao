@@ -104,9 +104,13 @@ export async function transcribeWithRemoteProvider({
 }: RemoteTranscriptionHost): Promise<VoiceMemoryRecord> {
   if (!host.store) throw new Error("remote_asr_unavailable");
   const status = await host.store.status();
+  if (provider === "cloud" && !status.cloudConfigured)
+    throw new Error(status.cloudErrorCode ?? "cloud_asr_not_configured");
   if (!manual) {
     if (!(provider === "cloud" ? status.cloudConfigured : status.customConfigured))
-      throw new Error(provider === "cloud" ? "cloud_asr_key_required" : "custom_asr_key_required");
+      throw new Error(
+        provider === "cloud" ? "cloud_asr_not_configured" : "custom_asr_key_required",
+      );
   }
   const taskId =
     record.taskId ?? `voice-memory:${record.recordingId}:${Date.now()}-${randomUUID().slice(0, 8)}`;

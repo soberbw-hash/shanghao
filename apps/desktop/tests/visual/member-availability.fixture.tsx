@@ -12,6 +12,7 @@ import { RoomMemberEventCoordinator } from "../../src/renderer/src/features/room
 import { MemberAvailabilityControls } from "../../src/renderer/src/components/chat/MemberAvailabilityControls";
 import { ChatPanelHeader } from "../../src/renderer/src/components/chat/ChatPanelHeader";
 import { SceneCharacter } from "../../src/renderer/src/components/room/SceneCharacter";
+import { usePhoneModeSync } from "../../src/renderer/src/hooks/usePhoneModeSync";
 import "../../src/renderer/src/styles/index.css";
 
 const initial: RoomMember[] = ["local", "friend-a", "friend-b"].map((id, index) => ({
@@ -38,9 +39,11 @@ const events = new RoomMemberEventCoordinator({
 });
 events.setMembers(initial);
 const Fixture = () => {
+  usePhoneModeSync();
   const snapshot = useRoomStore((state) => state.room.members);
   const members = snapshot.filter((member) => !member.isEmptySlot);
   const muted = useAudioStore((state) => state.isMuted);
+  const phoneModeActive = useAudioStore((state) => state.phoneModeActive);
   return (
     <main className="room-page" style={{ padding: 16, width: 760 }}>
       <ChatPanelHeader
@@ -99,7 +102,7 @@ const Fixture = () => {
           {members.map((member, index) => (
             <SceneCharacter
               key={member.id}
-              member={member}
+              member={member.isLocal ? { ...member, callModeActive: phoneModeActive } : member}
               avatarId={index === 1 ? "cat" : "fox"}
               shouldReduceMotion={false}
               awayIndex={0}

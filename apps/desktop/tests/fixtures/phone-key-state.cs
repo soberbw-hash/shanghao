@@ -29,6 +29,18 @@ class PhoneKeyStateTests {
         Equal(state.Read(0x5B,false),true,"windows modifier retained");
         state.Keyboard(65,0,0);
         Equal(state.Read(65,false),false,"unrelated letters are discarded");
+        long now=0;
+        var repair=new PhoneKeyState(113,()=>now);
+        repair.Keyboard(113,0,0);
+        Equal(repair.Read(113,false,true),true,"transient polling mismatch cannot release immediately");
+        now=41;
+        Equal(repair.Read(113,false,true),false,"missed key-up reconciles within 40ms on accessible desktop");
+        repair.Keyboard(113,0,0);
+        Equal(repair.Read(113,false,false),true,"higher privilege polling cannot fabricate release");
+        now=60000;
+        Equal(repair.Read(113,false,false),true,"denied polling never times out a held key");
+        repair.Keyboard(113,0,1);
+        Equal(repair.Read(113,true,true),false,"raw release wins over a momentary stale poll");
         for(int key=5;key<=6;key++) {
             var mouse=new PhoneKeyState(key);
             int press=key==5 ? 0x40 : 0x100;

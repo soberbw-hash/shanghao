@@ -6,7 +6,7 @@ import {
   planAutomaticRecordingRecovery,
 } from "../src/main/automatic-recording-recovery";
 
-test("only transient ASR failures get bounded durable recovery", () => {
+test("only transient failures get durable recovery with a capped retry cadence", () => {
   const record = createEmptyVoiceMemoryRecord({ recordingId: "r", filePath: "synthetic.wav" });
   const options = { enabled: true, paused: false, now: 1000 };
   for (const reason of [
@@ -29,7 +29,7 @@ test("only transient ASR failures get bounded durable recovery", () => {
         reason,
         options,
       ).deferred,
-      false,
+      true,
     );
     assert.equal(
       planAutomaticRecordingRecovery(record, reason, { ...options, paused: true }).deferred,
@@ -81,7 +81,20 @@ test("only transient ASR failures get bounded durable recovery", () => {
         partMs: 30000,
       },
     }),
-    false,
-    "persisted new policy cannot bypass the retry ceiling again",
+    true,
+    "due transient failures remain recoverable after the first two rounds",
   );
+});
+
+test("unconfigured built-in transcription remains deferred without spending network retries", () => {
+  const record = createEmptyVoiceMemoryRecord({
+    recordingId: "built-in",
+    filePath: "synthetic.wav",
+  });
+  const result = planAutomaticRecordingRecovery(record, "cloud_asr_not_configured", {
+    enabled: true,
+    paused: false,
+  });
+  assert.equal(result.deferred, true);
+  assert.equal(result.retry, undefined);
 });

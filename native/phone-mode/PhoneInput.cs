@@ -8,24 +8,35 @@ using System.Windows.Forms;
 sealed class PhoneKeyState {
     readonly int key;
     readonly System.Collections.Generic.Dictionary<int,bool> states = new System.Collections.Generic.Dictionary<int,bool>();
-    public PhoneKeyState(int virtualKey) { key=virtualKey; }
+    readonly System.Collections.Generic.Dictionary<int,long> mismatches = new System.Collections.Generic.Dictionary<int,long>();
+    readonly Func<long> clock;
+    public PhoneKeyState(int virtualKey, Func<long> now=null) { key=virtualKey; clock=now ?? (() => Environment.TickCount & Int32.MaxValue); }
     public void Keyboard(int virtualKey, int scan, int flags) {
         int side=virtualKey;
         if(virtualKey==0x10) side=scan==0x36 ? 0xA1 : 0xA0;
         if(virtualKey==0x11) side=(flags&2)!=0 ? 0xA3 : 0xA2;
         if(virtualKey==0x12) side=(flags&2)!=0 ? 0xA5 : 0xA4;
-        if(virtualKey==key || (side>=0xA0 && side<=0xA5) || side==0x5B || side==0x5C)
-            states[side]=(flags&1)==0;
+        if(virtualKey==key || (side>=0xA0 && side<=0xA5) || side==0x5B || side==0x5C) {
+            states[side]=(flags&1)==0; mismatches.Remove(side);
+        }
     }
     public void Mouse(int flags) {
         int press=key==5 ? 0x40 : key==6 ? 0x100 : 0;
         if(press==0) return;
-        if((flags&press)!=0) states[key]=true;
-        if((flags&(press<<1))!=0) states[key]=false;
+        if((flags&press)!=0) { states[key]=true; mismatches.Remove(key); }
+        if((flags&(press<<1))!=0) { states[key]=false; mismatches.Remove(key); }
     }
-    public bool Read(int virtualKey, bool sampled) {
+    public bool Read(int virtualKey, bool sampled, bool sampleReliable=false) {
         bool value;
-        return states.TryGetValue(virtualKey,out value) ? value : sampled;
+        if(!states.TryGetValue(virtualKey,out value)) return sampled;
+        // A missed raw break must not pin a hold forever. Only reconcile polling on
+        // an accessible desktop at equal privilege; denied polling is not key-up.
+        if(value==sampled || !sampleReliable) { mismatches.Remove(virtualKey); return value; }
+        long now=clock(), since;
+        if(!mismatches.TryGetValue(virtualKey,out since) || now<since) { mismatches[virtualKey]=now; return value; }
+        if(now-since<40) return value;
+        mismatches.Remove(virtualKey); states[virtualKey]=sampled;
+        return sampled;
     }
 }
 
@@ -48,7 +59,7 @@ sealed class PhoneRawInput : NativeWindow, IDisposable {
         Registered=RegisterRawInputDevices(devices,(uint)devices.Length,(uint)Marshal.SizeOf(typeof(Device)));
     }
     public void Pump() { Application.DoEvents(); }
-    public bool Read(int key, bool sampled) { return Registered ? state.Read(key,sampled) : sampled; }
+    public bool Read(int key, bool sampled, bool reliable=false) { return Registered ? state.Read(key,sampled,reliable) : sampled; }
     protected override void WndProc(ref Message message) {
         if(message.Msg==0xFF) {
             uint size=0, headerSize=(uint)Marshal.SizeOf(typeof(Header));
@@ -103,7 +114,7 @@ class PhoneInput {
         return elevated.HasValue && foreground.HasValue ? (bool?)(!elevated.Value && foreground.Value) : null;
     }
     static bool Down(int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; }
-    static bool Modifier(PhoneRawInput raw, int left, int right) { return raw.Read(left,Down(left)) || raw.Read(right,Down(right)); }
+    static bool Modifier(PhoneRawInput raw, int left, int right, bool reliable) { return raw.Read(left,Down(left),reliable) || raw.Read(right,Down(right),reliable); }
     static volatile bool closing;
     [STAThread] static int Main() {
         try {
@@ -121,6 +132,7 @@ class PhoneInput {
             var heartbeat = System.Diagnostics.Stopwatch.StartNew();
             var diagnostics = System.Diagnostics.Stopwatch.StartNew();
             bool? elevated=Elevated((uint)System.Diagnostics.Process.GetCurrentProcess().Id);
+            bool? higher=ForegroundHigher(elevated);
             bool blocked=false;
             while(!closing) {
                 // Secure desktop / screen lock is not a user key release.
@@ -133,17 +145,19 @@ class PhoneInput {
                 }
                 CloseDesktop(desktop);
                 if(diagnostics.ElapsedMilliseconds>=1000) {
-                    Console.WriteLine(json.Serialize(new { inputDesktopAvailable=true, foregroundHigher=ForegroundHigher(elevated) }));
+                    higher=ForegroundHigher(elevated);
+                    Console.WriteLine(json.Serialize(new { inputDesktopAvailable=true, foregroundHigher=higher }));
                     Console.Out.Flush(); diagnostics.Restart();
                 }
                 // Do not turn an inaccessible desktop into a synthetic key release.
                 if(blocked) { previous=null; blocked=false; }
                 raw.Pump();
-                bool down=raw.Read(key,Down(key));
+                bool reliable=higher.HasValue && !higher.Value;
+                bool down=raw.Read(key,Down(key),reliable);
                 long sampledAt=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string state=json.Serialize(new { down=down, ctrlKey=down && Modifier(raw,0xA2,0xA3),
-                    shiftKey=down && Modifier(raw,0xA0,0xA1), altKey=down && Modifier(raw,0xA4,0xA5),
-                    metaKey=down && Modifier(raw,0x5B,0x5C), inputDesktopAvailable=true });
+                string state=json.Serialize(new { down=down, ctrlKey=down && Modifier(raw,0xA2,0xA3,reliable),
+                    shiftKey=down && Modifier(raw,0xA0,0xA1,reliable), altKey=down && Modifier(raw,0xA4,0xA5,reliable),
+                    metaKey=down && Modifier(raw,0x5B,0x5C,reliable), inputDesktopAvailable=true });
                 if(state!=previous || heartbeat.ElapsedMilliseconds>=1000) {
                     Console.WriteLine(state.Substring(0,state.Length-1)+",\"sampledAt\":"+sampledAt+"}");
                     Console.Out.Flush(); previous=state; heartbeat.Restart();

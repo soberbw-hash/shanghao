@@ -92,7 +92,15 @@ export function CloudLocalAssistControl({
               )}
             </select>
           </label>
-          {!ready ? <span className="cloud-local-assist-fallback">未就绪，先用云端</span> : null}
+          {!ready ? (
+            <span className="cloud-local-assist-fallback">
+              {selected === DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID &&
+              model?.phase !== "paused" &&
+              model?.phase !== "error"
+                ? "后台自动准备，云端先转录"
+                : "未就绪，先用云端"}
+            </span>
+          ) : null}
           {!ready ? (
             <button
               type="button"

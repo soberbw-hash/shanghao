@@ -25,6 +25,21 @@ export const toUserFacingError = (
     };
   const transcriptionError = transcriptionProviderError(normalized);
   if (transcriptionError) return { title: "语音转录未完成", description: transcriptionError };
+  if (normalized.includes("ai_task_paused"))
+    return { title: "任务已暂停", description: "已完成的文字会保留，可继续处理。" };
+  if (/output[ _]truncated|decode hit the context\/generation cap/.test(normalized))
+    return {
+      title: "本地识别片段未完成",
+      description: "模型达到单段识别上限，已保留其他结果。可继续转录或切换模型。",
+    };
+  if (
+    /(?:runtime_not_ready|runtime_unavailable|runtime_missing)/.test(normalized) &&
+    !/(?:cuda|bf16|dll)/.test(normalized)
+  )
+    return {
+      title: "本地模型组件未就绪",
+      description: "请在当前模型的菜单中选择“修复组件”；也可切换云端转录。原录音和模型文件会保留。",
+    };
   if (normalized.includes("windows_uac_cancelled"))
     return { title: "已取消系统授权", description: "系统设置未更改，需要时可以重新操作。" };
   if (
@@ -88,12 +103,11 @@ export const toUserFacingError = (
   }
   if (
     normalized.includes("cuda") ||
+    normalized.includes("bf16_runtime_unavailable") ||
     normalized.includes("pytorch") ||
     normalized.includes("torch") ||
     normalized.includes("0xc0000135") ||
-    normalized.includes("dll_missing") ||
-    normalized.includes("runtime_not_ready") ||
-    normalized.includes("runtime_unavailable")
+    normalized.includes("dll_missing")
   ) {
     return {
       title: "AI GPU 运行环境异常",

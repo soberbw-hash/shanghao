@@ -40,9 +40,26 @@ const developmentLaunch = () =>
           "v1.0",
           "powershell.exe",
         ),
-        args: `-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${readFileSync(launcherPath()).subarray(2).toString("base64")}`,
+        args: `-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${elevatedDevelopmentCommand()}`,
       }
     : { target: process.execPath, args: `"${app.getAppPath()}"` };
+
+const elevatedDevelopmentCommand = (): string => {
+  const encodedPath = Buffer.from(launcherPath(), "utf16le").toString("base64");
+  const body = `$taskFile = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedPath}')); & ([ScriptBlock]::Create([IO.File]::ReadAllText($taskFile)))`;
+  const encoded = Buffer.from(body, "utf16le").toString("base64");
+  const script = [
+    "$taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()",
+    "$taskPrincipal = New-Object Security.Principal.WindowsPrincipal($taskIdentity)",
+    "if (-not $taskPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {",
+    "$taskShell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'",
+    `Start-Process -FilePath $taskShell -Verb RunAs -WindowStyle Hidden -ArgumentList '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${encoded}'`,
+    "exit",
+    "}",
+    body,
+  ].join("\n");
+  return Buffer.from(script, "utf16le").toString("base64");
+};
 
 export const developmentRelaunchCommand = (): string => {
   const { target, args } = developmentLaunch();

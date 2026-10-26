@@ -67,9 +67,9 @@ export const defaultSettings: AppSettings = {
   aiTranscriptionProvider: "cloud",
   isAiCloudLocalAssistEnabled: true,
   aiCloudLocalAsrModel: DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
-  aiOrganizerProvider: "custom",
-  aiRoomAskProvider: "custom",
-  aiTextModelPreset: "glm",
+  aiOrganizerProvider: "cloud",
+  aiRoomAskProvider: "cloud",
+  aiTextModelPreset: "cloud",
   aiProcessingMode: "low_resource",
   isAiAutoTranscribeEnabled: true,
   isAiAutoOrganizeEnabled: true,
@@ -341,20 +341,13 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
         : raw.aiAsrModel === "qwen3-asr-0.6b"
           ? "qwen3-asr-0.6b-force"
           : "qwen3-asr-0.6b-force",
-    aiOrganizerProvider: raw.aiOrganizerProvider === "cloud" ? "cloud" : "custom",
+    aiOrganizerProvider:
+      previousVersion < 36 || raw.aiOrganizerProvider !== "custom" ? "cloud" : "custom",
     aiTextModelPreset:
-      raw.aiTextModelPreset === "cloud" ||
-      raw.aiTextModelPreset === "glm" ||
-      raw.aiTextModelPreset === "deepseek" ||
-      raw.aiTextModelPreset === "custom"
-        ? raw.aiTextModelPreset
-        : raw.aiOrganizerProvider === "cloud"
-          ? "cloud"
-          : raw.aiOrganizerProvider === "custom"
-            ? undefined
-            : "glm",
+      previousVersion < 36 || raw.aiOrganizerProvider !== "custom" ? "cloud" : "custom",
     aiTranscriptionProvider:
-      raw.aiTranscriptionProvider === "local" || raw.aiTranscriptionProvider === "custom"
+      previousVersion >= 36 &&
+      (raw.aiTranscriptionProvider === "local" || raw.aiTranscriptionProvider === "custom")
         ? raw.aiTranscriptionProvider
         : "cloud",
     isAiCloudLocalAssistEnabled: normalizeBoolean(raw.isAiCloudLocalAssistEnabled, true),
@@ -365,7 +358,8 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
         : DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
     // Room Ask is a shared cloud capability. Legacy local/custom selections
     // must not make friends download Qwen before they can ask a question.
-    aiRoomAskProvider: raw.aiOrganizerProvider === "cloud" ? "cloud" : "custom",
+    aiRoomAskProvider:
+      previousVersion < 36 || raw.aiOrganizerProvider !== "custom" ? "cloud" : "custom",
     aiProcessingMode:
       previousVersion < 35 &&
       raw.aiProcessingMode === "after_game" &&

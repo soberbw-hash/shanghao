@@ -215,7 +215,7 @@ test("a different room's participant track is rejected before any cloud upload",
         provider: "cloud",
         signal: new AbortController().signal,
         store: {
-          status: async () => ({}),
+          status: async () => ({ cloudConfigured: true, customConfigured: false }),
           transcribe: async () => assert.fail("must not upload"),
         } as never,
         save: async (record) => record,

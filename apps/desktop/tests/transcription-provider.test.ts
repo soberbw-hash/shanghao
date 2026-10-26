@@ -216,10 +216,10 @@ test("ASR rejects internal custom hosts and bounds streamed results", async () =
 });
 
 test("ASR account and key errors give actionable messages without raw provider text", () => {
-  assert.match(transcriptionProviderError("cloud_asr_http_402")!, /余额不足/);
-  assert.match(transcriptionProviderError("cloud_asr_http_401")!, /密钥/);
+  assert.match(transcriptionProviderError("cloud_asr_http_402")!, /内置云端.*额度/);
+  assert.match(transcriptionProviderError("cloud_asr_http_401")!, /内置云端.*配置/);
   assert.match(transcriptionProviderError("cloud_asr_http_429")!, /稍后/);
-  assert.match(transcriptionProviderError("cloud_asr_http_402")!, /免费模型.*欠费/);
+  assert.match(transcriptionProviderError("custom_asr_http_402")!, /免费模型.*欠费/);
   assert.match(
     transcriptionProviderError("remote_asr_model_comparison_not_supported")!,
     /本地模型对比/,

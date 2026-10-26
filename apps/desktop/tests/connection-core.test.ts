@@ -190,7 +190,7 @@ test("windows executable and shortcut use approved v4 icons", () => {
 
   assert.equal(builder.includes("icon: shanghao-icon-v4.ico"), true);
   assert.equal(builder.includes("signAndEditExecutable: true"), true);
-  assert.equal(builder.includes("requestedExecutionLevel: asInvoker"), true);
+  assert.equal(builder.includes("requestedExecutionLevel: requireAdministrator"), true);
   assert.equal(builder.includes("afterPack: scripts/after-pack.cjs"), true);
   assert.equal(read("apps/desktop/scripts/after-pack.cjs").includes("writeInstallManifest"), true);
   assert.equal(installer.includes("shanghao-shortcut-v4.ico"), true);

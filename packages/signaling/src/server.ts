@@ -4,7 +4,7 @@ import { TemporaryRoomRuntime } from "./temporary-room-runtime";
 import { temporaryRuntimeOptions } from "./temporary-runtime-options";
 import { createRoomSnapshot, createChannelCounts } from "./room-snapshot";
 import { createSignalingStorage } from "./signaling-storage";
-import { buildSignalingHealth } from "./signaling-health";
+import { sendSignalingHealth } from "./signaling-health";
 import { isTemporaryRoomSessionId } from "../../shared/src/types/temporary-room.types";
 import { buildRoomCollectionSnapshots } from "./room-collection-snapshots";
 import { buildIceServersForPeer } from "./signaling-ice-config";
@@ -299,6 +299,11 @@ export class SignalingServer extends EventEmitter {
     this.cloudAi = new CloudAiRuntime(this.dailyRoomReports, this.logger, (roomId) =>
       this.roomMemories.context(roomId),
     );
+    this.cloudAi.configureHttp(
+      this.accountBackend,
+      (request) =>
+        this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
+    );
     this.privateRoomHttp = new PrivateRoomHttpController(
       this.roomDirectory,
       this.accountBackend,
@@ -366,6 +371,7 @@ export class SignalingServer extends EventEmitter {
     }
     if (await this.phoneMicBridge.serveHttpRequest(request, response)) return;
     if (await this.accountHttp.handle(request, response)) return;
+    if (await this.cloudAi.handleHttp(request, response)) return;
     if (await this.roomMemories.handle(request, response)) return;
     if (await this.privateRoomHttp.handle(request, response)) return;
 
@@ -378,27 +384,19 @@ export class SignalingServer extends EventEmitter {
     }
     if (request.url?.startsWith("/health")) {
       const stats = this.roomManager.getStats();
-      const occupiedAvatarIds = [
-        ...getOccupiedAvatarIds(this.roomManager.getRoom(DEFAULT_CHANNEL_ID)),
-      ];
-      response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      response.end(
-        JSON.stringify(
-          buildSignalingHealth({
-            roomName: this.roomName,
-            packageVersion: this.options.packageVersion,
-            activeRooms: stats.activeRooms,
-            connectedPeers: stats.connectedPeers,
-            phoneMicSessions: this.phoneMicBridge.activeSessions,
-            maxRoomMembers: this.roomManager.getMaxRoomMembers(),
-            occupiedAvatarIds,
-            droppedRealtimeMessages: this.droppedRealtimeMessages,
-            cloudAiConfigured: this.cloudAi.isConfigured(),
-            accountConfigured: this.accountBackend.configured,
-            guestAllowed: this.accountHttp.guestAllowed,
-          }),
-        ),
-      );
+      sendSignalingHealth(response, {
+        roomName: this.roomName,
+        packageVersion: this.options.packageVersion,
+        activeRooms: stats.activeRooms,
+        connectedPeers: stats.connectedPeers,
+        phoneMicSessions: this.phoneMicBridge.activeSessions,
+        maxRoomMembers: this.roomManager.getMaxRoomMembers(),
+        occupiedAvatarIds: [...getOccupiedAvatarIds(this.roomManager.getRoom(DEFAULT_CHANNEL_ID))],
+        droppedRealtimeMessages: this.droppedRealtimeMessages,
+        cloudAiConfigured: this.cloudAi.isConfigured(),
+        accountConfigured: this.accountBackend.configured,
+        guestAllowed: this.accountHttp.guestAllowed,
+      });
       return;
     }
 

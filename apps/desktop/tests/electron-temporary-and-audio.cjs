@@ -59,7 +59,7 @@ app.whenReady().then(async () => {
       `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5173"}/@fs/${file}`,
     );
     await view.webContents.executeJavaScript(
-      `(async()=>{for(let i=0;i<150;i++){const code=document.querySelector('[aria-label="加入已有房间的八位房间码"]');if(code){document.querySelector('.temporary-entry').open=true;code.focus();return;}await new Promise(r=>setTimeout(r,30));}throw Error('room code input missing')})()`,
+      `(async()=>{for(let i=0;i<150;i++){const trigger=document.querySelector('.temporary-entry-trigger');if(trigger){trigger.click();break;}await new Promise(r=>setTimeout(r,30));}for(let i=0;i<150;i++){const join=[...document.querySelectorAll('button')].find(b=>b.textContent==='加入房间');if(join){join.click();break;}await new Promise(r=>setTimeout(r,30));}for(let i=0;i<150;i++){const code=document.querySelector('[aria-label="加入已有房间的八位房间码"]');if(code){code.focus();return;}await new Promise(r=>setTimeout(r,30));}throw Error('room code input missing')})()`,
     );
     await view.webContents.insertText("0012 3456");
     const pastedCode = await view.webContents.executeJavaScript(
@@ -69,7 +69,7 @@ app.whenReady().then(async () => {
     const result = await view.webContents.executeJavaScript(`(async()=>{
       const wait=async (condition,label)=>{for(let i=0;i<150;i++){if(condition())return;await new Promise(r=>setTimeout(r,30));}throw Error(label);};
       await wait(()=>document.querySelector('.temporary-entry'),'fixture render');
-      document.querySelector('.temporary-entry').open=true;
+      document.querySelector('.temporary-entry-back').click();
       await wait(()=>document.querySelector('.temporary-entry input').value==='临时朋友','profile');
       if(!document.querySelector('[alt="自定义临时头像"]'))throw Error('saved avatar not restored');
       if(window.fixtureState.joined)throw Error('profile restoration auto joined');
@@ -81,6 +81,13 @@ app.whenReady().then(async () => {
       await wait(()=>document.querySelector('[alt="自定义临时头像"]'),'prepared preview');
       [...document.querySelectorAll('button')].find(b=>b.textContent==='创建临时房间').click();
       await wait(()=>window.fixtureState.joined,'guest create');
+      document.querySelector('[aria-label="关闭临时联机"]').click();
+      await wait(()=>document.querySelector('.temporary-management-trigger'),'management trigger');
+      document.querySelector('.temporary-management-trigger').click();
+      await wait(()=>document.querySelector('.temporary-management-dialog:modal'),'management top layer');
+      const heading=document.querySelector('#temporary-management-title').getBoundingClientRect();
+      if(!document.elementFromPoint(heading.x+10,heading.y+10)?.closest('dialog'))throw Error('management obscured');
+      document.querySelector('[aria-label="关闭临时房间管理"]').click();
       if(!window.fixtureState.savedAvatar.startsWith('data:image/png;base64,'))throw Error('avatar lost at join');
       await wait(()=>document.querySelector('.temporary-room-network-note')?.textContent.includes('仅局域网可用'),'initial LAN-only warning');
       window.emitTemporaryState({contextId:'other-context',status:'connected'});
@@ -111,7 +118,7 @@ app.whenReady().then(async () => {
         `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5173"}/@fs/${file}?${query}`,
       );
       await view.webContents.executeJavaScript(
-        `(async()=>{for(let i=0;i<150;i++){if(document.querySelector('.temporary-entry input')?.value==='账号朋友'&&document.querySelector('[alt="自定义临时头像"]'))return;await new Promise(r=>setTimeout(r,30));}throw Error('signed-in identity not inherited')})()`,
+        `(async()=>{for(let i=0;i<150;i++){const trigger=document.querySelector('.temporary-entry-trigger');if(trigger){trigger.click();break;}await new Promise(r=>setTimeout(r,30));}for(let i=0;i<150;i++){if(document.querySelector('.temporary-entry input')?.value==='账号朋友'&&document.querySelector('[alt="自定义临时头像"]'))return;await new Promise(r=>setTimeout(r,30));}throw Error('signed-in identity not inherited')})()`,
       );
     }
     if (process.env.SHANGHAO_TEST_SCREENSHOT)

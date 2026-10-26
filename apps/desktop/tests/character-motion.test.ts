@@ -74,7 +74,7 @@ test("a desk-blocked seat change uses the shortest visible detour", () => {
   );
 });
 
-test("channel entry always begins at the left-side entrance", () => {
+test("channel entry always begins at the visible welcome door", () => {
   const destination = characterPositions.gameDesk5;
   const route = planCharacterRoute({
     kind: "enter",
@@ -83,7 +83,7 @@ test("channel entry always begins at the left-side entrance", () => {
     toZone: "gameDesk5",
   });
 
-  assert.deepEqual(route.points[0], { left: -9, top: 56 });
+  assert.deepEqual(route.points[0], { left: 9, top: 75 });
   assert.deepEqual(route.points.at(-1), destination);
   assert.equal(route.duration >= 1.5, true);
   assert.equal(route.direction, "right");
@@ -104,11 +104,12 @@ test("away and exit routes use only the shortest required desk detour", () => {
 
   const exitRoute = planCharacterRoute({
     kind: "exit",
-    from: characterPositions.restroomZone,
+    from: characterPositions.gameDesk4,
     to: sceneEntryPoint(),
-    fromZone: "restroomZone",
+    fromZone: "gameDesk4",
   });
-  assert.deepEqual(exitRoute.points, [characterPositions.restroomZone, { left: -9, top: 56 }]);
+  assert.deepEqual(exitRoute.points[0], characterPositions.gameDesk4);
+  assert.deepEqual(exitRoute.points.at(-1), sceneEntryPoint());
   assert.equal(exitRoute.strideDurationMs >= 430, true);
   assert.equal(exitRoute.strideDurationMs <= 500, true);
 });

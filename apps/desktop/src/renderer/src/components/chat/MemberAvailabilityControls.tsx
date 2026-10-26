@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { LogOut, Utensils, DoorOpen, Undo2 } from "lucide-react";
 import type { SceneReaction } from "@private-voice/shared";
 import { useRoomStore } from "../../store/roomStore";
 import { useAppStore } from "../../store/appStore";
 import { useAudioStore } from "../../store/audioStore";
+import { PhoneModeButton } from "./PhoneModeButton";
 import {
   availabilityLabels,
   encodeMemberAvailability,
@@ -24,6 +25,7 @@ export const MemberAvailabilityControls = ({
   send: (target: string, emoji: SceneReaction["emoji"]) => Promise<void>;
 }) => {
   const roomId = useRoomStore((state) => state.room.roomId);
+  const onPhone = useAudioStore((state) => state.phoneModeActive);
   const membership = useRoomStore((state) =>
     state.room.members
       .filter((member) => !member.isEmptySlot)
@@ -102,24 +104,26 @@ export const MemberAvailabilityControls = ({
     <div
       className="member-availability-controls"
       aria-label="我的状态"
-      data-status={status ?? "available"}
+      data-status={onPhone ? "phone" : (status ?? "available")}
     >
       {choices.map(({ id, label, Icon }) => (
-        <button
-          key={id}
-          type="button"
-          disabled={!canSend || busy}
-          aria-pressed={status === id}
-          title={`${availabilityLabels[id]} · 静音麦克风`}
-          onClick={() => void select(id)}
-        >
-          <Icon aria-hidden="true" />
-          {label}
-        </button>
+        <Fragment key={id}>
+          <button
+            type="button"
+            disabled={!canSend || busy || onPhone}
+            aria-pressed={!onPhone && status === id}
+            title={`${availabilityLabels[id]} · 静音麦克风`}
+            onClick={() => void select(id)}
+          >
+            <Icon aria-hidden="true" />
+            {label}
+          </button>
+          {id === "away" ? <PhoneModeButton canUse={canSend} /> : null}
+        </Fragment>
       ))}
       <button
         type="button"
-        disabled={!canSend || busy || !status}
+        disabled={!canSend || busy || !status || onPhone}
         onClick={() => void select()}
         title={status ? "清除状态" : "当前在线"}
       >

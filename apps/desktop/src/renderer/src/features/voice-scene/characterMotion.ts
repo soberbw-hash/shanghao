@@ -18,8 +18,9 @@ export interface CharacterMotionRoute {
   direction: "left" | "right";
 }
 
-const ENTRY_POINT: CharacterMotionPoint = { left: -9, top: 56 };
-const EXIT_POINT: CharacterMotionPoint = { left: -9, top: 56 };
+// The character anchor sits above its feet, at the visible door threshold.
+const ENTRY_POINT: CharacterMotionPoint = { left: 9, top: 75 };
+const EXIT_POINT: CharacterMotionPoint = { ...ENTRY_POINT };
 const EPSILON = 0.01;
 const DESK_HALF_WIDTH = 8.8;
 const DESK_TOP_CLEARANCE = 10;

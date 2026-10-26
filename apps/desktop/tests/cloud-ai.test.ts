@@ -308,7 +308,7 @@ test("server cloud AI keeps the API key in the authorization header", async () =
   let body = "";
   const service = new CloudAiService({
     apiKey: "server-only-test-key",
-    model: "deepseek-flash",
+    model: "glm-4-flash-250414",
     fetcher: async (input, init) => {
       url = String(input);
       authorization = new Headers(init?.headers).get("authorization") ?? "";
@@ -322,23 +322,23 @@ test("server cloud AI keeps the API key in the authorization header", async () =
 
   const result = await service.execute(request);
 
-  assert.equal(url, "https://api.deepseek.com/chat/completions");
+  assert.equal(url, "https://open.bigmodel.cn/api/paas/v4/chat/completions");
   assert.equal(url.includes("server-only-test-key"), false);
   assert.equal(authorization, "Bearer server-only-test-key");
   assert.equal(body.includes("server-only-test-key"), false);
-  assert.equal(body.includes("deepseek-flash"), true);
+  assert.equal(body.includes("glm-4-flash-250414"), true);
   assert.equal(result, '{"summary":[]}');
 });
 
-test("cloud AI defaults to Flash 4.1 on both routes and preserves explicit model overrides", async () => {
-  const previous = process.env.DEEPSEEK_MODEL;
+test("cloud AI defaults to GLM for summaries and questions and preserves explicit overrides", async () => {
+  const previous = process.env.CLOUD_AI_MODEL;
   try {
     for (const [environment, configured, expected] of [
-      ["", undefined, "deepseek-flash"],
+      ["", undefined, "glm-4-flash-250414"],
       ["environment-model", undefined, "environment-model"],
       ["environment-model", "custom-model", "custom-model"],
     ] as const) {
-      process.env.DEEPSEEK_MODEL = environment;
+      process.env.CLOUD_AI_MODEL = environment;
       for (const useWebSearch of [false, true]) {
         let sentModel = "";
         const service = new CloudAiService({
@@ -354,16 +354,18 @@ test("cloud AI defaults to Flash 4.1 on both routes and preserves explicit model
       }
     }
   } finally {
-    if (previous === undefined) delete process.env.DEEPSEEK_MODEL;
-    else process.env.DEEPSEEK_MODEL = previous;
+    if (previous === undefined) delete process.env.CLOUD_AI_MODEL;
+    else process.env.CLOUD_AI_MODEL = previous;
   }
 });
 
-test("room cloud questions request server-side web search without exposing provider errors", async () => {
+test("room questions avoid the removed vendor search endpoint and disclose offline limits", async () => {
   let body = "";
+  let url = "";
   const service = new CloudAiService({
     apiKey: "server-only-test-key",
-    fetcher: async (_input, init) => {
+    fetcher: async (input, init) => {
+      url = String(input);
       body = String(init?.body);
       return new Response("upstream details must stay private", { status: 429 });
     },
@@ -373,5 +375,7 @@ test("room cloud questions request server-side web search without exposing provi
     service.execute({ ...request, purpose: "question", useWebSearch: true }),
     (error: Error) => error.message === "cloud_ai_busy",
   );
-  assert.equal(body.includes("web_search_20250305"), true);
+  assert.equal(url, "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+  assert.equal(body.includes("web_search_20250305"), false);
+  assert.match(body, /不得声称已搜索/);
 });

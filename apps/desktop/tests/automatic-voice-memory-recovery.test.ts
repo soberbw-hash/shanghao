@@ -33,13 +33,19 @@ const fixture = async () => {
     asrCalls: 0,
     textCalls: 0,
     failAsr: false,
+    failText: false,
   };
   const services: AiVoiceMemoryService[] = [];
+  const failures: string[] = [];
   const open = async () => {
     const store = new VoiceMemoryStore(path.join(directory, "records"));
     await store.initialize();
     const service = new AiVoiceMemoryService(
-      { getActiveAsrModel: () => "fun-asr-nano-2512", getTaskCheckpoint: () => undefined } as never,
+      {
+        getActiveAsrModel: () => "fun-asr-nano-2512",
+        getTaskCheckpoint: () => undefined,
+        onStatus: () => () => {},
+      } as never,
       { validateInputFile: async () => undefined, releaseAsr: () => undefined } as never,
       {
         usesLocalOrganizer: () => false,
@@ -49,6 +55,7 @@ const fixture = async () => {
         },
         generateJsonWithMetrics: async () => {
           state.textCalls++;
+          if (state.failText) throw new Error("cloud_ai_provider_unavailable");
           if (!state.textReady) throw new Error("custom_ai_not_configured");
           return {
             value: { description: "合成测试文字。", summary: [{ text: "只使用合成夹具。" }] },
@@ -56,7 +63,9 @@ const fixture = async () => {
         },
       } as never,
       store,
-      undefined,
+      async (payload) => {
+        if (payload.level === "error") failures.push(JSON.stringify(payload));
+      },
       () => true,
       {
         status: async () => ({ cloudConfigured: state.asrReady }),
@@ -70,6 +79,12 @@ const fixture = async () => {
       () => state.organizeEnabled,
     );
     services.push(service);
+    const process = service.process.bind(service);
+    service.process = (request) =>
+      process(request).catch((error) => {
+        failures.push(String(error));
+        throw error;
+      });
     return {
       store,
       service,
@@ -86,6 +101,7 @@ const fixture = async () => {
   };
   return {
     state,
+    failures,
     open,
     request,
     close: async () => {
@@ -95,7 +111,7 @@ const fixture = async () => {
   };
 };
 
-test("transient ASR recovery survives restart, waits for its deadline and stops after two rounds", async () => {
+test("transient ASR recovery survives restart and backs off without requiring a manual retry", async () => {
   const f = await fixture();
   try {
     f.state.asrReady = true;
@@ -118,15 +134,20 @@ test("transient ASR recovery survives restart, waits for its deadline and stops 
       await restored.retry();
     }
     const exhausted = (await restored.store.get("synthetic"))!;
-    assert.equal(exhausted.phase, "error");
+    assert.equal(exhausted.phase, "paused", f.failures.join("\n"));
     assert.equal(exhausted.remoteTranscriptionRetry?.attempts, 2);
     const failedCalls = f.state.asrCalls;
     await restored.retry();
     assert.equal(f.state.asrCalls, failedCalls);
     f.state.failAsr = false;
-    const completed = await restored.service.process({ ...f.request, manual: true });
-    assert.equal(completed.phase, "ready");
-    assert.equal(completed.remoteTranscriptionRetry, undefined);
+    await restored.store.save({
+      ...exhausted,
+      remoteTranscriptionRetry: { attempts: 2, nextAttemptAt: 0 },
+    });
+    await restored.retry();
+    const completed = await restored.store.get("synthetic");
+    assert.equal(completed?.phase, "ready");
+    assert.equal(completed?.remoteTranscriptionRetry, undefined);
   } finally {
     await f.close();
   }
@@ -203,7 +224,7 @@ test("the accepted automatic request retains organization consent before the tra
     const first = await f.open();
     const deferred = new Promise<void>((resolve) => {
       const off = first.service.onStatus((record) => {
-        if (record.errorMessage === "deferred:cloud_asr_key_required") {
+        if (record.errorMessage === "deferred:cloud_asr_not_configured") {
           off();
           resolve();
         }
@@ -277,6 +298,62 @@ test("missing text configuration waits without spending attempts and resumes wit
     assert.equal(completed?.organization?.status, "completed");
     assert.equal(f.state.asrCalls, 1, "durable completed ASR is not uploaded again");
     assert.ok(f.state.textCalls > 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("cloud summary failures automatically resume saved text after repeated outages without reuploading audio", async () => {
+  const f = await fixture();
+  try {
+    f.state.asrReady = f.state.textReady = f.state.failText = true;
+    const current = await f.open();
+    let record = await current.service.process({ ...f.request, organize: true });
+    for (let round = 0; round < 4; round++) {
+      assert.equal(record.errorMessage, "deferred:cloud_asr_http_503");
+      assert.equal(record.phase, "paused");
+      assert.ok(record.transcript.length);
+      await current.store.save({
+        ...record,
+        remoteTranscriptionRetry: { attempts: Math.min(2, round + 1), nextAttemptAt: 0 },
+      });
+      if (round === 3) f.state.failText = false;
+      await current.retry();
+      record = (await current.store.get("synthetic"))!;
+    }
+    assert.equal(record.organization?.status, "completed");
+    assert.equal(record.taskStatus, "success");
+    assert.equal(f.state.asrCalls, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("startup resumes interrupted jobs but leaves explicit pauses alone", async () => {
+  const f = await fixture();
+  try {
+    const current = await f.open();
+    const waiting = await current.service.process(f.request);
+    await current.store.save({ ...waiting, phase: "transcribing", errorMessage: undefined });
+    await current.store.save({
+      ...waiting,
+      recordingId: "explicit-pause",
+      phase: "paused",
+      errorMessage: undefined,
+      remoteTranscriptionRetry: { attempts: 4, nextAttemptAt: 12345 },
+    });
+    await current.service.initialize();
+    assert.equal((await current.store.get("synthetic"))?.errorMessage, "deferred:app_restarted");
+    assert.equal((await current.store.get("explicit-pause"))?.errorMessage, undefined);
+    assert.equal(
+      (await current.store.get("explicit-pause"))?.remoteTranscriptionRetry?.attempts,
+      2,
+    );
+    f.state.asrReady = true;
+    await current.retry();
+    assert.equal((await current.store.get("synthetic"))?.phase, "ready");
+    assert.equal((await current.store.get("explicit-pause"))?.phase, "paused");
+    assert.equal(f.state.asrCalls, 1);
   } finally {
     await f.close();
   }

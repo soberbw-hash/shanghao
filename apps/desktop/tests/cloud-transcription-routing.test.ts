@@ -515,7 +515,12 @@ test("automatic recordings await missing provider credentials without uploading 
       const result = await f.service.process({ ...f.request, manual: false });
       assert.equal(result.phase, "paused");
       assert.equal(result.taskStatus, "pending");
-      assert.match(result.errorMessage ?? "", /^deferred:(cloud|custom)_asr_key_required$/);
+      assert.equal(
+        result.errorMessage,
+        provider === "cloud"
+          ? "deferred:cloud_asr_not_configured"
+          : "deferred:custom_asr_key_required",
+      );
       assert.equal(f.calls(), 0);
     } finally {
       f.service.stop();

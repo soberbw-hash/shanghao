@@ -115,7 +115,7 @@ const isRemoteState = (record: Partial<VoiceMemoryRecord>): boolean => {
     (!isObject(retry) ||
       !Number.isSafeInteger(retry.attempts) ||
       retry.attempts < 0 ||
-      retry.attempts > 2 ||
+      retry.attempts > 8 ||
       (retry.nextAttemptAt !== undefined &&
         (!isFiniteNumber(retry.nextAttemptAt) || retry.nextAttemptAt < 0)))
   )

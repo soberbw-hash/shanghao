@@ -167,6 +167,7 @@
   "apps/desktop/src/renderer/src/features/screen-share/useScreenSourcePicker.ts": 90,
   "apps/desktop/src/renderer/src/components/room/ScreenSourcePicker.tsx": 290,
   "apps/desktop/src/renderer/src/styles/parts/216-game-identity.css": 35,
+  "apps/desktop/src/renderer/src/styles/parts/217-league-lobby.css": 48,
   "apps/desktop/src/renderer/src/styles/parts/220-screen-source-picker.css": 450,
   "apps/desktop/src/renderer/src/styles/parts/221-ai-mascot.css": 194,
   "apps/desktop/src/renderer/src/styles/parts/177-ai-model-provider-panels.css": 130,

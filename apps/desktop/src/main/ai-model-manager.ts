@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
+import { requestBaselineAsr, restoreModelDownload } from "./baseline-asr-ownership";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, statfs, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -73,6 +74,7 @@ interface PersistedModelState {
 }
 
 interface PersistedAiState {
+  baselineAsrRequested?: boolean;
   models: Partial<Record<AiModelId, PersistedModelState>>;
   taskCheckpoints: Record<string, AiTaskCheckpoint>;
 }
@@ -499,26 +501,8 @@ export class AiModelManager {
     const revisionUpdates: AiModelId[] = [];
     for (const definition of MODEL_DEFINITIONS) {
       const model = this.persisted.models[definition.id];
-      if (
-        model?.phase === "queued" ||
-        model?.phase === "checking" ||
-        model?.phase === "downloading" ||
-        model?.phase === "verifying" ||
-        model?.phase === "preparing"
-      ) {
-        model.phase = "paused";
-        interruptedDownloads.push(definition.id);
-      }
-      if (
-        model?.userInstalled &&
-        !model.activeRevision &&
-        (model.phase !== "error" ||
-          model.failureKind !== "integrity" ||
-          (Boolean(model.totalBytes) && model.downloadedBytes === model.totalBytes)) &&
-        !interruptedDownloads.includes(definition.id)
-      ) {
+      if (restoreModelDownload(model, definition.id, interruptedDownloads))
         missingOptInDownloads.push(definition.id);
-      }
       if (
         model?.userInstalled &&
         model.activeRevision &&
@@ -575,6 +559,17 @@ export class AiModelManager {
     ) => Promise<{ ready: boolean; message?: string }>,
   ): void {
     this.runtimePreparer = preparer;
+  }
+
+  requestBaselineAsr(): Promise<boolean> {
+    return requestBaselineAsr(
+      this.stateLoaded,
+      this.persisted,
+      this.ensureModelState.bind(this),
+      () => this.persist(),
+      (id) => this.startDownload(id, false),
+      modelDefinition("qwen3-asr-0.6b-force").dependencies ?? [],
+    );
   }
 
   updateRuntimePressure(pressure: AiRuntimePressure): void {
@@ -1366,11 +1361,14 @@ export class AiModelManager {
       ) ||
       Object.values(parsed.taskCheckpoints ?? {}).some(
         (checkpoint) => !checkpoint || typeof checkpoint !== "object" || Array.isArray(checkpoint),
-      )
+      ) ||
+      (parsed.baselineAsrRequested !== undefined &&
+        typeof parsed.baselineAsrRequested !== "boolean")
     ) {
       throw new Error("ai_model_state_invalid");
     }
     return {
+      baselineAsrRequested: parsed.baselineAsrRequested,
       models: parsed.models ?? {},
       taskCheckpoints: parsed.taskCheckpoints ?? {},
     };

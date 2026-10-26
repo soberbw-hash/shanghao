@@ -21,6 +21,7 @@ const modes: Record<number, LeagueMode> = {
   420: "排位赛",
   440: "灵活排位",
   450: "大乱斗",
+  2400: "大乱斗", // CN KIWI / ARAM Mayhem; retain the mode understood by older relays.
   900: "无限火力",
   1900: "无限火力",
   400: "匹配赛",
@@ -83,6 +84,7 @@ export function resolveLeagueActivity(
         : (
             {
               ARAM: "大乱斗",
+              KIWI: "大乱斗",
               URF: "无限火力",
               ARURF: "无限火力",
               CHERRY: "斗魂竞技场",
@@ -92,7 +94,7 @@ export function resolveLeagueActivity(
           )[rawMode];
   const result: GameSessionActivity = { source: "league", phase, ...(mode ? { mode } : {}) };
   if (
-    phase === "lobby" &&
+    ["lobby", "matchmaking", "ready-check"].includes(phase) &&
     Array.isArray(lobby.members) &&
     lobby.members.length > 0 &&
     lobby.members.length <= 16
@@ -137,7 +139,9 @@ async function sampleLeagueActivity(
   const phase = await readLeagueEndpoint("/lol-gameflow/v1/gameflow-phase", signal, connection);
   if (signal.aborted) return {};
   const [lobby, session, live] = await Promise.all([
-    phase === "Lobby" ? readLeagueEndpoint("/lol-lobby/v2/lobby", signal, connection) : undefined,
+    ["Lobby", "Matchmaking", "ReadyCheck"].includes(String(phase))
+      ? readLeagueEndpoint("/lol-lobby/v2/lobby", signal, connection)
+      : undefined,
     ["Matchmaking", "ChampSelect", "ReadyCheck", "GameStart", "InProgress"].includes(String(phase))
       ? readLeagueEndpoint("/lol-gameflow/v1/session", signal, connection)
       : undefined,

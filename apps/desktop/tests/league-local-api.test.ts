@@ -5,12 +5,31 @@ import { once } from "node:events";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { createLanCertificate } from "../src/main/temporary-lan-certificate";
 import {
   clearLeagueConnectionCache,
   leagueConnection,
   readLeagueEndpoint,
+  LEAGUE_COMMAND_LINE_QUERY,
 } from "../src/main/league-client-api";
+
+test(
+  "Windows client discovery preserves JSON and credentials in Chinese installation paths",
+  { skip: process.platform !== "win32" },
+  () => {
+    const commandLine =
+      '"C:\\WeGameApps\\英雄联盟（含经典模式）\\LeagueClient\\LeagueClientUx.exe" "--app-port=12345" "--remoting-auth-token=synthetic-local-only"';
+    const fixture = `function Get-CimInstance { [pscustomobject]@{ProcessId=42;CommandLine=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${Buffer.from(commandLine).toString("base64")}'))} }; `;
+    const output = execFileSync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", fixture + LEAGUE_COMMAND_LINE_QUERY],
+      { encoding: "utf8", windowsHide: true, timeout: 10000 },
+    );
+    const parsed = JSON.parse(output);
+    assert.equal(parsed.CommandLine, commandLine);
+  },
+);
 
 test(
   "turning detection off discards a late command-line credential lookup",

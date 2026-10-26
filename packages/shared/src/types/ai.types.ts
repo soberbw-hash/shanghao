@@ -72,6 +72,8 @@ export interface AiTranscriptionProviderInput {
 }
 
 export interface AiTranscriptionProviderStatus {
+  cloudErrorCode?: string;
+  customConfigUnreadable?: boolean;
   cloudConfigured: boolean;
   customConfigured: boolean;
   customBaseUrl?: string;

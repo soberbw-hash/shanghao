@@ -1,7 +1,8 @@
 import { Gamepad2 } from "lucide-react";
 import { gameScreenshotCatalog } from "./GameScreenshotCatalog";
+import { hasLeagueLobbyParty, LeagueLobbyMonitor } from "./LeagueLobbyMonitor";
 
-import type { GameDetectionSnapshot } from "@private-voice/shared";
+import type { GameDetectionSnapshot, GameSessionActivity } from "@private-voice/shared";
 
 import { normalizePresenceGameIconDataUrl } from "../../features/room/presenceSignal";
 
@@ -84,14 +85,17 @@ export const gameArtworkCatalog: Partial<Record<SupportedGameName, GameArtwork>>
 export const GameMonitorContent = ({
   gameName,
   iconDataUrl,
+  gameSession,
 }: {
   gameName: string;
   iconDataUrl?: string;
+  gameSession?: GameSessionActivity;
   shouldReduceMotion?: boolean;
 }) => {
   const artwork = gameArtworkCatalog[gameName as SupportedGameName];
   const screenshot = gameScreenshotCatalog[gameName];
   const runtimeIconDataUrl = normalizePresenceGameIconDataUrl(gameName, iconDataUrl);
+  const showLobby = gameName === "英雄联盟" && hasLeagueLobbyParty(gameSession);
   const identityArtwork =
     runtimeIconDataUrl || (artwork?.layout !== "scene" ? artwork?.src : undefined);
   return (
@@ -100,15 +104,19 @@ export const GameMonitorContent = ({
       aria-label={`正在玩 ${gameName}`}
       title={gameName}
     >
-      {screenshot && (
-        <img
-          className="scene-game-screenshot"
-          src={screenshot.src}
-          alt=""
-          aria-hidden="true"
-          draggable={false}
-          style={{ objectPosition: screenshot.position }}
-        />
+      {showLobby ? (
+        <LeagueLobbyMonitor session={gameSession} />
+      ) : (
+        screenshot && (
+          <img
+            className="scene-game-screenshot"
+            src={screenshot.src}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            style={{ objectPosition: screenshot.position }}
+          />
+        )
       )}
       <span className="scene-game-identity">
         {identityArtwork ? (

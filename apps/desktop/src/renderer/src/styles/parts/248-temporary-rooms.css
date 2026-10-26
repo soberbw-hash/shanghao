@@ -4,12 +4,19 @@
   padding-top: 14px;
   color: #405572;
 }
-.temporary-entry > summary {
+.temporary-entry-trigger {
   display: flex;
   gap: 8px;
   align-items: center;
   cursor: pointer;
   font-size: 14px;
+  width: 100%;
+  padding: 5px 0;
+}
+.temporary-entry-trigger > span {
+  margin-left: auto;
+  color: #7a8ba2;
+  font-size: 12px;
 }
 .temporary-entry-body {
   display: grid;
@@ -32,7 +39,7 @@
   font-size: 14px;
 }
 .temporary-entry input:focus-visible,
-.temporary-room-controls summary:focus-visible {
+.temporary-management-trigger:focus-visible {
   outline: 2px solid #4b98eb;
   outline-offset: 2px;
 }
@@ -67,7 +74,8 @@
   font-size: 12px;
   color: #5d7593;
 }
-.temporary-room-controls > summary {
+.temporary-management-trigger,
+.temporary-room-code {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -76,48 +84,4 @@
   border-radius: 9px;
   padding: 5px 8px;
   white-space: nowrap;
-}
-.temporary-management-body {
-  position: absolute;
-  z-index: 100;
-  top: 36px;
-  left: 0;
-  width: min(290px, 75vw);
-  padding: 16px;
-  border: 1px solid #cfdded;
-  border-radius: 16px;
-  background: #f8fcff;
-  box-shadow: 0 12px 35px #304d7224;
-  display: grid;
-  gap: 12px;
-}
-.temporary-management-body ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 8px;
-}
-.temporary-management-body li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.temporary-management-actions {
-  display: flex;
-  gap: 8px;
-}
-.temporary-management-body button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 30px;
-  padding: 5px 8px;
-  border: 1px solid #d3e1ef;
-  border-radius: 8px;
-  background: white;
-}
-.temporary-management-body button:disabled {
-  opacity: 0.5;
 }

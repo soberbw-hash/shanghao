@@ -51,6 +51,7 @@ import { answerGlobalVoiceQuestion } from "./voice-memory-global-question";
 import { VoiceMemoryOrganizer } from "./voice-memory-organizer";
 import {
   automaticOrganizationConsent,
+  needsAutomaticCloudAssist,
   canAutomaticallySummarize,
   ownsAutomaticSummary,
   deferredVoiceMemoryRequest,
@@ -65,6 +66,9 @@ import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
 import { queueUntranscribedRecordings, type BacklogRecording } from "./automatic-recording-backlog";
 import {
   planAutomaticRecordingRecovery,
+  automaticCloudFailure,
+  recoverAutomaticOrganization,
+  recoverInterruptedRecording,
   retryDeferredRecordings,
 } from "./automatic-recording-recovery";
 
@@ -151,6 +155,13 @@ export class AiVoiceMemoryService {
     if (this.stopped) return;
     await this.store.initialize();
     const records = await this.store.list();
+    for (const [index, record] of records.entries()) {
+      if ((record.remoteTranscriptionRetry?.attempts ?? 0) > 2)
+        records[index] = await this.save({
+          ...record,
+          remoteTranscriptionRetry: { ...record.remoteTranscriptionRetry!, attempts: 2 },
+        });
+    }
     this.lastTask = records
       .filter((record) => record.diagnostic)
       .sort((left, right) =>
@@ -180,55 +191,9 @@ export class AiVoiceMemoryService {
         recordingIds: recoverableFfmpegFailures.map((record) => record.recordingId),
       });
     }
-    const interrupted = records.filter(
-      (record) =>
-        record.phase === "transcribing" ||
-        record.phase === "organizing" ||
-        record.transcriptionUnits?.some((unit) => unit.status === "running") ||
-        record.organization?.status === "running" ||
-        record.organization?.chunks.some((chunk) => chunk.status === "running"),
-    );
-    for (const record of interrupted) {
-      await this.save({
-        ...record,
-        transcriptionUnits: record.transcriptionUnits?.map((unit) =>
-          unit.status === "running"
-            ? {
-                ...unit,
-                status: "pending",
-                stage: undefined,
-                heartbeatAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              }
-            : unit,
-        ),
-        organization: record.organization
-          ? {
-              ...record.organization,
-              status: record.organization.status === "completed" ? "completed" : "paused",
-              chunks: record.organization.chunks.map((chunk) =>
-                chunk.status === "running"
-                  ? { ...chunk, status: "pending", updatedAt: new Date().toISOString() }
-                  : chunk,
-              ),
-              metrics: record.organization.metrics
-                ? { ...record.organization.metrics, interrupted: true }
-                : record.organization.metrics,
-              updatedAt: new Date().toISOString(),
-            }
-          : undefined,
-        phase: "paused",
-        taskStatus: "pending",
-        diagnostic: record.diagnostic
-          ? {
-              ...record.diagnostic,
-              status: "pending",
-              updatedAt: new Date().toISOString(),
-              errorMessage: undefined,
-            }
-          : undefined,
-        errorMessage: undefined,
-      });
+    for (const record of records) {
+      const recovered = recoverInterruptedRecording(record);
+      if (recovered) await this.save(recovered);
     }
     if (this.stopped) return;
     this.unsubscribeModelStatus?.();
@@ -564,7 +529,13 @@ export class AiVoiceMemoryService {
       }
     }
     const previousRecord = await this.store.get(request.recordingId);
-    if (historical && request.transcribe !== false && previousRecord?.transcript.length)
+    if (
+      historical &&
+      request.transcribe !== false &&
+      previousRecord?.transcript.length &&
+      isTranscriptionExecutionComplete(previousRecord) &&
+      !needsAutomaticCloudAssist(previousRecord, this.automaticAssistModel())
+    )
       return previousRecord;
     const previous = previousRecord ? this.withTranscriptionModel(previousRecord) : undefined;
     const taskId = request.taskId ?? createTaskId(request.recordingId);
@@ -730,6 +701,7 @@ export class AiVoiceMemoryService {
       recordings,
       organize && this.isAutomaticOrganizationEnabled(),
       {
+        assistModel: () => this.automaticAssistModel(),
         enabled: () => !this.stopped && this.isAutomaticTranscriptionEnabled(),
         get: (id) => this.store.get(id),
         pending: (id) => this.pendingProcesses.has(id),
@@ -773,6 +745,19 @@ export class AiVoiceMemoryService {
     } else {
       void transcription.catch(() => undefined);
     }
+  }
+
+  private automaticAssistModel() {
+    if (this.getTranscriptionProvider() !== "cloud" || !this.isCloudLocalAssistEnabled()) return;
+    const id = this.getCloudLocalAsrModel();
+    return {
+      id,
+      ready: this.models
+        .getSnapshot()
+        .models.some(
+          (model) => model.id === id && Boolean(model.activeRevision && model.runtimeReady),
+        ),
+    };
   }
 
   private async processNow(request: VoiceMemoryProcessRequest): Promise<VoiceMemoryRecord> {
@@ -944,6 +929,13 @@ export class AiVoiceMemoryService {
           organizationError = error instanceof Error ? error.message : String(error);
           if (isVoiceMemoryOwnershipError(error)) throw error;
           if (!request.manual && organizationError === "custom_ai_not_configured") throw error;
+          if (
+            !request.manual &&
+            /^(?:cloud_asr_(?:http_(?:408|429|5\d\d)|network_error|timeout)|cloud_ai_(?:busy|provider_unavailable|not_configured))$/.test(
+              organizationError,
+            )
+          )
+            throw error;
           // Preserve the durable attempts/failure state saved inside organize before it threw.
           record = await this.requireRecord(record.recordingId, true);
           this.log("warn", "Voice memory organization failed; transcript retained", {
@@ -959,6 +951,8 @@ export class AiVoiceMemoryService {
         progress: 100,
         taskId,
         taskStatus: organizationError || partialTranscription ? "failed" : "success",
+        remoteTranscriptionRetry:
+          organizationError || partialTranscription ? record.remoteTranscriptionRetry : undefined,
         processingStage: organizationError ? "organize" : "storage",
         diagnostic: this.createDiagnostic(
           request,
@@ -987,7 +981,7 @@ export class AiVoiceMemoryService {
       return record;
     } catch (error) {
       const paused = controller.signal.aborted || (error as Error).message === "ai_task_paused";
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = automaticCloudFailure(error instanceof Error ? error.message : String(error));
       if (isVoiceMemoryOwnershipError(error)) throw error;
       const requiresManual =
         !request.manual && reason === "automatic_long_recording_requires_manual";
@@ -1003,7 +997,8 @@ export class AiVoiceMemoryService {
         paused: paused || requiresManual,
         enabled: this.isAutomaticTranscriptionEnabled(),
       });
-      const deferred = recovery.deferred;
+      const deferred =
+        recovery.deferred || (paused && this.stopped && this.isAutomaticTranscriptionEnabled());
       const interruptedStats =
         currentStage !== "organize" && durableRecord.transcriptionStats
           ? {
@@ -1015,6 +1010,7 @@ export class AiVoiceMemoryService {
       record = await this.save({
         ...durableRecord,
         remoteTranscriptionRetry: recovery.retry,
+        ...recoverAutomaticOrganization(durableRecord, reason, deferred),
         transcriptionStats: interruptedStats,
         taskId,
         taskStatus: paused || deferred || requiresManual ? "pending" : "failed",
@@ -1029,7 +1025,7 @@ export class AiVoiceMemoryService {
         errorMessage: requiresManual
           ? "manual_required:long_recording"
           : deferred
-            ? `deferred:${reason}`
+            ? `deferred:${this.stopped && paused ? "app_restarted" : reason}`
             : paused
               ? undefined
               : reason,
@@ -1297,7 +1293,7 @@ export class AiVoiceMemoryService {
         },
       };
     }
-    if (!manual && !canAutomaticallyTranscribeDuration(totalDuration)) {
+    if (!manual && !forceLocal && !canAutomaticallyTranscribeDuration(totalDuration)) {
       throw new Error("automatic_long_recording_requires_manual");
     }
     const { knownSpeakerSegments, resumeParticipantSources, speechSources } =

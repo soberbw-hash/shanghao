@@ -63,10 +63,10 @@ export function gameSessionLabel(session: GameSessionActivity, now = Date.now())
     ? ` · ${session.partySize}${session.partyCapacity ? `/${session.partyCapacity}` : "人"}`
     : "";
   if (session.phase === "client") return "客户端中";
-  if (session.phase === "lobby") return `房间中${party}`;
+  if (session.phase === "lobby") return `${session.mode ? `${session.mode} · ` : ""}房间中${party}`;
   if (session.phase === "creating") return "正在创建房间";
-  if (session.phase === "matchmaking") return `${session.mode ?? "匹配"} · 排队中`;
-  if (session.phase === "ready-check") return "已找到对局 · 等待确认";
+  if (session.phase === "matchmaking") return `${session.mode ?? "匹配"} · 排队中${party}`;
+  if (session.phase === "ready-check") return `已找到对局 · 等待确认${party}`;
   if (session.phase === "champ-select") return `${session.mode ?? "对局"} · 选择英雄中`;
   if (session.phase === "loading") return `${session.mode ?? "对局"} · 加载中`;
   if (session.phase === "reconnecting") return "正在重连对局";

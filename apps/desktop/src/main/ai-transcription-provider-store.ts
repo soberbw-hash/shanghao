@@ -6,6 +6,7 @@ import path from "node:path";
 import { app, safeStorage } from "electron";
 import { readBoundedProviderFile, recoverAndMigrateProvider } from "./provider-encryption-recovery";
 import { readAiProviderResponse } from "./ai-provider-response";
+import type { BuiltInAiClient } from "./built-in-ai-client";
 
 import type {
   AiTranscriptionProvider,
@@ -79,17 +80,31 @@ export class AiTranscriptionProviderStore {
       String(input) === `${CLOUD_BASE_URL}/audio/transcriptions`
         ? fetch(input, init)
         : fetchPublicUrl(String(input), init, "custom_asr_private_host_not_allowed"),
+    private readonly builtIn?: BuiltInAiClient,
   ) {
     this.filePath = path.join(userDataDirectory, "ai", "transcription-provider.enc");
   }
 
   async status(): Promise<AiTranscriptionProviderStatus> {
-    const config = await this.read();
+    let config: StoredTranscriptionProvider | undefined;
+    let customConfigUnreadable = false;
+    try {
+      config = await this.read();
+    } catch (error) {
+      if (!this.builtIn) throw error;
+      customConfigUnreadable = true;
+    }
+    const builtIn = this.builtIn ? await this.builtIn.status() : undefined;
     return {
-      cloudConfigured: Boolean(config?.cloudApiKey),
-      customConfigured: Boolean(config?.custom),
-      customBaseUrl: config?.custom?.baseUrl,
-      customModel: config?.custom?.model,
+      cloudConfigured: builtIn ? builtIn.transcriptionConfigured : Boolean(config?.cloudApiKey),
+      ...(builtIn?.errorCode ? { cloudErrorCode: builtIn.errorCode } : {}),
+      customConfigured: Boolean(config?.custom || (this.builtIn && config?.cloudApiKey)),
+      customBaseUrl:
+        config?.custom?.baseUrl ??
+        (this.builtIn && config?.cloudApiKey ? CLOUD_BASE_URL : undefined),
+      customModel:
+        config?.custom?.model ?? (this.builtIn && config?.cloudApiKey ? CLOUD_MODEL : undefined),
+      ...(customConfigUnreadable ? { customConfigUnreadable: true } : {}),
     };
   }
 
@@ -111,7 +126,9 @@ export class AiTranscriptionProviderStore {
       const retainedKey =
         previous?.custom && new URL(previous.custom.baseUrl).origin === new URL(baseUrl).origin
           ? previous.custom.apiKey
-          : undefined;
+          : this.builtIn && new URL(baseUrl).origin === new URL(CLOUD_BASE_URL).origin
+            ? previous?.cloudApiKey
+            : undefined;
       const apiKey = input.apiKey?.trim() || retainedKey;
       if (!apiKey || apiKey.length > 512) throw new Error("custom_asr_key_required");
       next.custom = { baseUrl, model, apiKey };
@@ -131,7 +148,10 @@ export class AiTranscriptionProviderStore {
   async clear(provider: "cloud" | "custom"): Promise<AiTranscriptionProviderStatus> {
     const current = (await this.read()) ?? {};
     if (provider === "cloud") delete current.cloudApiKey;
-    else delete current.custom;
+    else {
+      delete current.custom;
+      if (this.builtIn) delete current.cloudApiKey;
+    }
     if (!current.cloudApiKey && !current.custom) {
       await rm(this.filePath, { force: true });
       return this.status();
@@ -159,10 +179,17 @@ export class AiTranscriptionProviderStore {
     if (fileStats.size <= 0 || fileStats.size > MAX_AUDIO_BYTES) {
       throw new Error("cloud_asr_file_size_limit");
     }
+    if (provider === "cloud" && this.builtIn)
+      return this.builtIn.transcribe(filePath, durationMs, signal);
     const config = await this.read();
-    const baseUrl = provider === "cloud" ? CLOUD_BASE_URL : config?.custom?.baseUrl;
-    const model = provider === "cloud" ? CLOUD_MODEL : config?.custom?.model;
-    const apiKey = provider === "cloud" ? config?.cloudApiKey : config?.custom?.apiKey;
+    const custom =
+      config?.custom ??
+      (this.builtIn && config?.cloudApiKey
+        ? { baseUrl: CLOUD_BASE_URL, model: CLOUD_MODEL, apiKey: config.cloudApiKey }
+        : undefined);
+    const baseUrl = provider === "cloud" ? CLOUD_BASE_URL : custom?.baseUrl;
+    const model = provider === "cloud" ? CLOUD_MODEL : custom?.model;
+    const apiKey = provider === "cloud" ? config?.cloudApiKey : custom?.apiKey;
     if (!baseUrl || !model || !apiKey) throw new Error(`${provider}_asr_not_configured`);
     if (provider === "custom") await validatePublicHost(baseUrl);
 

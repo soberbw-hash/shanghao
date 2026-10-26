@@ -14,7 +14,7 @@ test("comparison failures explain recovery without relying on a disabled tab too
     formatModelComparisonError(new Error("remote_asr_model_comparison_not_supported")),
     /重新.*测试/,
   );
-  assert.match(formatModelComparisonError(new Error("cloud_asr_http_402")), /余额不足/);
+  assert.match(formatModelComparisonError(new Error("cloud_asr_http_402")), /内置云端.*额度/);
   assert.match(formatModelComparisonError(new Error("asr_runtime_fatal")), /修复运行组件/);
   assert.match(formatModelComparisonError(new Error("model_not_downloaded")), /下载/);
 });

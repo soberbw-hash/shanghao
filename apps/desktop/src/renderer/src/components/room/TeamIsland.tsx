@@ -18,7 +18,8 @@ import {
 
 import { getStableAvatarId } from "../../utils/profile";
 import { motionEase } from "../../features/motion/motionSystem";
-import { SceneExitDoor, SceneWallClock } from "./SceneAmbientDecor";
+import { SceneWallClock } from "./SceneAmbientDecor";
+import { SceneWelcomeDoor } from "./SceneWelcomeDoor";
 import { DynamicWeatherWindow } from "./DynamicWeatherWindow";
 import { RoomDateCalendar } from "./RoomDateCalendar";
 import type { RoomCollectionDragPayload } from "../../features/chat/collectionDrag";
@@ -33,7 +34,6 @@ import {
   characterPositions,
   isSeatZone,
   resolveMemberSceneZones,
-  sceneZones,
   seatSlots,
 } from "../../features/voice-scene/sceneZones";
 import { memberStatus } from "../../features/voice-scene/activityRules";
@@ -456,13 +456,10 @@ export const TeamIsland = ({
               <SceneWallClock />
             </div>
           ) : null}
-          <div
-            className={`scene-service-zone scene-service-restroom ${
-              hoveredZone === "restroomZone" ? "is-hovered" : ""
-            } ${localZone === "restroomZone" ? "is-current" : ""}`}
-          >
-            <SceneExitDoor className="scene-exit-door" />
-          </div>
+          <SceneWelcomeDoor
+            memberKeys={[...sceneRenderKeyByMemberId.values()].sort().join("|")}
+            motionEnabled={!shouldPauseVisualMotion}
+          />
           {seatSlots.map((slot, slotIndex) => {
             const occupant = memberBySeat.get(slot.id);
             // Presence publishes the destination immediately. Keep the old desk display stable
@@ -513,6 +510,7 @@ export const TeamIsland = ({
                             <GameMonitorContent
                               gameName={settledOccupant.gameName}
                               iconDataUrl={settledOccupant.gameIconDataUrl}
+                              gameSession={settledOccupant.gameSession}
                               shouldReduceMotion={shouldReduceMotion || shouldPauseAmbientMotion}
                             />
                           ) : (
@@ -563,7 +561,7 @@ export const TeamIsland = ({
         </div>
 
         <div className="pointer-events-none absolute inset-0 z-[18]">
-          {sceneZones.map((zone) => (
+          {seatSlots.map((zone) => (
             <button
               key={zone.id}
               type="button"

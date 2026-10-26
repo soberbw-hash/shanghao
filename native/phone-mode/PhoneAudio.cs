@@ -62,7 +62,7 @@ public class Notifications : INotifications {
     public int OnPropertyValueChanged(string id,PropertyKey key) { return 0; }
 }
 class Command { public long id { get; set; } public bool active { get; set; } public bool inspect { get; set; } public string inputDeviceId { get; set; } public string outputDeviceId { get; set; } }
-class Saved { public string id { get; set; } public bool muted { get; set; } }
+class Saved { public string id { get; set; } public bool muted { get; set; } public string kind { get; set; } public string device { get; set; } }
 class PhoneAudio {
     readonly IDevices devices = (IDevices)new EnumeratorClass();
     readonly JavaScriptSerializer json = new JavaScriptSerializer();
@@ -72,6 +72,7 @@ class PhoneAudio {
     bool ownsAudio;
     bool active;
     readonly bool keepMuted;
+    PhoneRenderSessions renderSessions;
     static Guid context = new Guid("CF533E15-463A-41B1-A64A-B70B7763A7AB");
     PhoneAudio(string path, bool preserveMute) {
         journal = path;
@@ -113,17 +114,27 @@ class PhoneAudio {
         if(ids.Count==0) throw new Exception("没有可用的音频设备");
         return ids.ToList();
     }
+    void TimedEndpointStep(string stage,int target,Action action) {
+        var watch=System.Diagnostics.Stopwatch.StartNew();
+        bool failed=false; int errorCode=0;
+        try { action(); }
+        catch(Exception error) { failed=true; errorCode=Marshal.GetHRForException(error); throw; }
+        finally { if(failed || watch.ElapsedMilliseconds>=50) Console.Error.WriteLine(json.Serialize(new { stage=stage,target=target,elapsedMs=watch.ElapsedMilliseconds,failed=failed,errorCode=errorCode })); }
+    }
     void Mute() {
         Acquire();
-        int failed=0;
+        int failed=0, target=0;
         foreach(string id in Targets()) {
+            target++;
             IDevice device=null; IVolume volume=null;
             try {
-                devices.GetDevice(id,out device);
-                volume=Volume(device);
-                if(!saved.ContainsKey(id)) { bool muted; volume.GetMute(out muted); saved[id]=new Saved { id=id,muted=muted }; Persist(); }
-                volume.SetMute(true,ref context);
-                bool verified; volume.GetMute(out verified);
+                TimedEndpointStep("get_device",target,()=>devices.GetDevice(id,out device));
+                int flow; ((IEndpoint)device).GetDataFlow(out flow);
+                if(flow==0) { TimedEndpointStep("mute_render_sessions",target,()=>renderSessions.Mute(id,device,saved,Persist)); continue; }
+                TimedEndpointStep("activate_volume",target,()=>volume=Volume(device));
+                if(!saved.ContainsKey(id)) { bool muted=false; TimedEndpointStep("read_original",target,()=>volume.GetMute(out muted)); saved[id]=new Saved { id=id,muted=muted }; TimedEndpointStep("persist_original",target,Persist); }
+                TimedEndpointStep("mute",target,()=>volume.SetMute(true,ref context));
+                bool verified=false; TimedEndpointStep("verify_mute",target,()=>volume.GetMute(out verified));
                 if(!verified) throw new Exception("静音回读失败");
             } catch { failed++; }
             finally { if(volume!=null) Marshal.ReleaseComObject(volume); if(device!=null) Marshal.ReleaseComObject(device); }
@@ -135,7 +146,11 @@ class PhoneAudio {
         if(saved.Count>0) Acquire();
         foreach(Saved item in saved.Values.ToArray()) {
             IDevice device=null; IVolume volume=null;
-            try { devices.GetDevice(item.id,out device); volume=Volume(device); volume.SetMute(item.muted,ref context); bool verified; volume.GetMute(out verified); if(verified==item.muted) saved.Remove(item.id); }
+            try {
+                devices.GetDevice(item.kind=="session" ? item.device : item.id,out device);
+                if(item.kind=="session") { if(renderSessions.Restore(item,device)) saved.Remove(item.id); }
+                else { volume=Volume(device); volume.SetMute(item.muted,ref context); bool verified; volume.GetMute(out verified); if(verified==item.muted) saved.Remove(item.id); }
+            }
             catch(COMException) { /* Unplugged endpoints remain in the recovery journal. */ }
             finally { if(volume!=null) Marshal.ReleaseComObject(volume); if(device!=null) Marshal.ReleaseComObject(device); }
         }
@@ -148,7 +163,7 @@ class PhoneAudio {
         var endpoints=new List<object>();
         foreach(string id in Targets()) {
             IDevice device; devices.GetDevice(id,out device); IVolume volume=null;
-            try { volume=Volume(device); bool muted; float level; int flow; ((IEndpoint)device).GetDataFlow(out flow); volume.GetMute(out muted); volume.GetMasterVolumeLevelScalar(out level); endpoints.Add(new { id=id,flow=flow,muted=muted,level=level }); }
+            try { volume=Volume(device); bool muted; float level; int flow; ((IEndpoint)device).GetDataFlow(out flow); volume.GetMute(out muted); volume.GetMasterVolumeLevelScalar(out level); endpoints.Add(new { id=id,flow=flow,muted=muted || (flow==0 && renderSessions.AllMuted(id,device)),level=level }); }
             finally { if(volume!=null) Marshal.ReleaseComObject(volume); Marshal.ReleaseComObject(device); }
         }
         Console.WriteLine(json.Serialize(new { id=requestId,endpoints=endpoints })); Console.Out.Flush();
@@ -157,6 +172,7 @@ class PhoneAudio {
         var queue = new BlockingCollection<string>();
         int deviceEventQueued=0;
         var callback = new Notifications(() => { if(Interlocked.Exchange(ref deviceEventQueued,1)==0) queue.Add("devices"); });
+        renderSessions=new PhoneRenderSessions(() => { if(Interlocked.Exchange(ref deviceEventQueued,1)==0) queue.Add("devices"); });
         devices.RegisterEndpointNotificationCallback(callback);
         new Thread(() => { try { string line; while((line=Console.ReadLine())!=null && line.Length<16384) queue.Add(line); } finally { queue.Add("exit"); } }) { IsBackground=true }.Start();
         try {
@@ -184,6 +200,7 @@ class PhoneAudio {
             // Unexpected parent loss must not expose a private call. A normal
             // exit sends active=false first; the next launch can recover the journal.
             if(!active) Restore();
+            renderSessions.Dispose();
             devices.UnregisterEndpointNotificationCallback(callback); Marshal.ReleaseComObject(devices);
         }
     }

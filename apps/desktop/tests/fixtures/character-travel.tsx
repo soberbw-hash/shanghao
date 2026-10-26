@@ -4,9 +4,9 @@ import { createRoot } from "react-dom/client";
 import { AnimatePresence } from "framer-motion";
 import { MemberSpeakingState, type RoomMember, type SceneZoneId } from "@private-voice/shared";
 import { SceneCharacter } from "../../src/renderer/src/components/room/SceneCharacter";
+import { SceneWelcomeDoor } from "../../src/renderer/src/components/room/SceneWelcomeDoor";
 import { readRenderedScenePosition } from "../../src/renderer/src/features/voice-scene/characterMotionRuntime";
-import "../../src/renderer/src/styles/parts/50-character.css";
-import "../../src/renderer/src/styles/parts/100-scene-weather.css";
+import "../../src/renderer/src/styles/index.css";
 
 const member = {
   id: "test",
@@ -44,7 +44,8 @@ const Harness = () => {
         transformOrigin: "top left",
       }}
     >
-      <style>{`.scene-character-motion { position: absolute; } .room-character-sprite { position: relative; }`}</style>
+      <style>{`.scene-character-motion { position: absolute; } .room-character-sprite { position: relative; } .scene-service-zone {position:absolute;transform:translate(-50%,-50%);}`}</style>
+      <SceneWelcomeDoor memberKeys={present ? "local-member" : ""} motionEnabled={true} />
       <AnimatePresence>
         {present && (
           <SceneCharacter
@@ -94,11 +95,31 @@ const verify = async () => {
       }
     ).travel;
   const settled = (zone: string) => document.body.dataset.settled === zone;
+  const doorOpen = () =>
+    document.querySelector(".scene-welcome-door")?.classList.contains("is-open");
+  await waitFor(() => Boolean(doorOpen()), "door opens for arrival");
+  await waitFor(
+    () =>
+      [...document.querySelectorAll<HTMLImageElement>(".scene-welcome-door img")].every(
+        (image) => image.complete && image.naturalWidth > 0,
+      ),
+    "door image loads",
+  );
+  const doorBounds = document.querySelector(".scene-welcome-door-art")!.getBoundingClientRect();
+  if (doorBounds.width < 40 || doorBounds.height < 80)
+    throw new Error(`door layout: ${JSON.stringify(doorBounds)}`);
+  await waitFor(
+    () =>
+      Number(getComputedStyle(document.querySelector(".scene-welcome-door-hall")!).opacity) > 0.95,
+    "door visually opens",
+  );
+  console.info("DOOR_PREVIEW");
   await waitFor(() => settled("gameDesk1"), "entry");
   const point = api().read();
   if (Math.abs(point.left - 28) > 0.05 || Math.abs(point.top - 38) > 0.05) {
     throw new Error(`scaled position: ${JSON.stringify(point)}`);
   }
+  await waitFor(() => !doorOpen(), "door closes after arrival in StrictMode");
   for (const target of [
     "gameDesk2",
     "restroomZone",
@@ -114,6 +135,7 @@ const verify = async () => {
       api().rerender();
     }
     await waitFor(() => settled(target), `travel ${target}`);
+    if (doorOpen()) throw new Error("seat/status updates reopened the door");
   }
   for (const target of [
     "gameDesk2",
@@ -140,7 +162,9 @@ const verify = async () => {
     "failure recovery",
   );
   api().setPresent(false);
+  await waitFor(() => Boolean(doorOpen()), "door opens for departure");
   await waitFor(() => !document.querySelector(".scene-character-motion"), "exit");
+  await waitFor(() => !doorOpen(), "door closes after departure");
   return {
     elapsedMs: Math.round(performance.now() - startedAt),
     scaledPosition: point,
@@ -148,6 +172,7 @@ const verify = async () => {
     interruptions: 5,
     failureRecovery: true,
     exit: true,
+    welcomeDoor: true,
   };
 };
 void verify().then(

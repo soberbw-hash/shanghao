@@ -1,10 +1,14 @@
 import type {
   AppSettings,
+  AiAsrModelId,
   RecordingLibrarySnapshot,
   VoiceMemoryProcessRequest,
   VoiceMemoryRecord,
 } from "@private-voice/shared";
-import { needsAutomaticPostprocessing } from "./automatic-voice-memory-request";
+import {
+  needsAutomaticCloudAssist,
+  needsAutomaticPostprocessing,
+} from "./automatic-voice-memory-request";
 import { canRecoverLegacyRecording } from "./recording-memory-recovery";
 import {
   canResumeRemoteTranscription,
@@ -41,6 +45,7 @@ export async function queueUntranscribedRecordings(
     reconcile: (recording: BacklogRecording, id: string) => Promise<unknown>;
     start: (request: VoiceMemoryProcessRequest) => Promise<unknown>;
     onError?: () => void;
+    assistModel?: () => { id: AiAsrModelId; ready: boolean } | undefined;
   },
 ) {
   let postprocessingAdmitted = false;
@@ -66,13 +71,14 @@ export async function queueUntranscribedRecordings(
       )
         continue;
       if (record?.transcript.length && !canResumeRemoteTranscription(record)) {
-        if (!postprocessingAdmitted && needsAutomaticPostprocessing(record, organize)) {
+        const assist = needsAutomaticCloudAssist(record, host.assistModel?.());
+        if (!postprocessingAdmitted && (assist || needsAutomaticPostprocessing(record, organize))) {
           await host.start({
             recordingId: id,
             filePath: item.filePath,
             roomId: record.roomId,
             roomName: record.roomName,
-            transcribe: false,
+            transcribe: assist,
             organize: true,
           });
           postprocessingAdmitted = true;
@@ -112,7 +118,10 @@ export function createAutomaticRecordingBacklog(host: {
   let initialized = false,
     requested = false;
   let running: Promise<void> | undefined;
-  const refresh = () => {
+  let catalogRequested = false;
+  let cached: { directory?: string; library: RecordingLibrarySnapshot } | undefined;
+  const refresh = (readCatalog = true) => {
+    catalogRequested ||= readCatalog;
     requested = true;
     if (!initialized || running) return;
     running = Promise.resolve()
@@ -121,7 +130,11 @@ export function createAutomaticRecordingBacklog(host: {
           requested = false;
           const settings = host.settings();
           if (!settings.isAiAutoTranscribeEnabled) continue;
-          const library = await host.read(settings);
+          const needCatalog =
+            catalogRequested || !cached || cached.directory !== settings.recordingSaveDirectory;
+          catalogRequested = false;
+          const library = needCatalog ? await host.read(settings) : cached!.library;
+          cached = { directory: settings.recordingSaveDirectory, library };
           const current = host.settings();
           if (!current.isAiAutoTranscribeEnabled) continue;
           if (current.recordingSaveDirectory !== settings.recordingSaveDirectory) {
@@ -134,11 +147,12 @@ export function createAutomaticRecordingBacklog(host: {
       .catch(host.onError)
       .finally(() => {
         running = undefined;
-        if (requested) refresh();
+        if (requested) refresh(false);
       });
   };
   return {
-    refresh,
+    refresh: () => refresh(),
+    refreshCached: () => refresh(false),
     initialize: () => {
       initialized = true;
       refresh();

@@ -8,13 +8,19 @@ if (process.platform === "win32") {
   mkdirSync(output, { recursive: true });
   for (const name of ["PhoneAudio", "PhoneInput"]) {
     const source = path.join(root, `native/phone-mode/${name}.cs`);
+    const sources = [
+      source,
+      ...(name === "PhoneAudio"
+        ? [path.join(root, "native/phone-mode/PhoneRenderSessions.cs")]
+        : []),
+    ];
     const target = path.join(output, `ShangHao.${name}.exe`);
     // The development app may be using this executable. Rebuilding identical
     // source needlessly tries to overwrite a running helper and blocks packaging.
     const currentBinary =
       existsSync(target) &&
       statSync(target).size > 0 &&
-      statSync(target).mtimeMs >= statSync(source).mtimeMs;
+      sources.every((file) => statSync(target).mtimeMs >= statSync(file).mtimeMs);
     if (currentBinary) {
       continue;
     }
@@ -32,7 +38,7 @@ if (process.platform === "win32") {
         "/r:System.Web.Extensions.dll",
         "/r:System.Windows.Forms.dll",
         `/out:${target}`,
-        source,
+        ...sources,
       ],
       { stdio: "inherit", windowsHide: true },
     );

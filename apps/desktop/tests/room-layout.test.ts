@@ -467,8 +467,9 @@ test("scene seats align with the marked workstation positions", () => {
   assert.equal(dateCalendarSource.includes("FULL_DATE_FORMATTER"), true);
   assert.equal(dateCalendarSource.includes("room-date-calendar-tooltip"), true);
   assert.equal(teamIslandSource.includes("SceneWallClock"), true);
-  assert.equal(teamIslandSource.includes("SceneExitDoor"), true);
-  assert.equal(teamIslandSource.includes('localZone === "restroomZone"'), true);
+  assert.equal(teamIslandSource.includes("SceneWelcomeDoor"), true);
+  assert.equal(teamIslandSource.includes('localZone === "restroomZone"'), false);
+  assert.equal(teamIslandSource.includes("{sceneZones.map"), false);
   assert.equal(teamIslandSource.includes("SceneTallPlant"), false);
   assert.equal(teamIslandSource.includes("SceneLowTable"), false);
   assert.equal(teamIslandSource.includes("scene-wall-backdrop"), true);

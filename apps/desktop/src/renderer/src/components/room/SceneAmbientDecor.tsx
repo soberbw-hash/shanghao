@@ -2,7 +2,6 @@ import { useId, useState } from "react";
 
 import { useVisibleInterval } from "../../hooks/useVisualVisibility";
 import clockAsset from "../../assets/scenes/shanghao-room/clock.png";
-import doorAsset from "../../assets/scenes/shanghao-room/door.png";
 
 export const SceneWindowNook = ({ className = "" }: { className?: string }) => {
   const id = useId().replace(/:/g, "");
@@ -208,10 +207,6 @@ export const SceneWallClock = ({ className = "" }: { className?: string }) => {
     </div>
   );
 };
-
-export const SceneExitDoor = ({ className = "" }: { className?: string }) => (
-  <img src={doorAsset} className={className} alt="" aria-hidden="true" draggable={false} />
-);
 
 export const SceneTallPlant = ({ className = "" }: { className?: string }) => (
   <svg viewBox="0 0 92 172" className={className} aria-hidden="true" focusable="false">

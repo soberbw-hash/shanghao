@@ -13,11 +13,16 @@ const raw = execFileSync(
     "-NoProfile",
     "-NonInteractive",
     "-Command",
-    "Get-Process -Name LeagueClient,LeagueClientUx -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ProcessId=$_.Id;ProcessName=$_.ProcessName;Path=$_.Path} } | ConvertTo-Json -Compress",
+    "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Get-Process -Name LeagueClient,LeagueClientUx -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ProcessId=$_.Id;ProcessName=$_.ProcessName;Path=$_.Path} } | ConvertTo-Json -Compress",
   ],
   { encoding: "utf8", windowsHide: true, timeout: 5000 },
 );
-const parsed = raw.trim() ? JSON.parse(raw) : [];
+let parsed;
+try {
+  parsed = raw.trim() ? JSON.parse(raw) : [];
+} catch {
+  throw new Error("league_probe_invalid_process_json");
+}
 const processes: ProcessSnapshot[] = Array.isArray(parsed) ? parsed : [parsed];
 const connection = await leagueConnection(processes);
 const controller = new AbortController();
@@ -40,8 +45,24 @@ console.log(
   JSON.stringify({
     clientFound: processes.length > 0,
     localApiAvailable: phase !== undefined,
+    connectionAvailable: Boolean(connection),
+    clientsWithPaths: processes.filter((item) => Boolean(item.Path)).length,
     phase: result?.phase,
     status: result ? gameSessionLabel(result) : undefined,
+    partySize: result?.partySize,
+    partyCapacity: result?.partyCapacity,
+    lobbyConfigNumbers:
+      lobby && typeof lobby === "object" && "gameConfig" in lobby
+        ? Object.fromEntries(
+            Object.entries(
+              (lobby as { gameConfig: Record<string, unknown> }).gameConfig ?? {},
+            ).filter(
+              ([key, value]) =>
+                typeof value === "number" ||
+                (typeof value === "string" && /^(gameMode|gameType)$/.test(key)),
+            ),
+          )
+        : undefined,
     source: result?.source,
     playerDataLogged: false,
     gameChanged: false,

@@ -4,7 +4,6 @@ import { GAME_RULES } from "../../apps/desktop/src/main/game-catalog";
 import { GameMonitorContent } from "../../apps/desktop/src/renderer/src/components/room/GameMonitorContent";
 import { RoomDateCalendar } from "../../apps/desktop/src/renderer/src/components/room/RoomDateCalendar";
 import {
-  SceneExitDoor,
   SceneWallClock,
   SceneFloorLamp,
   SceneWallShelf,
@@ -12,6 +11,7 @@ import {
   SceneLowTable,
   SceneWindowNook,
 } from "../../apps/desktop/src/renderer/src/components/room/SceneAmbientDecor";
+import { SceneWelcomeDoor } from "../../apps/desktop/src/renderer/src/components/room/SceneWelcomeDoor";
 import { WorkstationArt } from "../../apps/desktop/src/renderer/src/components/room/WorkstationArt";
 import { DynamicWeatherWindow } from "../../apps/desktop/src/renderer/src/components/room/DynamicWeatherWindow";
 import { useWeatherStore } from "../../apps/desktop/src/renderer/src/features/weather/weatherStore";
@@ -142,7 +142,7 @@ const widgets: Card[] = [
     kind: "当前组件",
     path: base + "assets/scenes/shanghao-room/door.png",
     note: "透明背景原图",
-    content: <SceneExitDoor className="review-door" />,
+    content: <SceneWelcomeDoor memberKeys="" motionEnabled={false} className="review-door" />,
   },
   {
     id: "widget-desk",

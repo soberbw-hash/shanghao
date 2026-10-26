@@ -4,6 +4,7 @@ import {
   type BuiltInAvatarId,
 } from "@private-voice/shared";
 import { getSupportedTurnTransports, getTurnUrls } from "./signaling-ice-config";
+import type { ServerResponse } from "node:http";
 
 /** Public operational read-model. Never include room identities, chat, tickets or credentials. */
 export function buildSignalingHealth(state: {
@@ -48,4 +49,12 @@ export function buildSignalingHealth(state: {
     now: new Date(now).toISOString(),
     serverTime: now,
   };
+}
+
+export function sendSignalingHealth(
+  response: ServerResponse,
+  state: Parameters<typeof buildSignalingHealth>[0],
+): void {
+  response.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify(buildSignalingHealth(state)));
 }

@@ -13,6 +13,7 @@ type Props = {
   src?: string;
   alt?: string;
   onClick?: () => void;
+  onSubmit?: (event: { preventDefault: () => void }) => void;
   onChange?: (event: { target: { value: string } }) => void;
 };
 type Node = { type: string; props: Props };
@@ -126,6 +127,7 @@ function fixture(component: "TemporaryRoomEntry" | "TemporaryAvatarPicker", prop
     },
     "../../features/room/temporaryRoomMessages": { temporaryRoomMessage: String },
     "../base/Button": { Button: "button" },
+    "../base/DialogCloseButton": { DialogCloseButton: "close-button" },
     "./TemporaryAvatarPicker": { TemporaryAvatarPicker: "picker" },
     "../../features/account/prepareAccountAvatar": {
       prepareAccountAvatar: async (source: string) => `data:image/png;base64,${source}`,
@@ -135,6 +137,7 @@ function fixture(component: "TemporaryRoomEntry" | "TemporaryAvatarPicker", prop
     exports: exported,
     window: { desktopApi: { temporaryRooms: api } },
     require: (id: string) => {
+      if (id.endsWith(".css")) return {};
       if (id.endsWith(".svg")) return { default: id };
       if (id in imports) return imports[id];
       throw Error(id);
@@ -182,11 +185,11 @@ test("temporary entry separates server-generated creation from joining an existi
   await settle();
   let tree = f.render();
   assert.ok(!text(tree).includes("免登录"));
-  const code = elements(tree).find(
-    (node) => node.type === "input" && node.props.inputMode === "numeric",
-  )!;
-  assert.match(code.props["aria-label"]!, /加入.*房间码/);
-  code.props.onChange!({ target: { value: "0012 3456" } });
+  assert.ok(
+    !elements(tree).some((node) => node.type === "input"),
+    "entry stays separate from account login",
+  );
+  elements(tree).find((node) => node.type === "button")!.props.onClick!();
   tree = f.render();
   const create = elements(tree).find(
     (node) => node.type === "button" && text(node).includes("创建临时房间"),
@@ -203,6 +206,17 @@ test("temporary entry separates server-generated creation from joining an existi
   )!;
   assert.ok(join && !join.props.disabled);
   await join.props.onClick!();
+  tree = f.render();
+  assert.ok(!text(tree).includes("创建临时房间"));
+  const code = elements(tree).find(
+    (node) => node.type === "input" && node.props.inputMode === "numeric",
+  )!;
+  assert.match(code.props["aria-label"]!, /加入.*房间码/);
+  code.props.onChange!({ target: { value: "0012 3456" } });
+  tree = f.render();
+  elements(tree).find((node) => node.type === "form")!.props.onSubmit!({
+    preventDefault: () => {},
+  });
   await settle();
   assert.deepEqual(f.joined, ["00123456"]);
 });

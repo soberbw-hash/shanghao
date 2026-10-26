@@ -1,0 +1,55 @@
+.scene-welcome-door {
+  pointer-events: none;
+}
+
+.scene-welcome-door-art {
+  position: relative;
+  height: 100%;
+  aspect-ratio: 1084 / 1444;
+  margin: auto;
+  perspective: 500px;
+  filter: brightness(0.9) saturate(0.8);
+}
+
+.scene-welcome-door-art img,
+.scene-welcome-door-hall {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.scene-welcome-door-hall,
+.scene-welcome-door-panel {
+  clip-path: inset(14.5% 25% 9.5% 25% round 45% 45% 0 0);
+}
+
+.scene-welcome-door-hall {
+  background: linear-gradient(145deg, #7b93ae, #d9e5ee 65%, #f7e9cb);
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+.scene-welcome-door-panel {
+  transform-origin: 25% 55%;
+  transition: transform 280ms ease;
+}
+
+.scene-welcome-door.is-open .scene-welcome-door-hall {
+  opacity: 1;
+}
+
+.scene-welcome-door.is-open .scene-welcome-door-panel {
+  transform: rotateY(-72deg);
+}
+
+.is-visual-motion-paused .scene-welcome-door-panel,
+.is-visual-motion-paused .scene-welcome-door-hall {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-welcome-door-art * {
+    transition: none;
+  }
+}

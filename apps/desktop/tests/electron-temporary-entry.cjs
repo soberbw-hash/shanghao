@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* global require, __dirname, console, setTimeout, clearTimeout */
+/* global require, __dirname, console, process, setTimeout, clearTimeout */
 const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs/promises");
@@ -35,11 +35,23 @@ app.whenReady().then(async () => {
       webPreferences: { backgroundThrottling: false },
     });
     view.webContents.setAudioMuted(true);
+    const releaseDirectory =
+      process.env.SHANGHAO_RELEASE_CAPTURE === "1"
+        ? path.resolve(
+            __dirname,
+            "../../../docs/assets/releases",
+            `v${require("../package.json").version}`,
+          )
+        : undefined;
+    if (releaseDirectory) await fs.mkdir(releaseDirectory, { recursive: true });
     await view.loadFile(path.join(output, "tests/fixtures/temporary-entry.html"));
     const evaluate = (script) => view.webContents.executeJavaScript(script);
+    await evaluate(
+      `(async()=>{for(let i=0;i<100;i++){const trigger=document.querySelector('.temporary-entry-trigger');if(trigger){if(document.querySelector('.temporary-entry input'))throw Error('entry leaked into login');trigger.click();return;}await new Promise(r=>setTimeout(r,30));}throw Error('entry missing');})()`,
+    );
     await evaluate(`(async () => {
       for(let i=0;i<100;i++) {
-        if(document.querySelector('.temporary-entry input')?.value==='临时朋友') { document.querySelector('.temporary-entry').open=true;return; }
+        if(document.querySelector('.temporary-entry input')?.value==='临时朋友' && document.querySelector('dialog:modal')) return;
         await new Promise(resolve=>setTimeout(resolve,30));
       } throw Error('profile not restored');
     })()`);
@@ -63,8 +75,13 @@ app.whenReady().then(async () => {
         throw Error(JSON.stringify(result));
       layout.push(result);
     }
-    await evaluate(`document.querySelector('[aria-label="加入已有房间的八位房间码"]').focus()`);
-    await view.webContents.insertText("0012 3456");
+    if (releaseDirectory) {
+      view.setContentSize(700, 650);
+      await fs.writeFile(
+        path.join(releaseDirectory, "temporary-entry.png"),
+        (await view.webContents.capturePage()).toPNG(),
+      );
+    }
     await evaluate(`document.querySelector('[aria-label="选择蜜桃狐"]').click()`);
     const result = await evaluate(`(async () => {
       const wait=async fn=>{for(let i=0;i<150;i++){if(fn())return;await new Promise(resolve=>setTimeout(resolve,20));}throw Error('fixture timeout');};
@@ -74,8 +91,11 @@ app.whenReady().then(async () => {
       await wait(()=>window.temporaryEntryEvidence.created===1);
       await wait(()=>!create.disabled);
       [...document.querySelectorAll('button')].find(button=>button.textContent==='加入房间').click();
+      await wait(()=>document.querySelector('.temporary-join-action'));
+      const input=document.querySelector('[aria-label="加入已有房间的八位房间码"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'0012 3456');input.dispatchEvent(new Event('input',{bubbles:true}));
+      await wait(()=>input.value==='00123456');document.querySelector('form').requestSubmit();
       await wait(()=>window.temporaryEntryEvidence.joined);
-      await wait(()=>!create.disabled);
       const data=window.temporaryEntryEvidence;
       if(data.createdArgs.length||data.joined!=='00123456')throw Error('create/join code confusion');
       if(data.saved.avatarId!=='fox'||!data.saved.avatarDataUrl.startsWith('data:image/png;base64,'))throw Error('portrait not saved compatibly');
@@ -84,11 +104,13 @@ app.whenReady().then(async () => {
     const screenshot = path.join(output, "temporary-entry-360.png");
     view.setContentSize(360, 650);
     await fs.writeFile(screenshot, (await view.webContents.capturePage()).toPNG());
+    if (releaseDirectory)
+      await fs.copyFile(screenshot, path.join(releaseDirectory, "temporary-join.png"));
     await view.loadFile(path.join(output, "tests/fixtures/temporary-entry.html"), {
       search: "?signed=1",
     });
     await evaluate(
-      `(async()=>{for(let i=0;i<100;i++){if(document.querySelector('.temporary-entry input')?.value==='账号朋友'&&document.querySelector('[alt="自定义临时头像"]'))return;await new Promise(resolve=>setTimeout(resolve,30));}throw Error('signed identity not inherited');})()`,
+      `(async()=>{for(let i=0;i<100;i++){const trigger=document.querySelector('.temporary-entry-trigger');if(trigger){trigger.click();break;}await new Promise(r=>setTimeout(r,30));}for(let i=0;i<100;i++){if(document.querySelector('.temporary-entry input')?.value==='账号朋友'&&document.querySelector('[alt="自定义临时头像"]')){document.querySelector('[aria-label="关闭临时联机"]').click();await new Promise(r=>setTimeout(r,30));document.querySelector('.temporary-entry-trigger').click();await new Promise(r=>setTimeout(r,30));if(!document.querySelector('dialog:modal'))throw Error('repeat open failed');return;}await new Promise(resolve=>setTimeout(resolve,30));}throw Error('signed identity not inherited');})()`,
     );
     console.log(JSON.stringify({ layout, ...result, signedIdentityInherited: true, screenshot }));
     clearTimeout(deadline);

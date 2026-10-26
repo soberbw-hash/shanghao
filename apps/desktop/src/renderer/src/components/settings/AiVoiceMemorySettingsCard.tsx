@@ -36,11 +36,7 @@ import { CloudLocalAssistControl } from "./CloudLocalAssistControl";
 import { TranscriptionDataNotice } from "./TranscriptionDataNotice";
 import type { ToastMessage } from "../../store/appStore";
 import { toUserFacingError } from "../../utils/userFacingError";
-import {
-  canReuseTextProviderKey,
-  textModelPreset,
-  type TextModelPreset,
-} from "../../features/ai/textModelPreset";
+import { canReuseTextProviderKey, type TextModelPreset } from "../../features/ai/textModelPreset";
 
 interface AiVoiceMemorySettingsCardProps {
   isActive?: boolean;
@@ -235,10 +231,14 @@ export const AiVoiceMemorySettingsCard = ({
   const [runtimeStatus, setRuntimeStatus] = useState<AiRuntimeStatus>();
   const [customProvider, setCustomProvider] = useState<AiCustomProviderStatus>();
   const [transcriptionStatus, setTranscriptionStatus] = useState<AiTranscriptionProviderStatus>();
+  const [providerReload, setProviderReload] = useState(0);
+  const [textConfigError, setTextConfigError] = useState(false);
+  const [transcriptionConfigState, setTranscriptionConfigState] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
   const [transcriptionBaseUrl, setTranscriptionBaseUrl] = useState("https://api.example.com/v1");
   const [transcriptionModel, setTranscriptionModel] = useState("whisper-1");
   const [transcriptionApiKey, setTranscriptionApiKey] = useState("");
-  const [editingTranscriptionKey, setEditingTranscriptionKey] = useState(false);
   const [savingTranscriptionProvider, setSavingTranscriptionProvider] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customModel, setCustomModel] = useState("");
@@ -273,6 +273,7 @@ export const AiVoiceMemorySettingsCard = ({
   useEffect(() => {
     if (!isActive) return;
     let active = true;
+    setTextConfigError(false);
     void window.desktopApi.ai
       .getCustomProvider()
       .then((status) => {
@@ -281,10 +282,11 @@ export const AiVoiceMemorySettingsCard = ({
         if (textPresetEdited.current) return;
         setCustomBaseUrl(status.baseUrl ?? "https://open.bigmodel.cn/api/paas/v4");
         setCustomModel(status.model ?? "glm-4-flash-250414");
-        setTextPreset(settings.aiOrganizerProvider === "cloud" ? "cloud" : textModelPreset(status));
+        setTextPreset(settings.aiOrganizerProvider === "cloud" ? "cloud" : "custom");
       })
       .catch(() => {
         if (!active) return;
+        setTextConfigError(true);
         pushToast({
           tone: "danger",
           title: "自定义 API 配置无法读取",
@@ -294,24 +296,28 @@ export const AiVoiceMemorySettingsCard = ({
     return () => {
       active = false;
     };
-  }, [isActive, pushToast, settings.aiOrganizerProvider]);
+  }, [isActive, pushToast, settings.aiOrganizerProvider, providerReload]);
 
   useEffect(() => {
     if (!isActive) return;
     let active = true;
+    setTranscriptionConfigState("loading");
     void window.desktopApi.ai
       .getTranscriptionProvider()
       .then((status) => {
         if (!active) return;
         setTranscriptionStatus(status);
+        setTranscriptionConfigState("ready");
         setTranscriptionBaseUrl(status.customBaseUrl ?? "https://api.example.com/v1");
         setTranscriptionModel(status.customModel ?? "whisper-1");
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setTranscriptionConfigState("error");
+      });
     return () => {
       active = false;
     };
-  }, [isActive]);
+  }, [isActive, providerReload]);
 
   const controlModel = async (model: AiModelStatus, action: AiModelAction) => {
     if (action === "delete") {
@@ -377,7 +383,7 @@ export const AiVoiceMemorySettingsCard = ({
           aiRoomAskProvider: "cloud",
           aiTextModelPreset: "cloud",
         });
-        pushToast({ tone: "success", title: "房间云端模型已生效" });
+        pushToast({ tone: "success", title: "内置云端模型已生效" });
         return;
       }
       const status = await window.desktopApi.ai.saveCustomProvider({
@@ -385,7 +391,7 @@ export const AiVoiceMemorySettingsCard = ({
         model: customModel,
         apiKey: customApiKey || undefined,
       });
-      const preset = textModelPreset(status);
+      const preset = "custom";
       await onChange({
         aiOrganizerProvider: "custom",
         aiRoomAskProvider: "custom",
@@ -426,8 +432,8 @@ export const AiVoiceMemorySettingsCard = ({
           : {}),
       });
       setTranscriptionStatus(status);
+      setTranscriptionConfigState("ready");
       setTranscriptionApiKey("");
-      setEditingTranscriptionKey(false);
       pushToast({ tone: "success", title: "转录 API 已安全保存" });
     } catch {
       pushToast({
@@ -561,9 +567,10 @@ export const AiVoiceMemorySettingsCard = ({
   const activeTranscriptionReady =
     transcriptionProvider === "local"
       ? selectedAsrReady
-      : transcriptionProvider === "cloud"
-        ? Boolean(transcriptionStatus?.cloudConfigured)
-        : Boolean(transcriptionStatus?.customConfigured);
+      : transcriptionConfigState === "ready" &&
+        (transcriptionProvider === "cloud"
+          ? Boolean(transcriptionStatus?.cloudConfigured)
+          : Boolean(transcriptionStatus?.customConfigured));
   const installedAsrCount = asrModels.filter((model) => model.activeRevision).length;
   const transcriptionName =
     transcriptionProvider === "cloud"
@@ -573,8 +580,12 @@ export const AiVoiceMemorySettingsCard = ({
         : (selectedAsr?.name ?? "未选择");
   const textModelName =
     settings.aiOrganizerProvider === "custom"
-      ? (customProvider?.model ?? "自定义 API（未配置）")
-      : "房间云端 AI";
+      ? textConfigError
+        ? "配置读取失败"
+        : customProvider
+          ? (customProvider.model ?? "自定义 API（未配置）")
+          : "正在读取配置…"
+      : "内置 GLM-4-Flash";
 
   const chooseAsrModel = (model: AiModelStatus) => {
     if (settings.aiTranscriptionProvider === "local" && model.id === settings.aiAsrModel) return;
@@ -870,9 +881,13 @@ export const AiVoiceMemorySettingsCard = ({
             description={
               activeTranscriptionReady
                 ? undefined
-                : transcriptionProvider === "local"
-                  ? "当前本地转录模型未就绪。"
-                  : "请先配置当前转录 API 密钥。"
+                : transcriptionProvider !== "local" && transcriptionConfigState !== "ready"
+                  ? transcriptionConfigState === "error"
+                    ? "密钥配置暂时无法读取，原文件已保留；可在下方重试读取。"
+                    : "正在读取本机密钥配置…"
+                  : transcriptionProvider === "local"
+                    ? "当前本地转录模型未就绪。"
+                    : "请先配置当前转录 API 密钥。"
             }
           >
             <Switch
@@ -936,7 +951,15 @@ export const AiVoiceMemorySettingsCard = ({
             title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
           >
             <h4>文本整理与问答</h4>
-            <p>录音整理与房间问答共用此模型。当前使用：{textModelName}。</p>
+            <p>只处理文字，用于摘要、融合校对与问答。当前使用：{textModelName}。</p>
+            {textConfigError ? (
+              <p role="alert">
+                本机密钥配置读取失败，原文件已保留。
+                <button type="button" onClick={() => setProviderReload((n) => n + 1)}>
+                  重试读取
+                </button>
+              </p>
+            ) : null}
             <select
               className="ai-processing-select"
               aria-label="文本整理与问答模型"
@@ -947,34 +970,14 @@ export const AiVoiceMemorySettingsCard = ({
                 textPresetEdited.current = true;
                 setTextPreset(value);
                 setCustomApiKey("");
-                if (value !== "cloud") {
-                  const preset =
-                    value === "deepseek"
-                      ? { baseUrl: "https://api.deepseek.com", model: "deepseek-flash" }
-                      : value === "glm"
-                        ? {
-                            baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-                            model: "glm-4-flash-250414",
-                          }
-                        : undefined;
-                  if (preset) {
-                    setCustomBaseUrl(preset.baseUrl);
-                    setCustomModel(preset.model);
-                  }
-                }
               }}
             >
-              <option value="cloud">房间云端</option>
-              <option value="deepseek">DeepSeek V4.1 Flash（10月17日更新）</option>
-              <option value="glm">GLM-4-Flash-250414（免费）</option>
+              <option value="cloud">内置云端 · GLM-4-Flash</option>
               <option value="custom">自定义 API</option>
             </select>
             {textPreset === "cloud" ? (
               <div className="ai-provider-config-note">
-                <p>
-                  正在编辑房间云端模型，保存后同时用于录音整理和房间问答。使用时需进入对应房间；无需填写
-                  API 密钥。
-                </p>
+                <p>开发者提供；登录后自动生成摘要，房间问答使用当前房间的记忆。</p>
                 <Button
                   aria-label="保存文本模型配置"
                   disabled={savingCustomProvider}
@@ -983,7 +986,7 @@ export const AiVoiceMemorySettingsCard = ({
                   保存
                 </Button>
               </div>
-            ) : (
+            ) : customProvider && !textConfigError ? (
               <div className="ai-provider-config-note">
                 <div className="ai-provider-fields">
                   <label className="min-w-0 flex-1 text-sm font-medium text-[#26364d]">
@@ -1057,11 +1060,10 @@ export const AiVoiceMemorySettingsCard = ({
                   </div>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-[#718096]">
-                  保存后生效；切换服务需填写对应密钥。密钥经 Windows 加密，仅保存在本机。仅支持
-                  HTTPS 地址。
+                  密钥经 Windows 加密，仅保存在本机；正式版与开发版独立保存，不会同步到服务器。
                 </p>
               </div>
-            )}
+            ) : null}
           </fieldset>
           <fieldset
             className="ai-model-provider-panel disabled:opacity-50"
@@ -1069,61 +1071,59 @@ export const AiVoiceMemorySettingsCard = ({
             aria-label="语音转录模型"
             title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
           >
-            <h4>语音转录</h4>
-            <p>选择云端 SenseVoice、本地模型或兼容的自定义转录 API。</p>
+            <h4>语音转文字</h4>
+            <p>SenseVoice 在云端识别音频；Qwen 等本地模型可单独转录或辅助校对时间轴。</p>
             <select
               className="ai-processing-select"
               aria-label="语音转录模型来源"
               value={transcriptionProvider}
               onChange={(event) => {
                 setTranscriptionApiKey("");
-                setEditingTranscriptionKey(false);
                 void onChange({
                   aiTranscriptionProvider: event.target.value as AiTranscriptionProvider,
                 });
               }}
             >
-              <option value="cloud">SenseVoiceSmall 云端</option>
-              <option value="local">本地模型</option>
-              <option value="custom">自定义 API</option>
+              <option value="cloud">内置云端 · SenseVoice</option>
+              <option value="local">本地转录 · 使用已下载模型</option>
+              <option value="custom">自定义语音 API</option>
             </select>
-            {transcriptionProvider === "cloud" ? (
-              <div className="ai-provider-config-note">
+            {transcriptionProvider !== "local" && transcriptionConfigState !== "ready" ? (
+              <div className="ai-provider-config-note" role="status">
                 <span>
-                  {transcriptionStatus?.cloudConfigured
-                    ? "API 密钥已保存在本机"
-                    : "需要 SiliconFlow API Key"}
+                  {transcriptionConfigState === "loading"
+                    ? "正在读取本机密钥配置…"
+                    : "密钥配置读取失败，原文件已保留；这不代表密钥已丢失。"}
                 </span>
-                {transcriptionStatus?.cloudConfigured && !editingTranscriptionKey ? (
-                  <Button variant="ghost" onClick={() => setEditingTranscriptionKey(true)}>
-                    更换密钥
+                {transcriptionConfigState === "error" ? (
+                  <Button variant="ghost" onClick={() => setProviderReload((n) => n + 1)}>
+                    重试读取
                   </Button>
-                ) : null}
-                <p>音频发送至云端；返回纯文本，时间轴为估算，不能提供说话人分离。</p>
-                {!transcriptionStatus?.cloudConfigured || editingTranscriptionKey ? (
-                  <>
-                    <input
-                      className="ai-provider-key-input"
-                      aria-label="SenseVoice API 密钥"
-                      type="password"
-                      autoComplete="off"
-                      value={transcriptionApiKey}
-                      onChange={(event) => setTranscriptionApiKey(event.target.value)}
-                      placeholder={
-                        transcriptionStatus?.cloudConfigured ? "已保存；留空不修改" : "粘贴 API Key"
-                      }
-                    />
-                    <Button
-                      disabled={savingTranscriptionProvider}
-                      onClick={() => void saveTranscriptionProvider("cloud")}
-                    >
-                      保存密钥
-                    </Button>
-                  </>
                 ) : null}
               </div>
             ) : null}
-            {transcriptionProvider === "custom" ? (
+            {transcriptionProvider === "cloud" && transcriptionConfigState === "ready" ? (
+              <div className="ai-provider-config-note">
+                <p>
+                  {transcriptionStatus?.cloudConfigured
+                    ? "开发者提供，登录后即可使用，无需填写密钥。"
+                    : transcriptionStatus?.cloudErrorCode === "cloud_asr_backend_upgrade_required"
+                      ? "云端转录接口尚未部署，需要更新服务器后台。暂时可使用本地模型或自定义语音 API。"
+                      : "服务器转录服务暂未就绪，请稍后重试或切换本地模型。"}
+                </p>
+              </div>
+            ) : null}
+            {transcriptionProvider === "custom" && transcriptionStatus?.customConfigUnreadable ? (
+              <p role="alert">
+                自定义密钥配置无法读取，原文件已保留。
+                <button type="button" onClick={() => setProviderReload((n) => n + 1)}>
+                  重试读取
+                </button>
+              </p>
+            ) : null}
+            {transcriptionProvider === "custom" &&
+            transcriptionConfigState === "ready" &&
+            !transcriptionStatus?.customConfigUnreadable ? (
               <div className="ai-provider-config-note">
                 <div className="ai-provider-fields">
                   <label>

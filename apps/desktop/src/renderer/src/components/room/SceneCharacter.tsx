@@ -43,7 +43,7 @@ import { SceneReaction } from "./SceneReaction";
 import { Slider } from "../base/Slider";
 import { sceneMemberKey } from "./sceneMemberKey";
 import { writeRendererLog } from "../../utils/logger";
-import { availabilityLabels } from "../../features/room/memberAvailability";
+import { MemberAvailabilityBubble } from "./MemberAvailabilityBubble";
 
 export interface SceneCharacterQuickMessage {
   id: string;
@@ -718,18 +718,7 @@ const SceneCharacterView = ({
             <SceneCharacterLabel member={displayedMember} isAway={displayZone === "restroomZone"} />
           </div>
           <CharacterChatBubble message={chatBubble} shouldReduceMotion={shouldReduceMotion} />
-          {member.availabilityStatus || member.sceneZone === "restroomZone" ? (
-            <div className="scene-availability-bubble" role="status">
-              <span aria-hidden="true">
-                {member.availabilityStatus === "eating"
-                  ? "🍚"
-                  : member.availabilityStatus === "restroom"
-                    ? "🚪"
-                    : "☕"}
-              </span>
-              {availabilityLabels[member.availabilityStatus ?? "away"]}
-            </div>
-          ) : null}
+          <MemberAvailabilityBubble member={member} />
           <SceneReaction reactions={reactions} shouldReduceMotion={shouldReduceMotion} />
 
           <AnimatePresence>

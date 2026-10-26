@@ -1,7 +1,100 @@
-import type { VoiceMemoryRecord } from "@private-voice/shared";
+import type { VoiceMemoryRecord, OrganizationRetryState } from "@private-voice/shared";
 import { isTransientRemoteTranscriptionError } from "./remote-transcription-retry";
 
-const MAX_RECOVERY_ROUNDS = 2;
+// Keep the persisted counter readable by older clients; 2 means the slow retry tier.
+const MAX_RECOVERY_COUNTER = 2;
+export function recoverInterruptedRecording(
+  record: VoiceMemoryRecord,
+): VoiceMemoryRecord | undefined {
+  const interrupted =
+    record.phase === "transcribing" ||
+    record.phase === "organizing" ||
+    (record.phase !== "paused" &&
+      (record.transcriptionUnits?.some((unit) => unit.status === "running") ||
+        record.organization?.status === "running" ||
+        record.organization?.chunks.some((chunk) => chunk.status === "running")));
+  if (!interrupted) return undefined;
+  return {
+    ...record,
+    transcriptionUnits: record.transcriptionUnits?.map((unit) =>
+      unit.status === "running"
+        ? {
+            ...unit,
+            status: "pending",
+            stage: undefined,
+            heartbeatAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }
+        : unit,
+    ),
+    organization: record.organization
+      ? {
+          ...record.organization,
+          status: record.organization.status === "completed" ? "completed" : "paused",
+          chunks: record.organization.chunks.map((chunk) =>
+            chunk.status === "running"
+              ? { ...chunk, status: "pending", updatedAt: new Date().toISOString() }
+              : chunk,
+          ),
+          metrics: record.organization.metrics
+            ? { ...record.organization.metrics, interrupted: true }
+            : record.organization.metrics,
+          updatedAt: new Date().toISOString(),
+        }
+      : undefined,
+    phase: "paused",
+    taskStatus: "pending",
+    diagnostic: record.diagnostic
+      ? {
+          ...record.diagnostic,
+          status: "pending",
+          updatedAt: new Date().toISOString(),
+          errorMessage: undefined,
+        }
+      : undefined,
+    errorMessage: "deferred:app_restarted",
+  };
+}
+export const automaticCloudFailure = (reason: string): string =>
+  reason === "cloud_ai_busy"
+    ? "cloud_asr_http_429"
+    : reason === "cloud_ai_provider_unavailable"
+      ? "cloud_asr_http_503"
+      : reason;
+export function recoverAutomaticOrganization(
+  record: VoiceMemoryRecord,
+  reason: string,
+  deferred: boolean,
+) {
+  if (!deferred || !isTransientRemoteTranscriptionError(reason)) return {};
+  const reset = (state: OrganizationRetryState | undefined) =>
+    state && state.status !== "completed"
+      ? { ...state, attempts: 0, status: "pending" as const, errorMessage: undefined }
+      : state;
+  return {
+    organizationSinglePassRetry: reset(record.organizationSinglePassRetry),
+    organization:
+      record.organization && record.organization.status !== "completed"
+        ? {
+            ...record.organization,
+            status: "paused" as const,
+            reductionRetries:
+              record.organization.reductionRetries &&
+              Object.fromEntries(
+                Object.entries(record.organization.reductionRetries).map(([key, value]) => [
+                  key,
+                  reset(value)!,
+                ]),
+              ),
+            chunks: record.organization.chunks.map((chunk) =>
+              chunk.status === "completed"
+                ? chunk
+                : { ...chunk, status: "pending" as const, attempts: 0, errorMessage: undefined },
+            ),
+          }
+        : record.organization,
+  };
+}
 export const isDeferredRemoteTranscription = (record: VoiceMemoryRecord): boolean =>
   record.errorMessage?.startsWith("deferred:") === true &&
   isTransientRemoteTranscriptionError(record.errorMessage.slice(9));
@@ -16,13 +109,13 @@ export function canResumeRemoteTranscription(record: VoiceMemoryRecord, now = Da
   return (
     record.phase === "error" &&
     isTransientRemoteTranscriptionError(record.errorMessage ?? "") &&
-    ((record.remoteTranscriptionRetry?.attempts ?? 0) < MAX_RECOVERY_ROUNDS ||
+    ((record.remoteTranscriptionRetry?.nextAttemptAt ?? 0) <= now ||
       (record.transcriptionModel?.id === "siliconflow-sensevoice-small" &&
         record.remoteTranscription?.partMs !== 30000))
   );
 }
 
-/** Keep recovery bounded across restarts. Each round reuses durable completed audio parts. */
+/** Persist backoff across restarts. Each round reuses durable completed audio parts. */
 export function planAutomaticRecordingRecovery(
   record: VoiceMemoryRecord,
   reason: string,
@@ -32,12 +125,14 @@ export function planAutomaticRecordingRecovery(
   if (options.paused) return { deferred: false, retry: previous };
   if (isTransientRemoteTranscriptionError(reason)) {
     const attempts = previous?.attempts ?? 0;
-    if (options.enabled && attempts < MAX_RECOVERY_ROUNDS)
+    if (options.enabled)
       return {
         deferred: true,
         retry: {
-          attempts: attempts + 1,
-          nextAttemptAt: (options.now ?? Date.now()) + (attempts ? 45000 : 15000),
+          attempts: Math.min(MAX_RECOVERY_COUNTER, attempts + 1),
+          nextAttemptAt:
+            (options.now ?? Date.now()) +
+            (attempts === 0 ? 15000 : attempts === 1 ? 45000 : 300000),
         },
       };
     return { deferred: false, retry: previous ? { attempts } : undefined };
@@ -46,8 +141,12 @@ export function planAutomaticRecordingRecovery(
     !options.manual &&
     (reason === "manual_only" ||
       reason === "cloud_asr_key_required" ||
+      reason === "cloud_asr_not_configured" ||
+      reason === "cloud_asr_backend_upgrade_required" ||
+      reason === "account_session_expired" ||
       reason === "custom_asr_key_required" ||
       reason === "custom_ai_not_configured" ||
+      reason === "cloud_ai_not_configured" ||
       /^model_.+_(?:not_installed|runtime_not_ready)$/.test(reason) ||
       reason === "waiting_for_game_to_finish" ||
       reason === "realtime_pressure" ||

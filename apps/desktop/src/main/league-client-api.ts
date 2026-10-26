@@ -11,6 +11,13 @@ export interface LeagueConnection {
   password: string;
 }
 const execFileAsync = promisify(execFile);
+// Windows PowerShell otherwise emits the system code page. A Chinese install path
+// can corrupt JSON escaping before the credential flags can be parsed.
+export const LEAGUE_COMMAND_LINE_QUERY = [
+  "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
+  "$OutputEncoding = [Console]::OutputEncoding",
+  "Get-CimInstance Win32_Process -Filter \"Name='LeagueClientUx.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
+].join("; ");
 let commandLineLookup:
   { identity: string; checkedAt: number; connection?: LeagueConnection } | undefined;
 let connectionGeneration = 0;
@@ -109,12 +116,7 @@ export async function leagueConnection(
 async function queryLeagueCommandLines(): Promise<unknown> {
   const result = await execFileAsync(
     "powershell.exe",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      "Get-CimInstance Win32_Process -Filter \"Name='LeagueClientUx.exe'\" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress",
-    ],
+    ["-NoProfile", "-NonInteractive", "-Command", LEAGUE_COMMAND_LINE_QUERY],
     { windowsHide: true, timeout: 2500, maxBuffer: 64 * 1024 },
   ).catch(() => undefined);
   try {

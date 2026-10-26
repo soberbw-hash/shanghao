@@ -36,12 +36,26 @@ test("lobby exposes actual party count/capacity, never names or champion selecti
       members: [{ name: "private-A" }, { name: "private-B" }],
     },
   })!;
-  assert.equal(gameSessionLabel(result), "房间中 · 2/5");
+  assert.equal(gameSessionLabel(result), "排位赛 · 房间中 · 2/5");
   assert.equal(isGameSessionActivity(result), true);
   assert.equal(JSON.stringify(result).includes("private"), false);
   assert.equal(JSON.stringify(game(420)).includes("champion"), false);
   const unknownCapacity = resolveLeagueActivity({ phase: "Lobby", lobby: { members: [{}, {}] } })!;
   assert.equal(gameSessionLabel(unknownCapacity), "房间中 · 2人");
+});
+
+test("CN KIWI lobby and queue keep observed occupancy without inventing capacity", () => {
+  const lobby = { gameConfig: { gameMode: "KIWI", queueId: 2400, maxLobbySize: 5 }, members: [{}] };
+  const waiting = resolveLeagueActivity({ phase: "Lobby", lobby })!;
+  assert.equal(gameSessionLabel(waiting), "大乱斗 · 房间中 · 1/5");
+  assert.equal(isGameSessionActivity(waiting), true);
+  const queued = resolveLeagueActivity({ phase: "Matchmaking", lobby })!;
+  assert.equal(gameSessionLabel(queued), "大乱斗 · 排队中 · 1/5");
+  assert.equal(resolveLeagueActivity({ phase: "Matchmaking" }, waiting)?.partySize, undefined);
+  assert.equal(
+    resolveLeagueActivity({ phase: "ChampSelect", lobby }, queued)?.partySize,
+    undefined,
+  );
 });
 
 test("ranked/ARAM/URF use engine gameTime and refresh minutes without re-broadcasting", () => {

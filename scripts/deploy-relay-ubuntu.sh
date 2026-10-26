@@ -75,8 +75,8 @@ MAX_ROOM_MEMBERS=5
 MAX_CONNECTIONS=100
 CHAT_HISTORY_FILE=${DATA_DIR}/chat-history.json
 RELAY_ACCESS_TOKEN=${relay_token}
-DEEPSEEK_API_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-flash
+CLOUD_AI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+CLOUD_AI_MODEL=glm-4-flash-250414
 EOF
   chown "${APP_USER}:${APP_USER}" "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
@@ -187,7 +187,7 @@ echo "Useful commands:"
 echo "  systemctl status shanghao-relay --no-pager"
 echo "  journalctl -u shanghao-relay -f"
 echo "  systemctl restart shanghao-relay"
-echo "Cloud AI: set DEEPSEEK_API_KEY only in ${ENV_FILE}, chmod 600, then restart the relay."
+echo "Cloud AI: set CLOUD_AI_API_KEY (GLM) and SILICONFLOW_API_KEY (SenseVoice) only in ${ENV_FILE}, chmod 600, then restart the relay."
 if [[ -n "${DOMAIN}" ]]; then
   echo "Client address: wss://${DOMAIN}/?token=<RELAY_ACCESS_TOKEN from ${ENV_FILE}>"
   echo "Tencent Cloud security group: TCP 80,443; TURN TCP/UDP 3478 and UDP 49160-49220."

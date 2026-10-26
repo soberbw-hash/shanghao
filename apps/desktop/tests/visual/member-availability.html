@@ -3,6 +3,31 @@
   <head>
     <script>
       window.desktopApi = { app: { writeLog: async () => {} } };
+      const phoneListeners = new Set();
+      window.phoneFixture = {
+        calls: [],
+        configureCalls: 0,
+        emit(active) {
+          for (const callback of phoneListeners) callback({ active, busy: false });
+        },
+      };
+      window.desktopApi.phoneMode = {
+        get: async () => ({ active: false, busy: false }),
+        set: async (active) => {
+          window.phoneFixture.calls.push(active);
+          window.phoneFixture.emit(active);
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          return { active, busy: false };
+        },
+        devices: async () => {},
+        configure: async () => {
+          window.phoneFixture.configureCalls++;
+        },
+        onChanged: (callback) => {
+          phoneListeners.add(callback);
+          return () => phoneListeners.delete(callback);
+        },
+      };
     </script>
     <script type="module">
       import { injectIntoGlobalHook } from "/@react-refresh";

@@ -51,7 +51,9 @@ export const SceneCharacterLabel = ({
       {isAway ? (
         <>
           <span className="room-character-away-name">{member.nickname}</span>
-          <span className="room-character-away-status">暂离</span>
+          <span className="room-character-away-status">
+            {member.callModeActive ? statusLabel : "暂离"}
+          </span>
         </>
       ) : (
         <>

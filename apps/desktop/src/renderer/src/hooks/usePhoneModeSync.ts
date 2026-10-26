@@ -50,7 +50,7 @@ export function usePhoneModeSync(): void {
         useAppStore.getState().pushToast({
           tone: "success",
           title: "电话模式已开启",
-          description: "已确认系统音频设备静音",
+          description: "麦克风与应用声音已静音",
         });
       }
       if (!state.active) verifiedActive = false;

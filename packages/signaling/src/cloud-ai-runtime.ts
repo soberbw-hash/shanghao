@@ -5,12 +5,22 @@ import type { CloudAiResponseMessage, SignalEnvelope } from "./protocol";
 import type { DailyRoomReportStore } from "./daily-room-report-store";
 import { CloudAiRequestController } from "./cloud-ai-request-controller";
 import { CloudAiService } from "./cloud-ai-service";
+import { CloudAsrHttpController } from "./cloud-asr-http-controller";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { AccountBackend } from "./account-service";
 import { DailyRoomCommentaryService } from "./daily-room-commentary-service";
 
 type Logger = (message: string, context?: Record<string, unknown>) => void;
 
 /** Keeps optional cloud AI roles outside the realtime signaling orchestrator. */
 export class CloudAiRuntime {
+  private http?: CloudAsrHttpController;
+  configureHttp(accounts: AccountBackend, secure: (request: IncomingMessage) => boolean): void {
+    this.http = new CloudAsrHttpController(accounts, secure);
+  }
+  handleHttp(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+    return this.http?.handle(request, response) ?? Promise.resolve(false);
+  }
   private readonly requests: CloudAiRequestController;
   private readonly commentary: DailyRoomCommentaryService;
 

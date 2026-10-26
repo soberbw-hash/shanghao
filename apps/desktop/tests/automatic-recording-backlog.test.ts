@@ -7,6 +7,77 @@ import {
 import { createEmptyVoiceMemoryRecord } from "../src/main/voice-memory-record";
 import type { VoiceMemoryRecord, VoiceMemoryProcessRequest } from "@private-voice/shared";
 
+test("newly ready baseline assistance backfills completed cloud text without discarding it", async () => {
+  const item = { recordingId: "cloud-assist", filePath: "synthetic.wav" };
+  const record: VoiceMemoryRecord = {
+    ...createEmptyVoiceMemoryRecord(item),
+    phase: "ready",
+    taskStatus: "success",
+    autoOrganizeRequested: true,
+    transcriptionModel: { id: "siliconflow-sensevoice-small", name: "cloud" },
+    transcriptionElapsedMs: 100,
+    transcript: [
+      {
+        id: "s",
+        recordingId: item.recordingId,
+        speakerId: "one",
+        text: "用于恢复本地校对的合成内容",
+        startMs: 0,
+        endMs: 1000,
+      },
+    ],
+    transcriptionAssist: {
+      status: "unavailable",
+      cloudModelId: "siliconflow-sensevoice-small",
+      localModelId: "qwen3-asr-0.6b-force",
+    },
+  };
+  const starts: VoiceMemoryProcessRequest[] = [];
+  await queueUntranscribedRecordings([item], true, {
+    enabled: () => true,
+    get: async () => record,
+    pending: () => false,
+    reconcile: async () => {},
+    assistModel: () => ({ id: "qwen3-asr-0.6b-force", ready: true }),
+    start: async (request) => {
+      starts.push(request);
+    },
+  });
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0]!.transcribe, true);
+  assert.notEqual(starts[0]!.restartTranscription, true);
+  assert.equal(record.transcript.length, 1);
+});
+
+test("automatic followups reuse the catalog and only rescan after a real refresh", async () => {
+  let reads = 0,
+    queues = 0;
+  const backlog = createAutomaticRecordingBacklog({
+    settings: () => ({
+      isAiAutoTranscribeEnabled: true,
+      isAiAutoOrganizeEnabled: true,
+      recordingLibraryQuotaGb: 20,
+    }),
+    read: async () => {
+      reads++;
+      return { items: [] } as never;
+    },
+    queue: async () => {
+      queues++;
+    },
+    onError: () => assert.fail("unexpected failure"),
+  });
+  backlog.initialize();
+  await backlog.settled();
+  backlog.refreshCached();
+  await backlog.settled();
+  assert.equal(reads, 1);
+  assert.equal(queues, 2);
+  backlog.refresh();
+  await backlog.settled();
+  assert.equal(reads, 2);
+});
+
 test("partial cloud failures resume from saved parts instead of being skipped as completed text", async () => {
   const item = { recordingId: "partial-cloud", filePath: "partial.wav" };
   const partial: VoiceMemoryRecord = {
@@ -90,7 +161,7 @@ test("saved transcripts with prior consent recover missing postprocessing withou
   assert.equal(started[0]?.organize, true);
 });
 
-test("empty failures also respect persisted recovery deadlines, exhausted rounds and manual pauses", async () => {
+test("empty failures respect persisted recovery deadlines and manual pauses", async () => {
   const item = { recordingId: "empty", filePath: "synthetic.wav" };
   const base = {
     ...createEmptyVoiceMemoryRecord(item),
@@ -99,7 +170,7 @@ test("empty failures also respect persisted recovery deadlines, exhausted rounds
   };
   const starts: VoiceMemoryProcessRequest[] = [];
   for (const current of [
-    { ...base, remoteTranscriptionRetry: { attempts: 2 } },
+    { ...base, remoteTranscriptionRetry: { attempts: 2, nextAttemptAt: Date.now() + 60000 } },
     {
       ...base,
       phase: "paused" as const,

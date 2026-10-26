@@ -13,6 +13,7 @@ export function registerPhoneMode(
   getWindow: () => BrowserWindow | null,
   settings: SettingsStore,
   shortcuts: ShortcutController,
+  trace?: (stage: string, context: Record<string, unknown>) => void,
 ): void {
   let state: State = { active: false, busy: false };
   let helper: ChildProcessWithoutNullStreams | undefined;
@@ -172,12 +173,17 @@ export function registerPhoneMode(
     desiredActive = active;
     const entering = active && !state.active;
     const request = ++desiredRevision;
+    const requestedAt = Date.now();
+    trace?.("requested", { active, revision: request });
     publish({ active: active || state.active, busy: true });
     const operation = queue
       // Keep the in-flight command serialized, discarding obsolete queued transitions.
       .then(() => (request === desiredRevision ? command(active, request, entering) : undefined))
       .then(() => {
-        if (request === desiredRevision) publish({ active, busy: false });
+        if (request === desiredRevision) {
+          publish({ active, busy: false });
+          trace?.("confirmed", { active, revision: request, elapsedMs: Date.now() - requestedAt });
+        }
       })
       .catch((error) => {
         if (request === desiredRevision)

@@ -4,6 +4,23 @@ import {
   type VoiceMemoryRecord,
 } from "@private-voice/shared";
 import { isTranscriptionExecutionComplete } from "./remote-transcription";
+import type { AiAsrModelId } from "@private-voice/shared";
+
+export function needsAutomaticCloudAssist(
+  record: VoiceMemoryRecord,
+  model?: { id: AiAsrModelId; ready: boolean },
+): boolean {
+  return Boolean(
+    model?.ready &&
+    record.phase === "ready" &&
+    record.transcriptionModel?.id === "siliconflow-sensevoice-small" &&
+    isTranscriptionExecutionComplete(record) &&
+    !hasInvalidVoiceMemoryResult(record) &&
+    (!record.transcriptionAssist ||
+      (record.transcriptionAssist.status === "unavailable" &&
+        record.transcriptionAssist.localModelId === model.id)),
+  );
+}
 
 /** Existing permission may recover derived text, never another audio upload or an explicit pause. */
 export function needsAutomaticPostprocessing(

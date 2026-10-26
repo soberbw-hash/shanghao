@@ -8,6 +8,24 @@ import { toUserFacingError } from "../src/renderer/src/utils/userFacingError";
 const readRenderer = (relativePath: string) =>
   readFileSync(path.resolve(process.cwd(), "src/renderer/src", relativePath), "utf8");
 
+test("missing components, pause and decode limits do not claim a GPU failure", () => {
+  for (const code of ["model_qwen3_asr_runtime_unavailable", "asr_runtime_not_ready"]) {
+    assert.equal(toUserFacingError(Error(code), "model").title, "本地模型组件未就绪");
+  }
+  assert.equal(toUserFacingError(Error("ai_task_paused"), "model").title, "任务已暂停");
+  assert.equal(
+    toUserFacingError(
+      Error("transcribe_run: output truncated: decode hit the context/generation cap (status 18)"),
+      "model",
+    ).title,
+    "本地识别片段未完成",
+  );
+  assert.equal(
+    toUserFacingError(Error("qwen_bf16_runtime_unavailable"), "model").title,
+    "AI GPU 运行环境异常",
+  );
+});
+
 test("ordinary UI errors explain the next step without exposing runtime internals", () => {
   const cudaError = toUserFacingError(
     new Error("qwen3_asr_cuda_required: c10_cuda.dll failed to load"),

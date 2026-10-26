@@ -11,14 +11,18 @@ const ascii = bytes.toString("latin1");
 const utf16 = bytes.toString("utf16le");
 const manifestText = `${ascii}\n${utf16}`;
 
-if (!/requestedExecutionLevel\s+[^>]*level\s*=\s*["']asInvoker["']/i.test(manifestText)) {
-  throw new Error(`Packaged manifest is missing asInvoker: ${executablePath}`);
+if (
+  !/requestedExecutionLevel\s+[^>]*level\s*=\s*["']requireAdministrator["']/i.test(manifestText)
+) {
+  throw new Error(`Packaged manifest is missing requireAdministrator: ${executablePath}`);
 }
 if (!/uiAccess\s*=\s*["']false["']/i.test(manifestText)) {
   throw new Error(`Packaged manifest is missing uiAccess=false: ${executablePath}`);
 }
-if (/level\s*=\s*["'](?:requireAdministrator|highestAvailable)["']/i.test(manifestText)) {
-  throw new Error(`Packaged manifest unexpectedly requests elevation: ${executablePath}`);
+if (/level\s*=\s*["'](?:asInvoker|highestAvailable)["']/i.test(manifestText)) {
+  throw new Error(
+    `Packaged manifest does not require the requested administrator startup: ${executablePath}`,
+  );
 }
 
 console.log(`Verified Windows execution level: ${executablePath}`);

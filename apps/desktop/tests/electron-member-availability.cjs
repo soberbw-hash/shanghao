@@ -25,12 +25,12 @@ app.whenReady().then(async () => {
         for(let i=0;i<100&&!document.querySelector('.member-availability-controls');i++)await new Promise(r=>setTimeout(r,30));
         const root=document.querySelector('.member-availability-controls');
         const buttons=[...root.querySelectorAll('button')];
-        if(buttons.length!==4)throw Error('return button must occupy a stable slot while available');
+        if(buttons.length!==5)throw Error('phone and return buttons must occupy stable slots');
         window.availabilityGeometry=buttons.map(b=>{const r=b.getBoundingClientRect();return [r.x,r.y,r.width,r.height]});
-        if(!buttons[3].disabled)throw Error('return should be disabled while already available');
+        if(!buttons[4].disabled)throw Error('return should be disabled while already available');
       })()`);
       const point = await view.webContents.executeJavaScript(
-        `(()=>{const r=document.querySelector('.member-availability-controls button:nth-child(3)').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`,
+        `(()=>{const r=document.querySelector('.member-availability-controls button:nth-child(4)').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`,
       );
       for (let click = 0; click < 2; click++) {
         await view.webContents.executeJavaScript(
@@ -46,7 +46,7 @@ app.whenReady().then(async () => {
       }
       await view.webContents.executeJavaScript(`(async()=>{
         const buttons=[...document.querySelectorAll('.member-availability-controls button')];
-        for(const index of [0,1,2,3]){buttons[index].click();await new Promise(r=>setTimeout(r,30));buttons.forEach((b,i)=>{const r=b.getBoundingClientRect();[r.x,r.y,r.width,r.height].forEach((n,k)=>{if(Math.abs(n-window.availabilityGeometry[i][k])>0.5)throw Error('switching or returning moved a button')})});}
+        for(const index of [0,2,3,4]){buttons[index].click();await new Promise(r=>setTimeout(r,30));buttons.forEach((b,i)=>{const r=b.getBoundingClientRect();[r.x,r.y,r.width,r.height].forEach((n,k)=>{if(Math.abs(n-window.availabilityGeometry[i][k])>0.5)throw Error('switching or returning moved a button')})});}
         if(document.documentElement.dataset.muted!=='false')throw Error('return did not restore microphone choice');
       })()`);
     }

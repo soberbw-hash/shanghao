@@ -22,6 +22,7 @@ const fixture = (packaged = false, collision = true) => {
   ).outputText;
   runInNewContext(code, {
     exports,
+    Buffer,
     process: {
       execPath: "C:/fixture/electron.exe",
       env: { LOCALAPPDATA: "C:/fixture/Local", SystemRoot: "C:/Windows" },
@@ -84,9 +85,15 @@ test("development shortcuts back up only the conflicting Electron entry and shar
     assert.equal(options.appUserModelId, "com.sober.shanghao.dev");
     assert.match(options.target, /powershell\.exe$/);
     assert.match(options.args, /-NoProfile.*-WindowStyle Hidden -EncodedCommand /);
-    assert.equal(
-      Buffer.from(options.args.split("-EncodedCommand ")[1]!, "base64").toString("utf16le"),
-      "Write-Output 'fixture launcher'",
+    const command = Buffer.from(options.args.split("-EncodedCommand ")[1]!, "base64").toString(
+      "utf16le",
+    );
+    assert.match(command, /IsInRole.*Administrator/);
+    assert.match(command, /-Verb RunAs -WindowStyle Hidden/);
+    assert.match(command, /ReadAllText/);
+    assert.ok(
+      options.args.length < 8000,
+      "shortcut command stays below Windows command-line limits",
     );
     assert.equal(options.args.includes("ExecutionPolicy"), false);
     assert.match(options.icon, /ShangHaoDev[\\/]shanghao-dev-[a-f0-9]{12}\.ico$/);

@@ -7,6 +7,7 @@ import type { SettingsStore } from "./settings-store";
 import type { SignalingClientBridge } from "./signaling-client";
 import type { LocalLLMProvider, LocalLlmGenerateResult } from "./local-llm-provider";
 import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
+import type { BuiltInAiClient } from "./built-in-ai-client";
 
 export type AiTextPurpose = "organize" | "question";
 
@@ -55,6 +56,7 @@ export class AiTextGateway {
     private readonly customProvider: CustomAiProviderStore,
     private readonly localLlm: LocalLLMProvider,
     private readonly memoryContext?: (roomId: string, signal?: AbortSignal) => Promise<string>,
+    private readonly builtIn?: BuiltInAiClient,
   ) {}
 
   async generateJson<T>(request: GenerateJsonRequest): Promise<T> {
@@ -86,6 +88,10 @@ export class AiTextGateway {
     const provider = this.providerFor(request.purpose);
     if (request.provider && request.provider !== provider) throw new Error("ai_provider_changed");
     if (provider === "cloud") {
+      if (request.purpose === "organize" && this.builtIn)
+        return {
+          value: extractJsonObject<T>(await this.builtIn.organize(request.prompt, request.signal)),
+        };
       if (request.purpose === "organize" && !isStoredRoomId(request.roomId))
         throw new Error("cloud_ai_join_matching_room");
       const content = await this.signaling.requestCloudAi({
