@@ -72,3 +72,30 @@ test("quiet nonzero audio is retained and long voiced windows remain bounded", (
   assert.equal(windows[0]?.startMs, 0);
   assert.equal(windows.at(-1)?.endMs, 30000);
 });
+
+test("subsecond track tails upload safely without stretching transcript timestamps", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-short-speech-test-"));
+  try {
+    const source = pcm([[0, 41, 1000]], 41),
+      file = path.join(directory, "tail.wav");
+    await writeFile(file, source);
+    const result = await transcribeCloudSpeechWindows(
+      file,
+      new AbortController().signal,
+      async (slice, duration) => {
+        const upload = await readFile(slice);
+        assert.equal(duration, 1000);
+        assert.equal(upload.readUInt32LE(40), 32000);
+        assert.deepEqual(upload.subarray(44, source.length), source.subarray(44));
+        assert.ok(upload.subarray(source.length).every((byte) => byte === 0));
+        return { text: "好", modelName: "synthetic" };
+      },
+    );
+    assert.deepEqual(JSON.parse(result.text), [
+      { Start: 0, End: 0.041, Content: "好", Speaker: 1 },
+    ]);
+    assert.deepEqual(await readFile(file), source);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

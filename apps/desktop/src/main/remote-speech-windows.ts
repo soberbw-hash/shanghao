@@ -68,7 +68,9 @@ function sliceWav(input: PcmData, startMs: number, endMs: number): Buffer {
   const first = Math.floor((startMs / 1000) * input.rate) * 2,
     last = Math.ceil((endMs / 1000) * input.rate) * 2;
   const data = input.samples.subarray(first, last),
-    wav = Buffer.alloc(44 + data.length);
+    // Providers may reject subsecond tails. Pad the upload, never the source timeline.
+    dataLength = Math.max(data.length, input.rate * 2),
+    wav = Buffer.alloc(44 + dataLength);
   wav.write("RIFF");
   wav.writeUInt32LE(wav.length - 8, 4);
   wav.write("WAVEfmt ", 8);
@@ -80,7 +82,7 @@ function sliceWav(input: PcmData, startMs: number, endMs: number): Buffer {
   wav.writeUInt16LE(2, 32);
   wav.writeUInt16LE(16, 34);
   wav.write("data", 36);
-  wav.writeUInt32LE(data.length, 40);
+  wav.writeUInt32LE(dataLength, 40);
   data.copy(wav, 44);
   return wav;
 }
@@ -105,7 +107,7 @@ export async function transcribeCloudSpeechWindows(
       signal.throwIfAborted();
       const slice = path.join(directory, `${index}.wav`);
       await writeFile(slice, sliceWav(pcm, window.startMs, window.endMs));
-      const reply = await send(slice, window.endMs - window.startMs);
+      const reply = await send(slice, Math.max(1000, window.endMs - window.startMs));
       signal.throwIfAborted();
       modelName = reply.modelName;
       if (reply.text.trim())
