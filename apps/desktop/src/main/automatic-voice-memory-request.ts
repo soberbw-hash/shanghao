@@ -4,6 +4,7 @@ import {
   type VoiceMemoryRecord,
 } from "@private-voice/shared";
 import { isTranscriptionExecutionComplete } from "./remote-transcription";
+import { automaticFusionFailure } from "./automatic-recording-recovery";
 import type { AiAsrModelId } from "@private-voice/shared";
 
 export function needsAutomaticCloudAssist(
@@ -31,9 +32,8 @@ export function needsAutomaticPostprocessing(
     organize &&
     record.autoOrganizeRequested === true &&
     canAutomaticallySummarize(record) &&
-    !record.organization &&
-    !record.organizedAt &&
-    !record.summary.length
+    ((!record.organization && !record.organizedAt && !record.summary.length) ||
+      Boolean(automaticFusionFailure(record)))
   );
 }
 

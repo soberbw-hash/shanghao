@@ -78,6 +78,54 @@ test("automatic followups reuse the catalog and only rescan after a real refresh
   assert.equal(reads, 2);
 });
 
+test("an existing summary does not hide a transient fusion failure from the background queue", async () => {
+  const record: VoiceMemoryRecord = {
+    ...createEmptyVoiceMemoryRecord({ recordingId: "fusion-retry", filePath: "synthetic.wav" }),
+    phase: "ready",
+    taskStatus: "success",
+    autoOrganizeRequested: true,
+    organizedAt: new Date().toISOString(),
+    transcriptionModel: { id: "siliconflow-sensevoice-small", name: "fixture" },
+    transcriptionElapsedMs: 10,
+    transcript: [
+      {
+        id: "s",
+        recordingId: "fusion-retry",
+        speakerId: "s",
+        text: "合成夹具",
+        startMs: 0,
+        endMs: 1000,
+      },
+    ],
+    transcriptionFusion: {
+      status: "failed",
+      errorCode: "cloud_asr_network_error",
+      sourceSignature: "fixture",
+      completedBatches: 0,
+      totalBatches: 1,
+      speakers: [],
+      transcript: [],
+    },
+  };
+  const started: VoiceMemoryProcessRequest[] = [];
+  await queueUntranscribedRecordings(
+    [{ recordingId: record.recordingId, filePath: record.filePath }],
+    true,
+    {
+      enabled: () => true,
+      get: async () => record,
+      pending: () => false,
+      reconcile: async () => {},
+      start: async (request) => {
+        started.push(request);
+      },
+    },
+  );
+  assert.equal(started.length, 1);
+  assert.equal(started[0]?.transcribe, false);
+  assert.equal(started[0]?.organize, true);
+});
+
 test("partial cloud failures resume from saved parts instead of being skipped as completed text", async () => {
   const item = { recordingId: "partial-cloud", filePath: "partial.wav" };
   const partial: VoiceMemoryRecord = {
@@ -117,6 +165,29 @@ test("partial cloud failures resume from saved parts instead of being skipped as
   assert.equal(starts[0]?.transcribe, true);
   assert.notEqual(starts[0]?.restartTranscription, true);
   assert.equal(starts[0]?.manual, undefined);
+});
+
+test("empty terminal results do not get automatically uploaded again on every queue refresh", async () => {
+  let starts = 0;
+  for (const errorMessage of ["no_reliable_speech", "cloud_asr_unusable_transcript"])
+    await queueUntranscribedRecordings(
+      [{ recordingId: "empty", filePath: "synthetic.wav" }],
+      true,
+      {
+        enabled: () => true,
+        pending: () => false,
+        reconcile: async () => {},
+        get: async () => ({
+          ...createEmptyVoiceMemoryRecord({ recordingId: "empty", filePath: "synthetic.wav" }),
+          phase: "error",
+          errorMessage,
+        }),
+        start: async () => {
+          starts++;
+        },
+      },
+    );
+  assert.equal(starts, 0);
 });
 
 test("saved transcripts with prior consent recover missing postprocessing without ASR or batch regeneration of old summaries", async () => {

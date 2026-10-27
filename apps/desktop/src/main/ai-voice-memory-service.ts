@@ -67,6 +67,7 @@ import { queueUntranscribedRecordings, type BacklogRecording } from "./automatic
 import {
   planAutomaticRecordingRecovery,
   automaticCloudFailure,
+  automaticFusionFailure,
   recoverAutomaticOrganization,
   recoverInterruptedRecording,
   retryDeferredRecordings,
@@ -944,6 +945,9 @@ export class AiVoiceMemoryService {
           });
         }
       }
+      const fusionFailure = automaticFusionFailure(record);
+      if (!request.manual && request.organize !== false && fusionFailure)
+        throw new Error(fusionFailure);
       const partialTranscription = !isTranscriptionExecutionComplete(record);
       record = await this.save({
         ...record,

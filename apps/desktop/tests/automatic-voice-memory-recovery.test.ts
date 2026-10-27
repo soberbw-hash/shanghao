@@ -34,6 +34,7 @@ const fixture = async () => {
     textCalls: 0,
     failAsr: false,
     failText: false,
+    failFusion: false,
   };
   const services: AiVoiceMemoryService[] = [];
   const failures: string[] = [];
@@ -50,6 +51,19 @@ const fixture = async () => {
       {
         usesLocalOrganizer: () => false,
         organizerProvider: () => "custom",
+        generateJson: async () => {
+          if (state.failFusion) throw new Error("cloud_asr_network_error");
+          return {
+            segments: [
+              {
+                id: "local-fusion",
+                text: "这是用于验证后台恢复的合成语音内容。",
+                uncertain: false,
+                cloudIds: ["cloud-fusion"],
+              },
+            ],
+          };
+        },
         assertOrganizerConfigured: async () => {
           if (!state.textReady) throw new Error("custom_ai_not_configured");
         },
@@ -324,6 +338,73 @@ test("cloud summary failures automatically resume saved text after repeated outa
     assert.equal(record.organization?.status, "completed");
     assert.equal(record.taskStatus, "success");
     assert.equal(f.state.asrCalls, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("fusion network failures preserve the summary and recover without a second ASR", async () => {
+  const f = await fixture();
+  try {
+    f.state.asrReady = f.state.textReady = true;
+    const current = await f.open();
+    const cloud = await current.service.process(f.request);
+    const segment = { ...cloud.transcript[0]!, id: "cloud-fusion" };
+    await current.store.save({
+      ...cloud,
+      transcript: [segment],
+      autoOrganizeRequested: true,
+      transcriptionAssist: {
+        status: "completed",
+        cloudModelId: "siliconflow-sensevoice-small",
+        localModelId: "qwen3-asr-0.6b-force",
+      },
+      transcriptionVariants: {
+        "siliconflow-sensevoice-small": {
+          model: { id: "siliconflow-sensevoice-small", name: "cloud" },
+          transcript: [segment],
+          speakers: cloud.speakers,
+          updatedAt: cloud.updatedAt,
+        },
+        "qwen3-asr-0.6b-force": {
+          model: { id: "qwen3-asr-0.6b-force", name: "local" },
+          transcript: [{ ...segment, id: "local-fusion" }],
+          speakers: cloud.speakers,
+          updatedAt: cloud.updatedAt,
+        },
+      },
+    });
+    f.state.failFusion = true;
+    const waiting = await current.service.process({
+      ...f.request,
+      transcribe: false,
+      organize: true,
+    });
+    assert.equal(waiting.errorMessage, "deferred:cloud_asr_network_error");
+    assert.equal(
+      waiting.organization?.status,
+      "completed",
+      "summary is independent of fusion availability",
+    );
+    const summaries = f.state.textCalls;
+    f.state.failFusion = false;
+    await current.store.save({
+      ...waiting,
+      remoteTranscriptionRetry: { attempts: 1, nextAttemptAt: 0 },
+    });
+    await current.retry();
+    const completed = (await current.store.get("synthetic"))!;
+    assert.equal(completed.transcriptionFusion?.status, "completed");
+    assert.equal(completed.taskStatus, "success");
+    assert.equal(f.state.asrCalls, 1);
+    assert.ok(
+      f.state.textCalls > summaries,
+      "completed fusion refreshes the summary from corrected text",
+    );
+    assert.equal(
+      completed.transcriptionVariants?.["siliconflow-sensevoice-small"]?.transcript[0]?.id,
+      "cloud-fusion",
+    );
   } finally {
     await f.close();
   }

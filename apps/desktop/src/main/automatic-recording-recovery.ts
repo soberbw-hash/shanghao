@@ -61,6 +61,13 @@ export const automaticCloudFailure = (reason: string): string =>
     : reason === "cloud_ai_provider_unavailable"
       ? "cloud_asr_http_503"
       : reason;
+export function automaticFusionFailure(record: VoiceMemoryRecord): string | undefined {
+  const reason = automaticCloudFailure(record.transcriptionFusion?.errorCode ?? "");
+  return record.transcriptionFusion?.status === "failed" &&
+    isTransientRemoteTranscriptionError(reason)
+    ? reason
+    : undefined;
+}
 export function recoverAutomaticOrganization(
   record: VoiceMemoryRecord,
   reason: string,
