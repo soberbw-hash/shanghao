@@ -54,6 +54,7 @@ async function setup(t: TestContext) {
   });
   const first = await client.create(),
     profile = (await identity.getProfile())!;
+  const issuedAt = Date.now();
   const payload: TemporaryInternetRegistration = {
     version: 1,
     sessionId: first.roomId,
@@ -66,8 +67,8 @@ async function setup(t: TestContext) {
     certificateSha256: createHash("sha256")
       .update(new X509Certificate(route.certificate!).raw)
       .digest("hex"),
-    issuedAt: Date.now(),
-    expiresAt: Date.now() + 15000,
+    issuedAt,
+    expiresAt: issuedAt + 15000,
   };
   const signed = await identity.signInternetRegistration(payload),
     provider = new TemporaryInternetProvider(identity, endpoint, Number(new URL(route.url).port));
@@ -321,12 +322,13 @@ test("a last-member unregister is terminal for old registrations and its code di
   const s = await setup(t);
   await s.provider.unpublish(s.first.roomId);
   assert.equal(await s.directory.request("lookup", { code: s.first.room.code }), null);
+  const issuedAt = Date.now();
   await assert.rejects(
     s.provider.publish(
       await s.identity.signInternetRegistration({
         ...s.payload,
-        issuedAt: Date.now(),
-        expiresAt: Date.now() + 15000,
+        issuedAt,
+        expiresAt: issuedAt + 15000,
       }),
       "authority",
     ),
@@ -384,12 +386,13 @@ test("global reservation collision rotates only the lookup code while retaining 
     await discovery.stop();
   });
   const before = await local.create();
+  const issuedAt = Date.now();
   const occupied = await s.identity.signInternetRegistration({
     ...s.payload,
     sessionId: "temp_" + "c".repeat(32),
     code: before.room.code,
-    issuedAt: Date.now(),
-    expiresAt: Date.now() + 15000,
+    issuedAt,
+    expiresAt: issuedAt + 15000,
   });
   await s.provider.publish(occupied, "authority");
   let changed = before.room;
