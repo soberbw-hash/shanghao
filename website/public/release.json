@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.13",
-  "published_at": "2026-10-25T07:02:46Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.13",
+  "tag_name": "v3.4.15",
+  "published_at": "2026-10-27T07:00:51Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.15",
   "highlights": [
-    "录音库把阅读放在首位：存储和模型设置折叠，操作按钮紧凑，列表卡片统一，文字稿缩小行距并保留来源标识。",
-    "默认自动转录；未转录的历史录音顺序排队，保留手动暂停。转录后自动在云端生成摘要，不因离开页面暂停，不自动上传到房间。",
-    "摘要提取实际事件、原话和有依据的趣事，避免空泛复述；长任务保留完成分段，瞬时故障有限重试，明确的账号或余额错误不反复请求。",
-    "云端按小段持久保存进度；有成员独立音轨时交替处理各成员，再按统一时间合并。修复只处理一个成员、切段续录空档和失败阻断其余成员的问题。"
+    "默认使用开发者服务器提供的 SenseVoice 转录和 GLM-4-Flash 摘要、问答，无需填写个人密钥；仍可切换自定义 API。",
+    "自动转录和自动摘要默认开启，历史未转录录音会排队。退出录音库不暂停，重启后恢复中断任务；网络和服务临时故障按间隔重试，保留已完成分段。手动暂停不会被自动恢复。",
+    "默认开启千问 0.6B 本地校对，后台准备识别模型及必要的时间轴组件。未就绪时先用云端，准备完成后补做校对；其他本地模型由用户按需安装。",
+    "0.6B 识别权重约 1.8GB，另有对齐和运行组件。下载让通话、游戏优先；硬件不支持本地推理时仍可使用云端。云端和本地原稿分别保留，优先显示融合稿。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.13-Setup-x64.exe",
-      "size": 214320591,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.13/ShangHao-3.4.13-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.13/ShangHao-3.4.13-Setup-x64.exe",
-      "sha256": "4b7c285adf753c288d7f2646ca9ff9f5542e319577c5078cd37007cd26c58787"
+      "name": "ShangHao-3.4.15-Setup-x64.exe",
+      "size": 214337877,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.15/ShangHao-3.4.15-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.15/ShangHao-3.4.15-Setup-x64.exe",
+      "sha256": "585d0fe902ceef33b4add2a49b5a6713b12e6618329da46ce3daf3dbd8169c1b"
     }
   ]
 }

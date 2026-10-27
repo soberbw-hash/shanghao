@@ -6,7 +6,13 @@
 
 当前已完成的定向验证：云端任务恢复与默认模型策略、临时身份和创建/加入路径；隔离 Electron 验证 360/420/600 宽度不溢出、SVG 头像单行、格式化房间码输入、重复打开、已登录头像继承、管理弹窗位于顶层。实际 Windows 音频夹具验证放歌开始/停止及 PCM 输出。
 
-最终全量检查、构建、发布资产与远端核验结果在完成后追加。这里的准备状态不代表已发布。
+## 正式发布结果
+
+- 2026-10-27 已发布 GitHub 正式版 [v3.4.15](https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.15)，标签指向产品提交 `14cc06ba6b8c65bdaebfabe16a92be676a858c8e`。该提交的 Windows、Linux CI 和 CodeQL 通过；[Release 工作流](https://github.com/soberbw-hash/shanghao/actions/runs/40462391451)第二次运行通过。首次运行中放歌测试夹具的固定进程号碰巧与构建进程号相同，导致测试被过滤；后续主分支提交 `ff9e51b` 消除了测试号冲突，不改变发布软件。
+- 正式安装器 214,337,877 字节，SHA-256 `585d0fe902ceef33b4add2a49b5a6713b12e6618329da46ce3daf3dbd8169c1b`，与 `latest.yml` 中的 SHA-512 一致。当前安装器没有 Authenticode 代码签名。
+- 版本 ZIP 264,764,410 字节，SHA-256 `bc8d76a2712593779811412b31427a9dfa15a3c4d45f2fda3f2922f585f6b7fe`；已下载并验证 206 个条目的 CRC，含主程序和 app.asar。Release 共 22 个文件，其中 16 张界面截图。
+- CloudBase 官网 `release.json` 已指向 v3.4.15，首页 HTTP 200；官网下载的安装器 SHA-256 与 GitHub 完全一致，v3.4.13 历史安装器仍返回 HTTP 200。
+- 真实长录音 41ms 尾段已单独验证，但新后台组件加载后整条录音的自动续跑尚需继续核实；融合网络重试及不同电脑、真实多人房间体验不以隔离测试替代实机结果。
 
 ## 本地检查
 
