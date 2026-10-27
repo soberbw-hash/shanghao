@@ -62,7 +62,14 @@ class FakeCapture extends EventEmitter {
 const fixture = () => {
   const child = new FakeCapture();
   let spawns = 0;
-  const rows = [{ pid: 9200, creationTime: "1234567", processName: "player.exe", name: "Player" }];
+  const rows = [
+    {
+      pid: process.pid + 100_000,
+      creationTime: "1234567",
+      processName: "player.exe",
+      name: "Player",
+    },
+  ];
   const service = new ApplicationAudioService({
     executablePath: "unused-test-executable",
     isWindows: true,
@@ -128,7 +135,14 @@ test("stop during source revalidation cannot launch a late capture", async () =>
     windowsBuild: 26100,
     listNativeSources: async () => {
       if (++calls > 1) await gate;
-      return [{ pid: 99, creationTime: "12", processName: "player.exe", name: "Player" }];
+      return [
+        {
+          pid: process.pid + 100_001,
+          creationTime: "12",
+          processName: "player.exe",
+          name: "Player",
+        },
+      ];
     },
     spawnCapture: () => {
       spawns++;
