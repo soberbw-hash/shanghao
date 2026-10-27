@@ -125,6 +125,33 @@ const fixture = async () => {
   };
 };
 
+test("continuous model download updates cannot postpone an existing cloud retry timer", async (t) => {
+  const f = await fixture();
+  try {
+    const current = await f.open();
+    const internal = current.service as unknown as {
+      scheduleDeferredRetry(): void;
+      retryDeferredRecords(): Promise<void>;
+    };
+    let retries = 0;
+    internal.retryDeferredRecords = async () => {
+      retries++;
+    };
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    internal.scheduleDeferredRetry();
+    for (let second = 0; second < 8; second++) {
+      t.mock.timers.tick(1000);
+      internal.scheduleDeferredRetry();
+    }
+    assert.equal(retries, 0);
+    t.mock.timers.tick(1000);
+    assert.equal(retries, 1, "the original nine-second timer must still fire during downloads");
+  } finally {
+    t.mock.timers.reset();
+    await f.close();
+  }
+});
+
 test("transient ASR recovery survives restart and backs off without requiring a manual retry", async () => {
   const f = await fixture();
   try {

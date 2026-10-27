@@ -755,9 +755,7 @@ export class AiVoiceMemoryService {
       id,
       ready: this.models
         .getSnapshot()
-        .models.some(
-          (model) => model.id === id && Boolean(model.activeRevision && model.runtimeReady),
-        ),
+        .models.some((model) => model.id === id && !!model.activeRevision && model.runtimeReady),
     };
   }
 
@@ -1883,11 +1881,12 @@ export class AiVoiceMemoryService {
 
   private scheduleDeferredRetry(): void {
     if (this.stopped) return;
-    if (this.deferredRetryTimer) clearTimeout(this.deferredRetryTimer);
     if (!this.isAutomaticTranscriptionEnabled()) {
+      if (this.deferredRetryTimer) clearTimeout(this.deferredRetryTimer);
       this.deferredRetryTimer = undefined;
       return;
     }
+    if (this.deferredRetryTimer) return;
     this.deferredRetryTimer = setTimeout(() => {
       this.deferredRetryTimer = undefined;
       void this.retryDeferredRecords().catch((error) => {
