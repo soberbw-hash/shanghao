@@ -85,7 +85,9 @@ jobs:
           $assetBase = "https://github.com/soberbw-hash/shanghao/releases/download/$env:RELEASE_TAG"
           $body = [regex]::Replace($body, '\]\(\.\./assets/releases/[^/]+/([^)]+)\)', "]($assetBase/`$1)")
           New-Item -ItemType Directory -Path apps/desktop/release/screenshots -Force | Out-Null
-          Get-ChildItem "docs/assets/releases/$env:RELEASE_TAG" -Filter *.png -File | Copy-Item -Destination apps/desktop/release/screenshots
+          if (Test-Path "docs/assets/releases/$env:RELEASE_TAG") {
+            Get-ChildItem "docs/assets/releases/$env:RELEASE_TAG" -Filter *.png -File | Copy-Item -Destination apps/desktop/release/screenshots
+          }
           Set-Content apps/desktop/release/release-body.md -Value $body -Encoding utf8
       - run: pnpm release:checksums
       # Publish from the verified build job. Release assets do not need an
@@ -106,4 +108,12 @@ jobs:
             apps/desktop/release/latest*.yml
             apps/desktop/release/SHA256SUMS.txt
             apps/desktop/release/package-size.json
-            apps/desktop/release/screenshots/*.png
+      - name: Publish release screenshots when provided
+        if: ${{ hashFiles('apps/desktop/release/screenshots/*.png') != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          fail_on_unmatched_files: true
+          files: apps/desktop/release/screenshots/*.png

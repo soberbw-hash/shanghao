@@ -13,11 +13,11 @@ export const HEARTBEAT_INTERVAL_MS = 10_000;
 export const SIGNALING_PING_TIMEOUT_MS = 30_000;
 export const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 12_000, 16_000];
 export const DEFAULT_SIGNALING_PORT = 43_821;
-export const OFFICIAL_RELAY_SERVER_URL = "wss://118.25.103.107/";
+export const OFFICIAL_RELAY_SERVER_URL = "wss://47.94.230.179/";
 // Wire format stays at protocol 7; private-room deployments separately enforce
 // the minimum client version before checking room identity.
 export const APP_PROTOCOL_VERSION = "7";
-export const APP_BUILD_NUMBER = "2026.10.27.2";
+export const APP_BUILD_NUMBER = "2026.10.28.1";
 export const SETTINGS_SCHEMA_VERSION = 36;
 export const PROFILE_SCHEMA_VERSION = 2;
 export const DEFAULT_RELEASES_URL = "https://github.com/soberbw-hash/shanghao/releases";

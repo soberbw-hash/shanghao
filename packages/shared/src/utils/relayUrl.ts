@@ -20,7 +20,11 @@ export const normalizeRelayServerUrl = (value?: string): string | undefined => {
     if (url.pathname === "/health") url.pathname = "/";
     // Upgrade only the former official endpoint. Custom hosts, paths and
     // authentication parameters retain their deployment-specific meaning.
-    if (url.toString() === "ws://118.25.103.107:43821/") return OFFICIAL_RELAY_SERVER_URL;
+    if (
+      url.toString() === "ws://118.25.103.107:43821/" ||
+      url.toString() === "wss://118.25.103.107/"
+    )
+      return OFFICIAL_RELAY_SERVER_URL;
     return url.toString();
   } catch {
     return undefined;
