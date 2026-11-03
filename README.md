@@ -10,6 +10,16 @@
 
 [下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.17.md) · [看技术结构](#声音到底经过了什么)
 
+## 3.4.17 新功能一览
+
+录音库支持时间线选段和回收站恢复；房间加入实时纪事和语音回溯入口，并改进音频设备配置、分享和窗口布局。实时纪事、语音回溯等功能需要对应房间服务支持；跨网络分享、长录音续转及不同设备表现仍需实机验证。
+
+![3.4.17 音频设备配置](./docs/assets/releases/v3.4.17/audio-device-presets.png)
+
+![3.4.17 房间纪事](./docs/assets/releases/v3.4.17/chronicle.png)
+
+以上为隔离环境中的演示截图，不含真实聊天或录音。
+
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
 <sub>此前固定房间的场景演示，成员为本机隔离环境中的模拟数据。3.4.0 保留房间场景，入口升级为私人房间。</sub>
