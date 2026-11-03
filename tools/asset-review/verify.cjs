@@ -358,7 +358,20 @@ app
     checks++;
     await run("document.querySelector('dialog').close()");
     await tab("游戏显示器");
-    assert.equal(await run("document.querySelectorAll('.review-card').length"), 60);
+    assert.equal(
+      await run("document.querySelectorAll('.review-card').length"),
+      manifest.games.length + 1,
+    );
+    checks++;
+    assert.ok(
+      manifest.assets.some((item) => item.relative === "games/peacekeeper-elite-scene.webp"),
+    );
+    assert.equal(
+      await run(
+        "Array.from(document.querySelectorAll('.review-card')).some(card => card.textContent.includes('和平精英'))",
+      ),
+      true,
+    );
     checks++;
     await run(
       "Promise.all(Array.from(document.querySelectorAll('.review-grid img')).map(x=>x.decode()))",

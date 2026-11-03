@@ -205,10 +205,25 @@ const games: Card[] = GAME_RULES.map(({ name }) => ({
   id: `game-${name}`,
   name,
   kind: "当前游戏画面",
-  path: base + "assets/games/screens/" + manifest.games.find((x) => x.name === name)?.file,
-  note: manifest.games.find((x) => x.name === name)?.kind + " · 静态显示画面",
-  url: raw("games/screens/" + manifest.games.find((x) => x.name === name)?.file),
-  assetRelative: "games/screens/" + manifest.games.find((x) => x.name === name)?.file,
+  path:
+    base +
+    "assets/" +
+    (name === "和平精英"
+      ? "games/peacekeeper-elite-scene.webp"
+      : "games/screens/" + manifest.games.find((x) => x.name === name)?.file),
+  note:
+    name === "和平精英"
+      ? "原创场景 · 静态显示画面"
+      : manifest.games.find((x) => x.name === name)?.kind + " · 静态显示画面",
+  url: raw(
+    name === "和平精英"
+      ? "games/peacekeeper-elite-scene.webp"
+      : "games/screens/" + manifest.games.find((x) => x.name === name)?.file,
+  ),
+  assetRelative:
+    name === "和平精英"
+      ? "games/peacekeeper-elite-scene.webp"
+      : "games/screens/" + manifest.games.find((x) => x.name === name)?.file,
   content: (
     <div className="review-monitor">
       <GameMonitorContent gameName={name} />
