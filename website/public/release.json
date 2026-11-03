@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.15",
-  "published_at": "2026-10-27T07:00:51Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.15",
+  "tag_name": "v3.4.17",
+  "published_at": "2026-11-03T15:19:02Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.17",
   "highlights": [
-    "默认使用开发者服务器提供的 SenseVoice 转录和 GLM-4-Flash 摘要、问答，无需填写个人密钥；仍可切换自定义 API。",
-    "自动转录和自动摘要默认开启，历史未转录录音会排队。退出录音库不暂停，重启后恢复中断任务；网络和服务临时故障按间隔重试，保留已完成分段。手动暂停不会被自动恢复。",
-    "默认开启千问 0.6B 本地校对，后台准备识别模型及必要的时间轴组件。未就绪时先用云端，准备完成后补做校对；其他本地模型由用户按需安装。",
-    "0.6B 识别权重约 1.8GB，另有对齐和运行组件。下载让通话、游戏优先；硬件不支持本地推理时仍可使用云端。云端和本地原稿分别保留，优先显示融合稿。"
+    "改进录音库：支持片段时间范围选择、回收站恢复，并优化文字稿和摘要显示。",
+    "优化房间状态切换、音频设备配置、屏幕分享以及不同窗口尺寸下的布局。",
+    "改进后台转录任务恢复和临时错误重试，保留已有的录音和文字。",
+    "新增实时纪事、语音回溯和云端管理的客户端与服务端实现，使用这些功能需要相应服务器能力。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.15-Setup-x64.exe",
-      "size": 214337877,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.15/ShangHao-3.4.15-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.15/ShangHao-3.4.15-Setup-x64.exe",
-      "sha256": "585d0fe902ceef33b4add2a49b5a6713b12e6618329da46ce3daf3dbd8169c1b"
+      "name": "ShangHao-3.4.17-Setup-x64.exe",
+      "size": 216435098,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.17/ShangHao-3.4.17-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.17/ShangHao-3.4.17-Setup-x64.exe",
+      "sha256": "7d0601151723996dfce6a1c3e820aa49f8b42f8a72aee38ba82fd4ccb00b301f"
     }
   ]
 }
