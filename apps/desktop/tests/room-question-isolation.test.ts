@@ -50,6 +50,7 @@ test("questions queued in a previous room are rejected before searching or conta
         },
       },
       {
+        get: async () => undefined,
         related: () => {
           throw Error("must not search");
         },
@@ -72,7 +73,43 @@ test("a delayed answer from a previous room is never returned after switching", 
           return { text: "A private result", sources: [] } as T;
         },
       },
-      { related: () => [] },
+      { related: () => [], get: async () => undefined },
+      (operation) => operation(new AbortController().signal),
+    ),
+    /ai_question_room_changed/,
+  );
+});
+
+test("switching during source metadata verification stops before contacting the model", async () => {
+  let roomId = "room-a";
+  await assert.rejects(
+    answerGlobalVoiceQuestion(
+      { question: "约饭", roomId },
+      {
+        questionRoomId: () => roomId,
+        generateJson: async () => {
+          throw Error("must not contact model");
+        },
+      },
+      {
+        related: () => [
+          {
+            recordingId: "a",
+            filePath: "a.m4a",
+            createdAt: "2026-10-31",
+            startMs: 0,
+            roomName: "A",
+            excerpt: "约饭",
+            title: "约饭",
+            kind: "transcript",
+            score: 1,
+          },
+        ],
+        get: async () => {
+          roomId = "room-b";
+          return undefined;
+        },
+      },
       (operation) => operation(new AbortController().signal),
     ),
     /ai_question_room_changed/,

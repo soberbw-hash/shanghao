@@ -14,6 +14,7 @@ import type {
   RuntimeHealthSnapshot,
 } from "./diagnostics.types";
 import type { RoomMember } from "./room.types";
+import type { CloudAiAdminSnapshot, CloudAiAdminMutation } from "./cloud-ai-admin.types";
 import type { RecordingClipRequest, RecordingClipResult } from "../recording-clips";
 import type {
   RecordingExportPayload,
@@ -221,6 +222,7 @@ export interface GameDetectionSnapshot {
     | "Dota 2"
     | "Apex 英雄"
     | "绝地求生"
+    | "和平精英"
     | "守望先锋"
     | "永劫无间"
     | "原神"
@@ -264,6 +266,12 @@ export interface GameDetectionSnapshot {
 }
 
 export interface DesktopApi {
+  backgroundAudio?: import("./background-audio.types").BackgroundAudioApi;
+  recordingRecycle?: {
+    list: () => Promise<import("./recording.types").RecordingRecycleItem[]>;
+    restore: (id: string) => Promise<void>;
+  };
+  voiceReplay?: import("./voice-replay.types").VoiceReplayApi;
   remoteControl: import("./remote-control-api.types").RemoteControlApi;
   applicationAudio: import("./application-audio.types").ApplicationAudioApi;
   temporaryRooms: {
@@ -405,6 +413,10 @@ export interface DesktopApi {
   weather: {
     getSnapshot: (request: LocalWeatherRequest) => Promise<LocalWeatherSnapshot>;
   };
+  cloudAiAdmin: {
+    get: () => Promise<CloudAiAdminSnapshot | undefined>;
+    change: (mutation: CloudAiAdminMutation) => Promise<CloudAiAdminSnapshot>;
+  };
   ai: {
     getSnapshot: () => Promise<AiVoiceMemorySnapshot>;
     controlModel: (modelId: AiModelId, action: AiModelAction) => Promise<AiVoiceMemorySnapshot>;
@@ -490,6 +502,7 @@ export interface DesktopApi {
   shortcuts: {
     onMuteTriggered: (listener: () => void) => () => void;
     onRecordingMarkerTriggered: (listener: () => void) => () => void;
+    onAudioDevicePresetTriggered?: (listener: () => void) => () => void;
     onPushToTalkState: (listener: (pressed: boolean) => void) => () => void;
     onQuickMessageTriggered: (listener: (slot: number) => void) => () => void;
   };

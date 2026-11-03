@@ -477,6 +477,30 @@
   stroke-width: 1.85;
 }
 
+.voice-availability-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.voice-availability-feedback.is-animating {
+  animation: voice-availability-confirm 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes voice-availability-confirm {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-availability-feedback.is-animating {
+    animation: none;
+  }
+}
+
 .voice-main-control-primary .voice-action-label,
 .voice-main-control-danger .voice-action-label {
   color: currentColor;
@@ -1346,4 +1370,7 @@
   border-radius: 50%;
   background: #ff7a59;
   box-shadow: 0 2px 7px rgba(229, 84, 54, 0.34);
+}
+.chat-panel-title-row {
+  user-select: none;
 }

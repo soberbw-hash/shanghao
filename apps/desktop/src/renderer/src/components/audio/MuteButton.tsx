@@ -11,12 +11,14 @@ export const MuteButton = ({
   className,
   showLevelFill = true,
   status,
+  feedbackSequence = 0,
 }: {
   isMuted: boolean;
   onClick: () => void;
   className?: string;
   showLevelFill?: boolean;
   status?: MicrophoneStatus;
+  feedbackSequence?: number;
 }) => (
   <ToggleButton
     isActive={isMuted}
@@ -32,22 +34,30 @@ export const MuteButton = ({
     onClick={onClick}
   >
     {showLevelFill ? <MicrophoneLevelFill muted={isMuted} /> : null}
-    <AnimatedControlIcon name="mic" muted={isMuted} className="voice-primary-icon relative z-[1]" />
-    <span className="voice-action-label relative z-[1] flex flex-col items-start leading-tight">
-      <span>{isMuted ? "已静音" : "麦克风"}</span>
-      {status && (status.tone === "warning" || !["active", "muted"].includes(status.capture)) ? (
-        <small
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          className={cn(
-            "text-[11px] font-normal",
-            status.tone === "warning" ? "text-[#936627]" : "text-[#64758a]",
-          )}
-        >
-          {status.label}
-        </small>
-      ) : null}
+    <span
+      key={feedbackSequence}
+      className={cn(
+        "voice-availability-feedback relative z-[1]",
+        feedbackSequence > 0 && "is-animating",
+      )}
+    >
+      <AnimatedControlIcon name="mic" muted={isMuted} className="voice-primary-icon" />
+      <span className="voice-action-label flex flex-col items-start leading-tight">
+        <span>{isMuted ? "已静音" : "麦克风"}</span>
+        {status && (status.tone === "warning" || !["active", "muted"].includes(status.capture)) ? (
+          <small
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className={cn(
+              "text-[11px] font-normal",
+              status.tone === "warning" ? "text-[#936627]" : "text-[#64758a]",
+            )}
+          >
+            {status.label}
+          </small>
+        ) : null}
+      </span>
     </span>
   </ToggleButton>
 );

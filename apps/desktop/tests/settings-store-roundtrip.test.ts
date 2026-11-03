@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { SETTINGS_SCHEMA_VERSION } from "@private-voice/shared";
+import { SETTINGS_SCHEMA_VERSION, selectAudioDeviceSettings } from "@private-voice/shared";
 
 import { defaultSettings, migrateSettings } from "../src/main/settings-migration";
 import { SettingsStore } from "../src/main/settings-store";
@@ -24,6 +24,50 @@ test("opening current settings leaves the primary file and backup untouched", as
     await assert.rejects(readFile(path.join(directory, "settings.backup.json"), "utf8"), {
       code: "ENOENT",
     });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("two audio device profiles survive real settings persistence and N-1 migration without touching recording/AI choices", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-audio-profiles-"));
+  try {
+    await writeFile(
+      path.join(directory, "settings.json"),
+      JSON.stringify({
+        ...defaultSettings,
+        settingsSchemaVersion: SETTINGS_SCHEMA_VERSION - 1,
+        profileId: randomUUID(),
+        preferredInputDeviceId: "legacy-input",
+        recordingSaveDirectory: "D:/上号录音",
+      }),
+    );
+    const store = new SettingsStore(undefined, directory);
+    const before = await store.load();
+    const audio = selectAudioDeviceSettings(before);
+    const profiles = [
+      { slot: 0 as const, name: "桌面", audio, microphoneMuted: true, speakerMuted: false },
+      {
+        slot: 1 as const,
+        name: "耳机",
+        audio: {
+          ...audio,
+          preferredInputDeviceId: "headset-input",
+          preferredOutputDeviceId: "headset-output",
+          speakerMasterVolume: 0.6,
+        },
+        microphoneMuted: false,
+        speakerMuted: true,
+      },
+    ];
+    await store.save({ audioDevicePresets: profiles, audioDevicePresetShortcut: "Ctrl+Shift+F9" });
+    const reopened = await new SettingsStore(undefined, directory).load();
+    assert.deepEqual(reopened.audioDevicePresets, profiles);
+    assert.equal(reopened.audioDevicePresetShortcut, "Ctrl+Shift+F9");
+    assert.equal(reopened.preferredInputDeviceId, "legacy-input");
+    assert.equal(reopened.recordingSaveDirectory, "D:/上号录音");
+    assert.equal(reopened.aiAsrModel, before.aiAsrModel);
+    assert.equal(reopened.aiTranscriptionProvider, before.aiTranscriptionProvider);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

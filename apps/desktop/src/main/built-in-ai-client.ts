@@ -1,6 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { readAiProviderResponse } from "./ai-provider-response";
+import { fetchAiAccountResponse } from "./ai-account-response";
+import type { CloudAiAdminSnapshot, CloudAiAdminMutation } from "@private-voice/shared";
 
 export interface BuiltInAiStatus {
   transcriptionConfigured: boolean;
@@ -13,8 +15,9 @@ export class BuiltInAiClient {
   private cache?: { origin: string; until: number; value: BuiltInAiStatus };
   constructor(
     private readonly relayUrl: () => string | undefined,
-    private readonly accessToken: () => Promise<string | undefined>,
+    private readonly accessToken: (forceRefresh?: boolean) => Promise<string | undefined>,
     private readonly fetcher: typeof fetch = fetch,
+    private readonly accountIdentity?: () => string | undefined,
   ) {}
   private endpoint(pathname: string): URL {
     const url = new URL(this.relayUrl() ?? "");
@@ -118,6 +121,77 @@ export class BuiltInAiClient {
     if (typeof result.content !== "string") throw Error("cloud_ai_invalid_response");
     return result.content;
   }
+  async adminSnapshot(): Promise<CloudAiAdminSnapshot | undefined> {
+    return this.adminRequest();
+  }
+  async adminChange(mutation: CloudAiAdminMutation): Promise<CloudAiAdminSnapshot> {
+    const snapshot = await this.adminRequest(mutation);
+    if (!snapshot) throw Error("cloud_ai_admin_forbidden");
+    this.cache = undefined;
+    return snapshot;
+  }
+  private async adminRequest(
+    mutation?: CloudAiAdminMutation,
+  ): Promise<CloudAiAdminSnapshot | undefined> {
+    const owner = this.accountIdentity?.();
+    const url = this.endpoint("/api/ai/admin/providers");
+    const token = await this.accessToken();
+    if (!token) return undefined;
+    if (
+      owner !== this.accountIdentity?.() ||
+      url.origin !== this.endpoint("/api/ai/admin/providers").origin
+    )
+      throw Error("account_session_expired");
+    const body = mutation ? JSON.stringify(mutation) : undefined;
+    if (body && body.length > 32_768) throw Error("cloud_ai_admin_invalid_input");
+    let response: Response;
+    try {
+      response = await this.fetcher(url.toString(), {
+        method: mutation ? "POST" : "GET",
+        redirect: "error",
+        signal: AbortSignal.timeout(12_000),
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body,
+      });
+    } catch {
+      throw Error("cloud_ai_admin_unavailable");
+    }
+    if (
+      token !== (await this.accessToken()) ||
+      owner !== this.accountIdentity?.() ||
+      url.origin !== this.endpoint("/api/ai/admin/providers").origin
+    ) {
+      await response.body?.cancel();
+      throw Error("account_session_expired");
+    }
+    if (!mutation && [401, 403, 404].includes(response.status)) {
+      await response.body?.cancel();
+      return undefined;
+    }
+    const payload = JSON.parse(
+      await readAiProviderResponse(response, 32_768, "cloud_ai_admin_invalid_response"),
+    );
+    if (
+      owner !== this.accountIdentity?.() ||
+      url.origin !== this.endpoint("/api/ai/admin/providers").origin
+    )
+      throw Error("account_session_expired");
+    if (!response.ok) {
+      const code = payload?.error?.code;
+      throw Error(
+        typeof code === "string" && /^cloud_ai_admin_[a-z_]{1,60}$/.test(code)
+          ? code
+          : "cloud_ai_admin_unavailable",
+      );
+    }
+    if (
+      !Number.isSafeInteger(payload?.revision) ||
+      !Array.isArray(payload.providers) ||
+      payload.providers.length > 16
+    )
+      throw Error("cloud_ai_admin_invalid_response");
+    return payload as CloudAiAdminSnapshot;
+  }
   private async request(
     pathname: string,
     body: unknown,
@@ -125,6 +199,7 @@ export class BuiltInAiClient {
     extraHeaders?: Record<string, string>,
   ): Promise<Record<string, unknown>> {
     signal?.throwIfAborted();
+    const owner = this.accountIdentity?.();
     const url = this.endpoint(pathname);
     const token = await this.accessToken();
     if (!token) throw Error("account_session_expired");
@@ -137,17 +212,30 @@ export class BuiltInAiClient {
           : "cloud_asr_network_error",
       );
     };
-    const response = await this.fetcher(url.toString(), {
-      method: "POST",
-      redirect: "error",
-      headers: {
-        "content-type": "application/json",
-        ...extraHeaders,
-        authorization: `Bearer ${token}`,
+    const response = await fetchAiAccountResponse(
+      async (currentToken) => {
+        if (owner !== this.accountIdentity?.()) throw Error("account_session_expired");
+        if (url.origin !== this.endpoint(pathname).origin) throw Error("account_session_expired");
+        return this.fetcher(url.toString(), {
+          method: "POST",
+          redirect: "error",
+          headers: {
+            "content-type": "application/json",
+            ...extraHeaders,
+            authorization: `Bearer ${currentToken}`,
+          },
+          body: body instanceof Uint8Array ? new Uint8Array(body).buffer : JSON.stringify(body),
+          signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(180000)]),
+        }).catch(requestFailed);
       },
-      body: body instanceof Uint8Array ? new Uint8Array(body).buffer : JSON.stringify(body),
-      signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(180000)]),
-    }).catch(requestFailed);
+      token,
+      () => {
+        if (owner !== this.accountIdentity?.()) throw Error("account_session_expired");
+        return this.accessToken(true);
+      },
+      signal,
+    );
+    if (owner !== this.accountIdentity?.()) throw Error("account_session_expired");
     const raw = await readAiProviderResponse(
       response,
       768 * 1024,

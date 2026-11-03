@@ -29,6 +29,11 @@ export interface IceCandidatePayload {
 }
 
 export type SignalEnvelope =
+  | ReplayControlMessage
+  | ReplayStateMessage
+  | ChronicleControlMessage
+  | ChronicleAudioMessage
+  | ChronicleStateMessage
   | JoinChannelMessage
   | LeaveChannelMessage
   | HeartbeatMessage
@@ -76,6 +81,50 @@ interface BaseMessage {
   peerId?: string;
 }
 
+export interface ChronicleControlMessage extends BaseMessage {
+  type: "chronicle_control";
+  roomId: string;
+  peerId: string;
+  action: "start" | "read" | "participate" | "stop";
+  sessionId?: string;
+  enabled?: boolean;
+}
+export interface ChronicleStateMessage extends BaseMessage {
+  type: "chronicle_state";
+  roomId: string;
+  available?: boolean;
+  chunkId?: string;
+  state?: import("./room-chronicle-sessions").ChronicleSnapshot;
+  error?: "chronicle_forbidden" | "chronicle_unavailable" | "chronicle_busy";
+}
+export interface ChronicleAudioMessage extends BaseMessage {
+  type: "chronicle_audio";
+  roomId: string;
+  peerId: string;
+  sessionId: string;
+  chunkId: string;
+  durationMs: number;
+  startedAt: number;
+  mime: "audio/webm" | "audio/ogg";
+  data: string;
+}
+
+export interface ReplayControlMessage extends BaseMessage {
+  type: "replay_control";
+  roomId: string;
+  peerId: string;
+  action: "start" | "read" | "approve" | "revoke" | "stop";
+  sessionId?: string;
+  epoch?: number;
+}
+export interface ReplayStateMessage extends BaseMessage {
+  type: "replay_state";
+  roomId: string;
+  available?: boolean;
+  state?: import("./room-replay-consent").ReplaySnapshot;
+  error?: "replay_forbidden" | "replay_unavailable";
+}
+
 interface VersionedMessage {
   appVersion: string;
   protocolVersion: string;
@@ -121,6 +170,8 @@ export interface PongMessage extends BaseMessage {
 }
 
 export interface JoinAckMessage extends BaseMessage, VersionedMessage {
+  replaySupported?: boolean;
+  chronicleSupported?: boolean;
   type: "join_ack";
   roomId: string;
   peerId: string;
@@ -628,6 +679,19 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
   if (!isRecord(value) || !isText(value.type, 64)) return false;
 
   switch (value.type) {
+    case "chronicle_audio":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        isIdentifier(value.sessionId, 128) &&
+        isIdentifier(value.chunkId, 128) &&
+        isIntegerInRange(value.durationMs, 500, 45000) &&
+        isIntegerInRange(value.startedAt, 0, Number.MAX_SAFE_INTEGER) &&
+        ["audio/webm", "audio/ogg"].includes(String(value.mime)) &&
+        isText(value.data, 220_000) &&
+        value.data.length % 4 === 0 &&
+        /^[A-Za-z0-9+/]+={0,2}$/.test(value.data)
+      );
     case "join_channel":
       return (
         hasRoom(value) &&
@@ -748,6 +812,27 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
         (value.avatarDataUrl === undefined ||
           (isText(value.avatarDataUrl, 180_000) &&
             /^data:image\/(?:png|jpeg|webp);base64,/.test(value.avatarDataUrl)))
+      );
+    case "replay_control":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        ["start", "read", "approve", "revoke", "stop"].includes(String(value.action)) &&
+        (value.action === "start" ||
+          value.action === "read" ||
+          (isIdentifier(value.sessionId, 64) &&
+            Number.isSafeInteger(value.epoch) &&
+            Number(value.epoch) > 0))
+      );
+    case "chronicle_control":
+      return (
+        hasRoom(value) &&
+        hasPeer(value) &&
+        ["start", "read", "participate", "stop"].includes(String(value.action)) &&
+        (value.action === "start" ||
+          value.action === "read" ||
+          isIdentifier(value.sessionId, 64)) &&
+        (value.action !== "participate" || typeof value.enabled === "boolean")
       );
     case "chat_message": {
       const hasContent = isText(value.content, 500);

@@ -3,9 +3,11 @@ import { RoomConnectionState } from "@private-voice/shared";
 import { useRoomStore } from "../../store/roomStore";
 import { playUiSound } from "../audio/uiSound";
 import { gameAssistantMessageId } from "../chat/gameAssistantMessage";
+import { splitAssistantShare } from "../chat/splitAssistantShare";
 
 export const useRoomAiShare = (
   onSend: (content: string, clientMessageId: string) => Promise<void>,
+  originatingRoomId?: string,
 ) => {
   const delivery = useRef<
     { roomId: string; text: string; chunks: string[]; ids: string[]; sent: number } | undefined
@@ -16,22 +18,16 @@ export const useRoomAiShare = (
   const share = async (text: string) => {
     if (busy.current || !text.trim()) return;
     const initialRoom = useRoomStore.getState().room;
+    if (originatingRoomId !== undefined && initialRoom.roomId !== originatingRoomId) {
+      setNotice("频道已切换，请在当前频道重新提问。");
+      return;
+    }
     if (text.length > 16_000) {
       setNotice("答案过长，请复制需要的部分到聊天。");
       return;
     }
     if (delivery.current?.text !== text || delivery.current.roomId !== initialRoom.roomId) {
-      // Match the current server's 500 UTF-16 character limit without cutting surrogate pairs.
-      const chunks: string[] = [];
-      let chunk = "";
-      for (const character of text.trim()) {
-        if (chunk.length + character.length > 500) {
-          chunks.push(chunk);
-          chunk = "";
-        }
-        chunk += character;
-      }
-      if (chunk) chunks.push(chunk);
+      const chunks = splitAssistantShare(text);
       delivery.current = {
         roomId: initialRoom.roomId,
         text,

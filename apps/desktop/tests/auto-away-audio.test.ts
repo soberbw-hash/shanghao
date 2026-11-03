@@ -103,8 +103,9 @@ test("actual room idle callbacks restore muted and open microphones over repeate
     away,
     (muted: boolean) => useAudioStore.getState().setMuted(muted),
     {
-      current: (zone: string) => {
+      current: (zone: string, activity: string) => {
         member.sceneZone = zone;
+        member.activity = activity;
       },
     },
     () => undefined,
@@ -125,7 +126,8 @@ test("actual room idle callbacks restore muted and open microphones over repeate
       useAudioStore.getState().setAudioState({ isMuted: wasMuted, isDeafened: false });
       idleSeconds = 1_800;
       await check();
-      assert.equal(member.sceneZone, "restroomZone");
+      assert.equal(member.sceneZone, "gameDesk2");
+      assert.equal(member.activity, "restroom");
       assert.equal(away.current?.wasMuted, wasMuted);
       assert.equal(useAudioStore.getState().isMuted, true);
       await check();
@@ -136,7 +138,7 @@ test("actual room idle callbacks restore muted and open microphones over repeate
       fail = false;
       assert.equal(
         member.sceneZone,
-        "restroomZone",
+        "gameDesk2",
         "failed poll must not treat inactivity as a mouse return",
       );
       await check();
@@ -146,7 +148,7 @@ test("actual room idle callbacks restore muted and open microphones over repeate
     }
     const handlerSource = source.slice(
       source.indexOf("const handleZoneSelect ="),
-      source.indexOf("const handleToggleMicrophone ="),
+      source.indexOf("\n  return (", source.indexOf("const handleZoneSelect =")),
     );
     const handlerBody = handlerSource.slice(
       handlerSource.indexOf("=> {") + 4,

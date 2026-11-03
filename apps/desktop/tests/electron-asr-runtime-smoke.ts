@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 import { app } from "electron";
@@ -6,6 +7,13 @@ import { app } from "electron";
 import type { AiAsrModelId, AiModelId } from "@private-voice/shared";
 
 import { AiRuntimeManager } from "../src/main/ai-runtime-manager";
+import { resolveFfmpegExecutable } from "../src/main/media-runtime";
+import { runLocalProcess } from "../src/main/local-process";
+
+require(path.resolve("tests/electron-isolated-profile.cjs")).configureIsolatedProfile(
+  app,
+  "asr-runtime",
+);
 
 interface ModelStateFile {
   models: Partial<
@@ -82,6 +90,68 @@ const run = async (): Promise<void> => {
         timing: transcript.timing,
         resourceUsage: transcript.resourceUsage,
       });
+      if (process.env.SHANGHAO_ASR_SMOKE_VERIFY_ALIGNMENT === "1") {
+        const sourceHash = createHash("sha256")
+          .update(await readFile(samplePath))
+          .digest("hex");
+        const directory = path.join(app.getPath("userData"), "alignment-proof");
+        await mkdir(directory, { recursive: true });
+        const paddedPath = path.join(directory, "three-second-offset.wav");
+        const ffmpeg = resolveFfmpegExecutable();
+        if (!ffmpeg) throw Error("ffmpeg_runtime_unavailable");
+        await runLocalProcess(
+          ffmpeg,
+          [
+            "-nostdin",
+            "-y",
+            "-i",
+            samplePath,
+            "-af",
+            "adelay=3000:all=1",
+            "-c:a",
+            "pcm_s16le",
+            paddedPath,
+          ],
+          { timeoutMs: 15_000 },
+        );
+        const warmStartedAt = Date.now();
+        const shifted = await runtime.transcribeChunk({
+          modelId,
+          recordingId: `shifted-${modelId}`,
+          filePath: paddedPath,
+          offsetMs: 3_000,
+          durationMs: 5_000,
+          resourceMode: "normal",
+        });
+        const text = (segments: typeof transcript.segments) =>
+          segments
+            .map((s) => s.text)
+            .join("")
+            .replace(/[\p{P}\p{Z}\s]/gu, "");
+        const first = transcript.segments[0]!;
+        const second = shifted.segments[0];
+        if (
+          shifted.outputStatus !== "normal" ||
+          !second ||
+          text(shifted.segments) !== text(transcript.segments) ||
+          Math.abs(second.startMs - first.startMs - 3000) > 200 ||
+          Math.abs(second.endMs - first.endMs - 3000) > 200 ||
+          shifted.segments.some(
+            (s) => s.startMs < 3000 || s.endMs > 8000 || s.endMs <= s.startMs,
+          ) ||
+          createHash("sha256")
+            .update(await readFile(samplePath))
+            .digest("hex") !== sourceHash
+        )
+          throw Error("native_alignment_or_source_integrity_failed");
+        results.push({
+          modelId,
+          warmElapsedMs: Date.now() - warmStartedAt,
+          alignmentOffsetMs: second.startMs - first.startMs,
+          wordCount: shifted.segments.reduce((sum, s) => sum + (s.words?.length ?? 0), 0),
+          sourceUnchanged: true,
+        });
+      }
     }
     console.log(
       JSON.stringify({

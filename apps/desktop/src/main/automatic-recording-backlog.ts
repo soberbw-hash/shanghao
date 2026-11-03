@@ -15,6 +15,7 @@ import {
   isDeferredRemoteTranscription,
 } from "./automatic-recording-recovery";
 import { isTransientRemoteTranscriptionError } from "./remote-transcription-retry";
+import { isTranscriptionExecutionComplete } from "./remote-transcription";
 type BacklogSettings = Pick<
   AppSettings,
   | "isAiAutoTranscribeEnabled"
@@ -70,7 +71,14 @@ export async function queueUntranscribedRecordings(
           isTransientRemoteTranscriptionError(record.errorMessage ?? ""))
       )
         continue;
-      if (record?.transcript.length && !canResumeRemoteTranscription(record)) {
+      const interruptedTranscription =
+        record?.errorMessage === "deferred:app_restarted" &&
+        !isTranscriptionExecutionComplete(record);
+      if (
+        record?.transcript.length &&
+        !canResumeRemoteTranscription(record) &&
+        !interruptedTranscription
+      ) {
         const assist = needsAutomaticCloudAssist(record, host.assistModel?.());
         if (!postprocessingAdmitted && (assist || needsAutomaticPostprocessing(record, organize))) {
           await host.start({
@@ -79,7 +87,7 @@ export async function queueUntranscribedRecordings(
             roomId: record.roomId,
             roomName: record.roomName,
             transcribe: assist,
-            organize: true,
+            organize: organize && record.autoOrganizeRequested === true,
           });
           postprocessingAdmitted = true;
         }
@@ -100,7 +108,9 @@ export async function queueUntranscribedRecordings(
         roomName: record?.roomName ?? item.roomName,
         recordedAt: record?.recordedAt ?? item.createdAt,
         transcribe: true,
-        organize,
+        organize: interruptedTranscription
+          ? organize && record?.autoOrganizeRequested === true
+          : organize,
         markers: item.markers,
       });
     } catch {

@@ -85,6 +85,7 @@ extraResources:
       - "shanghao-core.exe"
       - "ShangHao.PhoneAudio.exe"
       - "ShangHao.PhoneInput.exe"
+      - "ShangHao.ChatMix.exe"
   - from: scripts/qwen-runner.py
     to: ai/qwen-runner.py
   - from: scripts/asr-runner.py

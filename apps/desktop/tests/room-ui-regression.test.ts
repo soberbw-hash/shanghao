@@ -16,6 +16,7 @@ import { selectVisibleSceneMembers } from "../src/renderer/src/features/voice-sc
 import { stabilizePeerLatency, useRoomStore } from "../src/renderer/src/store/roomStore";
 import { getNicknameValidationError } from "../src/renderer/src/utils/nickname";
 import { readRendererCss } from "./helpers/read-renderer-css";
+import { hasRecordingCompanion } from "../src/renderer/src/features/recording/hasRecordingCompanion";
 
 const member = (latencyMs?: number): RoomMember => ({
   id: "peer-latency",
@@ -33,6 +34,23 @@ const member = (latencyMs?: number): RoomMember => ({
   volume: 1,
   joinedAt: "2026-07-13T00:00:00.000Z",
   connectionQuality: "good",
+});
+
+test("automatic recording requires a joined companion and ignores empty seats and connection progress", () => {
+  const local = { ...member(), isLocal: true };
+  assert.equal(hasRecordingCompanion([local]), false);
+  assert.equal(hasRecordingCompanion([local, { ...member(), isEmptySlot: true }]), false);
+  assert.equal(
+    hasRecordingCompanion([local, { ...member(), joinState: MemberJoinState.Connecting }]),
+    false,
+  );
+  assert.equal(hasRecordingCompanion([local, member()]), true);
+  assert.equal(hasRecordingCompanion([local, { ...member(), joinState: undefined }]), true);
+  assert.equal(
+    hasRecordingCompanion([local, { ...member(), speakingState: MemberSpeakingState.Speaking }]),
+    true,
+  );
+  assert.equal(hasRecordingCompanion([local]), false);
 });
 
 test("updating members are distinct from reconnecting members", () => {
@@ -371,7 +389,7 @@ test("speaking state changes never move the local character to another seat", ()
 
 test("new additive room requests are not sent to the deployed 2.5 server", () => {
   const source = readFileSync(
-    path.resolve(process.cwd(), "src/renderer/src/features/room/roomClient.ts"),
+    path.resolve(process.cwd(), "src/renderer/src/features/chat/RoomSocialTransport.ts"),
     "utf8",
   );
   const capabilities = readFileSync(
@@ -388,7 +406,7 @@ test("new additive room requests are not sent to the deployed 2.5 server", () =>
   );
   assert.equal(capabilities.includes('DAILY_ROOM_REPORTS_MIN_BUILD = "2026.08.12.1"'), true);
   assert.equal(
-    source.includes("serverBuildSupportsDailyRoomReports(this.serverBuildNumber)"),
+    source.includes("serverBuildSupportsDailyRoomReports(this.options.getServerBuildNumber?.())"),
     true,
   );
   assert.equal(

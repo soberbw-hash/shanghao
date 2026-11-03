@@ -216,6 +216,8 @@ test("ASR rejects internal custom hosts and bounds streamed results", async () =
 });
 
 test("ASR account and key errors give actionable messages without raw provider text", () => {
+  assert.match(transcriptionProviderError("deferred:account_session_expired")!, /登录已过期/);
+  assert.match(transcriptionProviderError("account_session_expired")!, /无需重新填写/);
   assert.match(transcriptionProviderError("cloud_asr_http_402")!, /内置云端.*额度/);
   assert.match(transcriptionProviderError("cloud_asr_http_401")!, /内置云端.*配置/);
   assert.match(transcriptionProviderError("cloud_asr_http_429")!, /稍后/);
@@ -237,6 +239,7 @@ test("switching a deferred local recording to cloud does not require an installe
       {} as never,
       {
         list: async () => [{ recordingId: "deferred", errorMessage: "deferred:manual_only" }],
+        get: async () => ({ recordingId: "deferred", errorMessage: "deferred:manual_only" }),
       } as never,
       undefined,
       () => true,

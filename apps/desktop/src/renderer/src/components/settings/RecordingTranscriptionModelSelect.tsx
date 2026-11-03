@@ -92,7 +92,7 @@ export function RecordingTranscriptionModelSelect({
             title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
             onChange={(event) => void choose(event.target.value)}
           >
-            <option value="cloud">SenseVoiceSmall 云端</option>
+            <option value="cloud">内置云端转录</option>
             <option value="custom">自定义 API</option>
             <optgroup label="本地模型">
               {(Object.entries(AI_ASR_MODEL_NAMES) as Array<[AiAsrModelId, string]>).map(

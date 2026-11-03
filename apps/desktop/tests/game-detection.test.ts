@@ -41,6 +41,19 @@ test("game detection uses structured exact process matches", () => {
   assert.equal(matchKnownGame("LostCastle2\r\nexplorer"), undefined);
 });
 
+test("Peacekeeper Elite requires game evidence when the emulator is shared", () => {
+  assert.equal(matchKnownGame(snapshot("AndroidEmulatorEx", "和平精英")), "和平精英");
+  assert.equal(
+    matchKnownGame(snapshot("aow_exe", "", "", "--package com.tencent.tmgp.pubgmhd")),
+    "和平精英",
+  );
+  assert.equal(matchKnownGame(snapshot("AndroidEmulatorEx", "腾讯手游助手")), undefined);
+  assert.equal(matchKnownGame(snapshot("dnplayer", "王者荣耀")), undefined);
+  assert.equal(matchKnownGame(snapshot("chrome", "和平精英攻略")), undefined);
+  assert.ok(SUPPORTED_GAME_NAMES.includes("和平精英"));
+  assert.match(buildGameDetectionProbeCommand(), /androidemulatorex/);
+});
+
 test("an exact running game stays visible while another app is foreground", () => {
   assert.equal(
     matchKnownGame([
@@ -95,7 +108,7 @@ test("repository documentation lists every supported game", () => {
     path.resolve(process.cwd(), "../../docs/supported-activities.md"),
     "utf8",
   );
-  assert.equal(SUPPORTED_GAME_NAMES.length, 60);
+  assert.equal(SUPPORTED_GAME_NAMES.length, 61);
   for (const gameName of SUPPORTED_GAME_NAMES) {
     assert.equal(
       documentation.includes(gameName),

@@ -31,8 +31,14 @@ export class CloudAsrHttpController {
   constructor(
     private readonly accounts: AccountBackend,
     private readonly secure: (request: IncomingMessage) => boolean,
-    private readonly service = new CloudAsrService(),
-    private readonly textService = new CloudAiService(),
+    private readonly service: Pick<
+      CloudAsrService,
+      "isConfigured" | "transcribe"
+    > = new CloudAsrService(),
+    private readonly textService: Pick<
+      CloudAiService,
+      "isConfigured" | "execute"
+    > = new CloudAiService(),
   ) {}
   async handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;

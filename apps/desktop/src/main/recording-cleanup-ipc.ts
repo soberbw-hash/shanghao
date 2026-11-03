@@ -1,13 +1,18 @@
-import { ipcMain, shell, type BrowserWindow } from "electron";
+import { ipcMain, type BrowserWindow } from "electron";
 import { IPC_CHANNELS, type AppSettings } from "@private-voice/shared";
 import { getUsableRecordingDirectory, scanWasteRecordings } from "./recording-library";
-import { recycleUnprotectedRecordingInDirectory } from "./recording-library-core";
 import { createRecordingWasteSelection } from "./recording-waste-selection";
 import { sendToWindow } from "./safe-web-contents";
 
 export const registerRecordingCleanupIpc = (
   getSettings: () => AppSettings,
   getWindow: () => BrowserWindow | null | undefined,
+  recycle: (
+    filePath: string,
+    recordingId: string,
+    fileSize: number,
+    modifiedAt: string,
+  ) => Promise<void>,
 ) => {
   let scannedDirectory: string | undefined;
   const selection = createRecordingWasteSelection(async (candidate) => {
@@ -20,16 +25,8 @@ export const registerRecordingCleanupIpc = (
     ) {
       throw new Error("recording_cleanup_rescan_required");
     }
-    await recycleUnprotectedRecordingInDirectory(
-      directory,
-      candidate.filePath,
-      (target) => shell.trashItem(target),
-      {
-        recordingId: candidate.recordingId,
-        fileSize: candidate.fileSize,
-        modifiedAt: candidate.modifiedAt,
-      },
-    );
+    const { filePath, recordingId, fileSize, modifiedAt } = candidate;
+    await recycle(filePath, recordingId, fileSize, modifiedAt);
   });
   ipcMain.handle(IPC_CHANNELS.recording.scanWaste, () =>
     selection.scan(async () => {

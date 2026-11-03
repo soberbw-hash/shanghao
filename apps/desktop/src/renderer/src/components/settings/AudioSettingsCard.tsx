@@ -7,6 +7,7 @@ import { Switch } from "../base/Switch";
 import { SettingsItemRow } from "./SettingsItemRow";
 import { SettingsSection } from "./SettingsSection";
 import { PhoneModeSettings } from "./PhoneModeSettings";
+import { AudioPresetShortcutSettings } from "./AudioPresetShortcutSettings";
 
 export const AudioSettingsCard = ({
   settings,
@@ -20,25 +21,30 @@ export const AudioSettingsCard = ({
   onChange: (patch: Partial<AppSettings>) => void;
 }) => (
   <SettingsSection title="音频" description="选择输入与输出设备。">
-    <div className="space-y-3">
+    <div className="audio-settings space-y-3">
       <PhoneModeSettings />
+      <AudioPresetShortcutSettings />
       <SettingsItemRow label="输入设备">
-        <InputDevicePicker
-          devices={inputDevices}
-          value={settings.preferredInputDeviceId}
-          onChange={(preferredInputDeviceId) => onChange({ preferredInputDeviceId })}
-        />
+        <div className="audio-settings-device-picker">
+          <InputDevicePicker
+            devices={inputDevices}
+            value={settings.preferredInputDeviceId}
+            onChange={(preferredInputDeviceId) => onChange({ preferredInputDeviceId })}
+          />
+        </div>
       </SettingsItemRow>
       <SettingsItemRow label="输出设备">
-        <OutputDevicePicker
-          devices={outputDevices}
-          value={settings.preferredOutputDeviceId}
-          onChange={(preferredOutputDeviceId) => onChange({ preferredOutputDeviceId })}
-        />
+        <div className="audio-settings-device-picker">
+          <OutputDevicePicker
+            devices={outputDevices}
+            value={settings.preferredOutputDeviceId}
+            onChange={(preferredOutputDeviceId) => onChange({ preferredOutputDeviceId })}
+          />
+        </div>
       </SettingsItemRow>
       <SettingsItemRow
         label="静音说话提醒"
-        description="手动静音后持续说话时轻声提醒，每分钟最多一次；按键说话时不提醒。仅在本机检测。"
+        description="手动静音后持续说话时轻声提醒，每分钟最多一次；按键说话时不提醒。"
       >
         <Switch
           ariaLabel="静音说话提醒"
@@ -71,7 +77,7 @@ export const AudioSettingsCard = ({
       </SettingsItemRow>
       <SettingsItemRow
         label="自动录音并保存"
-        description="默认开启。进入频道后自动录音，退出时直接保存到录音库。"
+        description="房间中有两人或以上时自动开始，退出时保存到录音库；独处时可手动录音。"
       >
         <Switch
           ariaLabel="自动录音并保存"

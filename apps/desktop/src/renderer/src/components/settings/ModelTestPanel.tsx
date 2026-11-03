@@ -95,6 +95,7 @@ export const ModelTestPanel = ({
   onSeek,
 }: ModelTestPanelProps) => {
   const [models, setModels] = useState<AiModelStatus[]>([]);
+  const [initializing, setInitializing] = useState(true);
   const [record, setRecord] = useState<VoiceMemoryRecord>();
   const [job, setJob] = useState<ModelComparisonJobSnapshot | undefined>(() =>
     modelComparisonQueue.get(recording.recordingId),
@@ -117,6 +118,7 @@ export const ModelTestPanel = ({
   const [error, setError] = useState<string>();
   useEffect(() => {
     let active = true;
+    setInitializing(true);
     setModels([]);
     setRecord(undefined);
     const restoredJob = modelComparisonQueue.get(recording.recordingId);
@@ -186,6 +188,7 @@ export const ModelTestPanel = ({
           modelComparisonQueue.resume(recordingRef.current, installed);
         }
       }
+      setInitializing(false);
     })();
 
     const unsubscribe = window.desktopApi.ai.onVoiceMemoryStatus((next) => {
@@ -494,6 +497,20 @@ export const ModelTestPanel = ({
     failed: "失败",
     "user-stopped": "已停止",
   };
+
+  if (initializing) {
+    return (
+      <section className="model-comparison-panel" aria-label="录音模型对比" aria-busy="true">
+        <div className="model-comparison-section-head">
+          <h4>模型对比</h4>
+          <button type="button" className="model-comparison-close" onClick={onClose}>
+            <X aria-hidden="true" /> 返回录音
+          </button>
+        </div>
+        <p role="status">正在加载对比结果…</p>
+      </section>
+    );
+  }
 
   return (
     <section className="model-comparison-panel" aria-label="录音模型对比">

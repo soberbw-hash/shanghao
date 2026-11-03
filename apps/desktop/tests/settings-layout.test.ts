@@ -135,7 +135,7 @@ test("settings keep short lists visible and model actions above neighboring card
   );
   assert.match(styles, /\.ai-model-filter-bar\s*\{[^}]*margin-left:\s*auto;/s);
   assert.equal(settingsSource.includes('<details className="settings-advanced-operation">'), false);
-  assert.equal(settingsSource.includes('label="Windows 外观实验功能"'), true);
+  assert.equal(settingsSource.includes('label="隐藏快捷方式小箭头和盾牌"'), true);
   assert.match(
     styles,
     /\.ai-model-card:has\(\.ai-model-action-menu\[open\]\)\s*\{[^}]*z-index:\s*5;[^}]*overflow:\s*visible;/s,
@@ -586,11 +586,12 @@ test("recording library uses one automatic cleanup control and retains individua
   assert.equal(source.includes("清理废弃录音"), false);
   assert.equal(source.includes("isRecordingWasteAutoCleanupEnabled"), true);
   assert.equal(cleanup.includes("清理废弃录音"), true);
-  assert.equal(source.includes("只自动清理整段静音录音"), true);
+  assert.equal(source.includes("isRecordingShortAutoCleanupEnabled"), true);
+  assert.equal(source.includes("五分钟以内的录音移入回收站"), true);
   assert.equal(cleanup.includes("不足10分钟"), true);
   assert.equal(source.includes("十秒以下"), false);
   assert.equal(cleanup.includes("不足10秒"), false);
-  assert.equal(source.includes("超过容量阈值时也不会自动回收有声录音"), true);
+  assert.equal(source.includes("收藏和带标记的录音保留"), true);
   assert.equal(roomSource.includes("录音已移至回收站"), true);
   assert.equal(cleanup.includes("收藏和带标记的录音不会被清理"), true);
   assert.equal(cleanup.includes('role="alertdialog"'), true);
@@ -618,8 +619,9 @@ test("recording library supports accessible multi-selection and confirmed batch 
   assert.equal(source.includes("isSelectionMode"), true);
   assert.equal(source.includes("selectedRecordingIds"), true);
   assert.equal(source.includes("toggleSelectAllVisible"), true);
-  assert.equal(source.includes("删除选中的"), true);
-  assert.equal(source.includes("转录内容和对应的本地语音记忆会一起删除"), true);
+  assert.equal(source.includes("移入回收站"), true);
+  assert.equal(source.includes("录音、转录和独立音轨保留七天"), true);
+  assert.equal(source.includes("删除后无法恢复"), false);
   assert.equal(source.includes("aria-pressed={selectedRecordingIds.has(item.id)}"), true);
 });
 
@@ -633,7 +635,6 @@ test("recording library keeps both desktop columns useful while browsing long li
     );
   const styles = readRendererCss();
 
-  assert.equal(cardSource.includes('className="recording-library-page"'), true);
   assert.equal(settingsSource.includes("settings-page--recording-library overflow-hidden"), true);
   assert.equal(settingsSource.includes("settings-recording-content"), true);
   assert.match(
@@ -707,7 +708,10 @@ test("recording library paints before deferred transcript status hydration", () 
   const ipcSource = readFileSync(ipcPath, "utf8");
   const listHandler = ipcSource.slice(
     ipcSource.indexOf("IPC_CHANNELS.recording.list"),
-    ipcSource.indexOf("registerRecordingCleanupIpc(() => settingsStore.getSnapshot()"),
+    ipcSource.indexOf(
+      "registerRecordingCleanupIpc(",
+      ipcSource.indexOf("IPC_CHANNELS.recording.list"),
+    ),
   );
 
   assert.equal(cardSource.includes("const RECORDING_RENDER_BATCH = 24"), true);
@@ -895,7 +899,6 @@ test("AI voice memory exposes provider readiness and recovers interrupted compar
   assert.equal(readFileSync(voiceMemoryDetailPath, "utf8").includes("转录进度 ·"), false);
   assert.equal(recordingSource.includes("setIsModelComparisonOpen(false)"), true);
   assert.equal(recordingSource.includes("key={`comparison:${selected.recordingId}`}"), true);
-  assert.equal(recordingSource.includes("key={`clips:${selected.id}`}"), true);
   assert.match(
     styles,
     /\.model-comparison-picker-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,/s,

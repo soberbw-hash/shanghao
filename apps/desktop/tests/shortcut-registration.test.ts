@@ -25,6 +25,7 @@ const harness = (keyAtHookStart?: UiohookKeyboardEvent) => {
         configureQuickMessage(slot: number, key: string): Promise<boolean>;
         configureGlobalMute(key: string): Promise<boolean>;
         configureRecordingMarker(key: string): Promise<boolean>;
+        configureAudioDevicePreset(key: string): Promise<boolean>;
         configurePushToTalk(key: string, enabled: boolean): Promise<boolean>;
         getRuntimeSnapshot(): {
           mute: { applied: string | null; observed: string };
@@ -88,6 +89,7 @@ const harness = (keyAtHookStart?: UiohookKeyboardEvent) => {
               quickMessageTriggered: "quick",
               muteTriggered: "mute",
               recordingMarkerTriggered: "marker",
+              audioDevicePresetTriggered: "audio-preset",
               pushToTalkState: "push-to-talk",
             },
           },
@@ -112,6 +114,25 @@ test("phone shortcut listens before the native hook starts delivering keys", () 
   });
   controller.configurePhone("ArrowDown", "hold", (active) => states.push(active));
   assert.deepEqual(states, [true], "the first key-down must not be lost during hook startup");
+  controller.dispose();
+});
+
+test("audio presets keep the previous binding on conflicts and cannot steal phone or game keys", async () => {
+  const { controller, bindings, sent } = harness();
+  assert.equal(await controller.configureAudioDevicePreset("Ctrl+Shift+F9"), true);
+  bindings.get("Ctrl+Shift+F9")!();
+  assert.equal(sent.at(-1)?.[1], "audio-preset");
+  await controller.configureQuickMessage(0, "Ctrl+Shift+F10");
+  assert.equal(await controller.configureAudioDevicePreset("Ctrl+Shift+F10"), false);
+  assert.ok(bindings.has("Ctrl+Shift+F9"));
+  assert.equal(await controller.configureAudioDevicePreset("F9"), false);
+  assert.equal(await controller.configureAudioDevicePreset("Ctrl+Shift+F8"), false);
+  assert.throws(() => controller.configurePhone("Ctrl+Shift+F9", "toggle", () => {}), /其他功能/);
+  assert.equal(await controller.configureAudioDevicePreset(""), true);
+  assert.equal(bindings.has("Ctrl+Shift+F9"), false);
+  assert.ok(bindings.has("Ctrl+Shift+F10"));
+  controller.configurePhone("Ctrl+Shift+F11", "toggle", () => {});
+  assert.equal(await controller.configureAudioDevicePreset("Control+Shift+F11"), false);
   controller.dispose();
 });
 

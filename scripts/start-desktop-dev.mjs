@@ -52,6 +52,11 @@ try {
     nativeBuild.once("exit", resolve);
   });
   if (nativeCode !== 0) throw new Error("电话模式组件更新失败，请查看 start-dev.log");
+  // This optional audio feature must not make the voice app itself unopenable.
+  // Main reports it unavailable if the helper is missing; keep existing user data intact.
+  await import("./build-chat-mix.mjs").catch(() => {
+    writeSync(output, "背景声音组件未能更新；继续打开上号，详情见上方构建日志。\n");
+  });
   const hasRenderer = await rendererReady();
   if (!hasRenderer || !(await developmentBundlesReady(directory))) {
     const tsup = path.join(directory, "node_modules", "tsup", "dist", "cli-default.js");

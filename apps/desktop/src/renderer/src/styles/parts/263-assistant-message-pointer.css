@@ -1,0 +1,18 @@
+/* Assistant speech points toward its own avatar at the top, never the next author. */
+.chat-message-bubble.is-assistant {
+  position: relative;
+}
+.chat-message-bubble.is-assistant::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: -1px;
+  width: 6px;
+  height: 8px;
+  background: inherit;
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+  pointer-events: none;
+}
+.chat-message-row.is-grouped .chat-message-bubble.is-assistant::before {
+  display: none;
+}

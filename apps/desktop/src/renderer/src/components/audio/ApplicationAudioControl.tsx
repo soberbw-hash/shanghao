@@ -6,6 +6,16 @@ import { ApplicationAudioPlayer } from "../../features/audio/ApplicationAudioPla
 import { useRoomStore } from "../../store/roomStore";
 import { Button } from "../base/Button";
 import { ApplicationAudioPicker, applicationAudioSourceName } from "./ApplicationAudioPicker";
+import { writeRendererLog } from "../../utils/logger";
+
+const captureErrorCode = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.match(
+      /\b(?:unsupported_os|source_exited|source_missing|source_unavailable|source_identity_changed|room_not_connected|capture_spawn_failed|capture_initialization_failed|capture_start_failed|capture_format_unsupported|activation_failed|activation_timeout|capture_exited)\b/,
+    )?.[0] ?? "unknown"
+  );
+};
 
 const errorMessage = (error: unknown) => {
   const code = error instanceof Error ? error.message : String(error);
@@ -13,6 +23,14 @@ const errorMessage = (error: unknown) => {
   if (/source_exited|source_missing|source_identity_changed/.test(code))
     return "音乐应用已关闭或重启，请刷新后重选。";
   if (/room_not_connected/.test(code)) return "连接恢复后才能放歌。";
+  if (/capture_spawn_failed|capture_exited/.test(code))
+    return "放歌组件没有正常启动，请重启上号后重试。";
+  if (
+    /activation_timeout|activation_failed|capture_initialization_failed|capture_start_failed/.test(
+      code,
+    )
+  )
+    return "无法捕获音乐应用的声音，请确认应用正在播放后重试。";
   return "放歌未能开启，请确认音乐应用正在播放后重试。";
 };
 export function ApplicationAudioControl({
@@ -71,7 +89,12 @@ export function ApplicationAudioControl({
         !["error", "stopped"].includes(state.phase)
       )
         return;
-      if (state.phase === "error") setError(errorMessage(state.code));
+      if (state.phase === "error") {
+        void writeRendererLog("audio", "warn", "Music capture failed", {
+          code: captureErrorCode(state.code),
+        });
+        setError(errorMessage(state.code));
+      }
       void stopRef.current();
     });
     return () => {
@@ -126,6 +149,9 @@ export function ApplicationAudioControl({
       setOpen(false);
     } catch (cause) {
       if (generation.current === mine) {
+        void writeRendererLog("audio", "warn", "Music capture could not start", {
+          code: captureErrorCode(cause),
+        });
         setError(errorMessage(cause));
         await stop();
       }

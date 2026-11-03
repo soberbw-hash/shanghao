@@ -16,10 +16,13 @@ export function observeCaptureFrames(stream: MediaStream): () => void {
   let frameId: number | undefined;
   let cleanupBinding: (() => void) | undefined;
   let ownedTrack: MediaStreamTrack | undefined;
+  let observedTrack: MediaStreamTrack | undefined;
   let lastSent = -Infinity;
   const stop = () => {
     if (stopped) return;
     stopped = true;
+    observedTrack?.removeEventListener("ended", stop);
+    observedTrack = undefined;
     void reader?.cancel().catch(() => undefined);
     ownedTrack?.stop();
     if (video) {
@@ -41,10 +44,11 @@ export function observeCaptureFrames(stream: MediaStream): () => void {
         return;
       }
       const track = stream.getVideoTracks()[0];
-      if (!track) {
+      if (!track || track.readyState !== "live") {
         stop();
         return;
       }
+      observedTrack = track;
       track.addEventListener("ended", stop, { once: true });
       const mark = () => {
         const now = performance.now();
@@ -71,6 +75,7 @@ export function observeCaptureFrames(stream: MediaStream): () => void {
         video.muted = true;
         video.srcObject = stream;
         await video.play();
+        if (stopped) return;
         const next = () => {
           if (!stopped) {
             mark();

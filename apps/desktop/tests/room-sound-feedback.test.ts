@@ -208,3 +208,15 @@ test("speaker toggles own their coupled microphone transition instead of stackin
   f.update({ isMuted: false, isDeafened: false });
   assert.deepEqual(f.sounds, ["speaker-muted", "speaker-unmuted"]);
 });
+
+test("status transitions suppress coupled device cues, while later manual audio controls still sound", () => {
+  const f = fixture();
+  f.update({ availabilitySound: { active: false, revision: 0 } });
+  f.update({ isMuted: true, isDeafened: true, availabilitySound: { active: true, revision: 1 } });
+  f.update({ isDeafened: false });
+  f.update({ isMuted: false, availabilitySound: { active: false, revision: 2 } });
+  assert.deepEqual(f.sounds, []);
+  f.update({ isMuted: true });
+  f.update({ isMuted: false });
+  assert.deepEqual(f.sounds, ["mic-off", "mic-on"]);
+});

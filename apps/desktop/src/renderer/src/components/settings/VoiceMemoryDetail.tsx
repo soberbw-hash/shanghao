@@ -16,7 +16,6 @@ import {
 
 import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
-import { formatRecordingMarkerLabel } from "../../features/recording/recordingMarkerLabel";
 import { TranscriptionTimingNotice } from "./TranscriptionTimingNotice";
 import { transcriptionProviderError } from "../../features/ai/transcriptionProviderError";
 import { useSettingsStore } from "../../store/settingsStore";
@@ -45,17 +44,6 @@ const clock = (offsetMs: number): string => {
     ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
     : `${minutes}:${String(rest).padStart(2, "0")}`;
 };
-
-const formatElapsed = (milliseconds?: number): string => {
-  if (milliseconds === undefined) return "—";
-  if (milliseconds < 1_000) return `${Math.round(milliseconds)} ms`;
-  const seconds = milliseconds / 1_000;
-  if (seconds < 60) return `${seconds.toFixed(1)} 秒`;
-  return `${Math.floor(seconds / 60)} 分 ${Math.round(seconds % 60)} 秒`;
-};
-
-const formatMemory = (megabytes?: number): string =>
-  megabytes === undefined ? "—" : `${(megabytes / 1_024).toFixed(1)} GB`;
 
 const DEFAULT_ASR_MODEL_ID: AiAsrModelId = "qwen3-asr-0.6b-force";
 
@@ -202,6 +190,9 @@ export const VoiceMemoryDetail = ({
 }: VoiceMemoryDetailProps) => {
   const transcriptionProvider = useSettingsStore(
     (state) => state.settings?.aiTranscriptionProvider ?? "cloud",
+  );
+  const autoTranscribe = useSettingsStore(
+    (state) => state.settings?.isAiAutoTranscribeEnabled ?? false,
   );
   const [record, setRecordState] = useState<VoiceMemoryRecord>();
   const [viewChoice, setViewChoice] = useState<{ id: string; choice: TranscriptViewChoice }>();
@@ -428,33 +419,8 @@ export const VoiceMemoryDetail = ({
     (record.transcriptionStats || record.phase === "transcribing" || record.phase === "paused")
       ? voiceMemoryTranscriptionPercent(record)
       : record.progress;
-  const organization = record.organization;
-  const organizationMetrics = organization?.metrics;
-  const organizationProgress = organization?.chunks.length
-    ? Math.round((organization.completedChunks / organization.chunks.length) * 100)
-    : 0;
-  const organizationStatus = organization
-    ? organization.status === "completed"
-      ? "整理完成"
-      : organization.status === "running"
-        ? `正在整理 ${organizationProgress}%`
-        : organization.status === "paused"
-          ? `整理已暂停 ${organizationProgress}%`
-          : organization.status === "unrecoverable"
-            ? "多次尝试失败，请重新整理"
-            : organization.status === "failed"
-              ? `整理未完成 ${organizationProgress}%`
-              : "等待整理"
-    : undefined;
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
-      {/^deferred:(?:cloud|custom)_asr_(?:http_|network_error|timeout)/.test(
-        record.errorMessage ?? "",
-      ) ? (
-        <p role="status" className="text-sm text-[#718096]">
-          云端服务暂时不可用，稍后自动继续，已完成片段保留。
-        </p>
-      ) : null}
       {record.errorMessage?.startsWith("deferred:") &&
       /(?:_key_required|_not_configured|_not_installed|_runtime_not_ready)$/.test(
         record.errorMessage,
@@ -471,6 +437,15 @@ export const VoiceMemoryDetail = ({
           disabled={busy || Boolean(queuedAction) || processing || comparisonOwnsTask}
           onError={setError}
         />
+        {autoTranscribe &&
+        record.remoteTranscriptionRetry?.nextAttemptAt &&
+        /^deferred:(?:cloud|custom)_asr_(?:http_|network_error|timeout)/.test(
+          record.errorMessage ?? "",
+        ) ? (
+          <span role="status" className="text-xs text-[#718096]">
+            等待后台重试
+          </span>
+        ) : null}
         {comparisonOwnsTask ? (
           <div className="voice-memory-header-actions">
             <button type="button" className="voice-memory-quiet-action" disabled>
@@ -591,7 +566,12 @@ export const VoiceMemoryDetail = ({
               onChange={(choice) => setViewChoice({ id: recording.recordingId, choice })}
             />
           ) : null}
-          {record.transcriptionFusion?.status === "failed" ? (
+          {record.transcriptionFusion?.status === "failed" &&
+          !(
+            autoTranscribe &&
+            record.errorMessage?.startsWith("deferred:") &&
+            record.remoteTranscriptionRetry?.nextAttemptAt
+          ) ? (
             <p className="text-xs text-[#996925]" role="status">
               {describeError(record.transcriptionFusion.errorCode ?? "fusion_failed", true)}
             </p>
@@ -606,93 +586,6 @@ export const VoiceMemoryDetail = ({
         </>
       ) : null}
       <TranscriptionTimingNotice record={record} />
-      {organization ? (
-        <details className={`voice-memory-organization is-${organization.status}`}>
-          <summary>处理详情</summary>
-          <div className="voice-memory-organization-overview">
-            <div>
-              <strong>{organizationStatus}</strong>
-              <span>
-                {organization.modelId === "cloud"
-                  ? "房间云端"
-                  : organization.modelId === "custom"
-                    ? "自定义 API"
-                    : "本地模型"}{" "}
-                · {organization.completedChunks}/{organization.chunks.length} 块
-              </span>
-            </div>
-            {organization.finalResult?.participants.length ? (
-              <div className="voice-memory-speaking-share" aria-label="说话占比">
-                {organization.finalResult.participants.map((participant) => (
-                  <span key={participant.speakerId}>
-                    {participant.nickname ??
-                      knownSpeakerNames.get(participant.speakerId) ??
-                      participant.speakerId}
-                    <b>{participant.speakingSharePercent ?? 0}%</b>
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          {organizationMetrics ? (
-            <details className="voice-memory-organization-metrics">
-              <summary>本次本地整理性能</summary>
-              <dl>
-                <div>
-                  <dt>FreeToken</dt>
-                  <dd>{organizationMetrics.providerVersion ?? "版本待回报"}</dd>
-                </div>
-                <div>
-                  <dt>模型加载</dt>
-                  <dd>{formatElapsed(organizationMetrics.modelLoadTimeMs)}</dd>
-                </div>
-                <div>
-                  <dt>输入 / 输出</dt>
-                  <dd>
-                    {organizationMetrics.inputTokens.toLocaleString()} /{" "}
-                    {organizationMetrics.outputTokens.toLocaleString()} token
-                  </dd>
-                </div>
-                <div>
-                  <dt>首字等待</dt>
-                  <dd>{formatElapsed(organizationMetrics.ttftMs)}</dd>
-                </div>
-                <div>
-                  <dt>Prefill</dt>
-                  <dd>{formatElapsed(organizationMetrics.prefillTimeMs)}</dd>
-                </div>
-                <div>
-                  <dt>生成速度</dt>
-                  <dd>
-                    {organizationMetrics.outputTokensPerSecond === undefined
-                      ? "—"
-                      : `${organizationMetrics.outputTokensPerSecond.toFixed(1)} token/s`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>总耗时</dt>
-                  <dd>{formatElapsed(organizationMetrics.totalElapsedMs)}</dd>
-                </div>
-                <div title="优先读取 FreeToken 引擎显存；引擎未提供时才使用 Windows WDDM 启动前后增量">
-                  <dt>峰值显存</dt>
-                  <dd>{formatMemory(organizationMetrics.peakVramMb)}</dd>
-                </div>
-                <div>
-                  <dt>峰值内存</dt>
-                  <dd>{formatMemory(organizationMetrics.peakRamMb)}</dd>
-                </div>
-                <div>
-                  <dt>重试 / OOM</dt>
-                  <dd>
-                    {organizationMetrics.retryCount} / {organizationMetrics.oomCount}
-                  </dd>
-                </div>
-              </dl>
-            </details>
-          ) : null}
-        </details>
-      ) : null}
-
       {!invalidTranscript && pendingSpeakers.length ? (
         <div className="voice-memory-speakers">
           <h4>确认说话人</h4>
@@ -724,24 +617,6 @@ export const VoiceMemoryDetail = ({
         </div>
       ) : null}
 
-      {!invalidTranscript && record.timeline.length ? (
-        <div className="voice-memory-timeline">
-          {record.timeline.map((item) => (
-            <button type="button" key={item.id} onClick={() => onSeek(item.offsetMs)}>
-              <time>录音 {clock(item.offsetMs)}</time>
-              <span>
-                {formatRecordingMarkerLabel(
-                  item.kind === "marker"
-                    ? recording.markers.find(
-                        (marker) => marker.id === item.id || marker.offsetMs === item.offsetMs,
-                      )?.label || item.title
-                    : item.title,
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
       {!invalidTranscript && record.highlights.length ? (
         <div className="voice-memory-highlights">
           <h4>精彩片段</h4>

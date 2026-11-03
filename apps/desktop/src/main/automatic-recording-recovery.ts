@@ -1,8 +1,26 @@
 import type { VoiceMemoryRecord, OrganizationRetryState } from "@private-voice/shared";
 import { isTransientRemoteTranscriptionError } from "./remote-transcription-retry";
+import { isTranscriptionExecutionComplete } from "./remote-transcription";
 
 // Keep the persisted counter readable by older clients; 2 means the slow retry tier.
 const MAX_RECOVERY_COUNTER = 2;
+
+/** Re-read at dispatch time so a stale scan cannot override a user pause or replacement. */
+export async function withCurrentDeferredRecording(
+  snapshot: VoiceMemoryRecord,
+  read: (id: string) => Promise<VoiceMemoryRecord | undefined>,
+  enabled: () => boolean,
+  run: (record: VoiceMemoryRecord) => Promise<unknown>,
+  additionalEligibility?: (record: VoiceMemoryRecord) => boolean,
+): Promise<void> {
+  const current = await read(snapshot.recordingId);
+  if (
+    current?.updatedAt === snapshot.updatedAt &&
+    (current.errorMessage?.startsWith("deferred:") || additionalEligibility?.(current)) &&
+    enabled()
+  )
+    await run(current);
+}
 export function recoverInterruptedRecording(
   record: VoiceMemoryRecord,
 ): VoiceMemoryRecord | undefined {
@@ -55,16 +73,20 @@ export function recoverInterruptedRecording(
     errorMessage: "deferred:app_restarted",
   };
 }
-export const automaticCloudFailure = (reason: string): string =>
-  reason === "cloud_ai_busy"
-    ? "cloud_asr_http_429"
-    : reason === "cloud_ai_provider_unavailable"
-      ? "cloud_asr_http_503"
-      : reason;
+export const automaticCloudFailure = (reason: string): string => {
+  if (reason === "cloud_ai_busy") return "cloud_asr_http_429";
+  if (reason === "cloud_ai_provider_unavailable") return "cloud_asr_http_503";
+  // Text generation uses separate error names from speech recognition. Normalize
+  // only transient failures so summary/fusion recovery follows the same backoff.
+  const textFailure = /^(cloud|custom)_ai_(network_error|timeout|http_(?:408|429|5\d\d))$/.exec(
+    reason,
+  );
+  return textFailure ? `${textFailure[1]}_asr_${textFailure[2]}` : reason;
+};
 export function automaticFusionFailure(record: VoiceMemoryRecord): string | undefined {
   const reason = automaticCloudFailure(record.transcriptionFusion?.errorCode ?? "");
   return record.transcriptionFusion?.status === "failed" &&
-    isTransientRemoteTranscriptionError(reason)
+    (reason === "account_session_expired" || isTransientRemoteTranscriptionError(reason))
     ? reason
     : undefined;
 }
@@ -73,7 +95,11 @@ export function recoverAutomaticOrganization(
   reason: string,
   deferred: boolean,
 ) {
-  if (!deferred || !isTransientRemoteTranscriptionError(reason)) return {};
+  if (
+    !deferred ||
+    (reason !== "account_session_expired" && !isTransientRemoteTranscriptionError(reason))
+  )
+    return {};
   const reset = (state: OrganizationRetryState | undefined) =>
     state && state.status !== "completed"
       ? { ...state, attempts: 0, status: "pending" as const, errorMessage: undefined }
@@ -169,14 +195,29 @@ export async function retryDeferredRecordings(
   list: () => Promise<VoiceMemoryRecord[]>,
   run: (record: VoiceMemoryRecord) => Promise<unknown>,
   later: () => void,
+  assist?: (record: VoiceMemoryRecord) => "ready" | "waiting" | undefined,
 ): Promise<void> {
   if (!enabled) return;
   if (busy) return later();
-  if (localBlocked) return;
-  for (const record of (await list()).filter((item) =>
-    item.errorMessage?.startsWith("deferred:"),
+  let assistAdmitted = false;
+  for (const record of (await list()).filter(
+    (item) => item.errorMessage?.startsWith("deferred:") || assist?.(item),
   )) {
+    const assistState = assist?.(record);
+    if (assistState === "waiting" || (assistState && assistAdmitted)) {
+      later();
+      continue;
+    }
+    if (assistState) assistAdmitted = true;
+    // Text-only recovery does not require the selected local speech model.
+    if (localBlocked && !isTranscriptionExecutionComplete(record)) {
+      // Resource pressure can disappear without a model-status event. Keep the
+      // deferred task eligible for a later check instead of abandoning it.
+      later();
+      continue;
+    }
     if (isDeferredRemoteTranscription(record) && !canResumeRemoteTranscription(record)) later();
-    else await run(record).catch(() => undefined);
+    else await run(record).catch(() => later());
+    if (assistState) later(); // One bounded recheck verifies completion or a renewed resource wait.
   }
 }

@@ -42,6 +42,7 @@ export const ScreenSharePanelContainer = ({
   const [now, setNow] = useState(() => Date.now());
   const pendingDetachedItemRef = useRef<ScreenShareItem | undefined>(undefined);
   const lastSyncedDetachedItemRef = useRef<ScreenShareItem | undefined>(undefined);
+  const lastSyncedTrackRef = useRef<MediaStreamTrack | undefined>(undefined);
   const detachedSyncTimerRef = useRef<number | undefined>(undefined);
   const syncDetachedItemRef = useRef(syncDetachedItem);
   syncDetachedItemRef.current = syncDetachedItem;
@@ -87,7 +88,8 @@ export const ScreenSharePanelContainer = ({
     const changed =
       previous?.id !== detachedItem?.id ||
       previous?.frameDataUrl !== detachedItem?.frameDataUrl ||
-      Boolean(previous?.stream) !== Boolean(detachedItem?.stream);
+      previous?.stream !== detachedItem?.stream ||
+      lastSyncedTrackRef.current !== detachedItem?.stream?.getVideoTracks()[0];
     pendingDetachedItemRef.current = detachedItem;
     if (!changed) {
       if (detachedSyncTimerRef.current !== undefined) {
@@ -103,6 +105,7 @@ export const ScreenSharePanelContainer = ({
       const latest = pendingDetachedItemRef.current;
       pendingDetachedItemRef.current = undefined;
       lastSyncedDetachedItemRef.current = latest;
+      lastSyncedTrackRef.current = latest?.stream?.getVideoTracks()[0];
       void syncDetachedItemRef.current(latest);
     }, 200);
   }, [detachedItem]);

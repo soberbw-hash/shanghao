@@ -28,6 +28,42 @@ export const missingPreferredAudioDevices = ({
     !outputDevices.some((device) => device.id === preferredOutputDeviceId),
 });
 
+type OutputDevice = { id: string; label: string };
+
+/** A changed selection, failed enumeration or label refresh is not a disconnect. */
+export const headphoneOutputDisconnected = ({
+  previous,
+  previousPreference,
+  currentPreference,
+  outputDevices,
+  outputState,
+}: {
+  previous?: OutputDevice;
+  previousPreference?: string;
+  currentPreference?: string;
+  outputDevices: readonly OutputDevice[];
+  outputState: AudioDeviceState;
+}): boolean => {
+  if (
+    !previous ||
+    previousPreference !== currentPreference ||
+    outputState !== AudioDeviceState.Ready ||
+    !/headphones?|headsets?|耳机/i.test(previous.label)
+  )
+    return false;
+  if (previous.id !== "default") return !outputDevices.some((device) => device.id === previous.id);
+  // Chromium's "default" is an alias: a different default alone does not prove
+  // unplugging if the old physical device remains available in the list.
+  const label = previous.label
+    .replace(/^(default|默认)\s*[-–:]\s*/i, "")
+    .trim()
+    .toLowerCase();
+  if (outputDevices.some((device) => !device.label.trim())) return false;
+  return (
+    Boolean(label) && !outputDevices.some((device) => device.label.trim().toLowerCase() === label)
+  );
+};
+
 export const createDeviceRefreshVersion = () => {
   let latest = 0;
   return {

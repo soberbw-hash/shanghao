@@ -94,6 +94,28 @@ test("a failure after publishing stops the old screen stream before reporting fa
   assert.equal(manager.getSnapshot().status, "failed");
 });
 
+test("a stopped share cannot report startup success after protection response arrives", async (t) => {
+  const fixture = installCaptureFixture(t);
+  let releaseProtection!: () => void;
+  window.desktopApi.screenCapture.setContentProtection = async (enabled) => {
+    fixture.protection.push(enabled);
+    if (enabled)
+      await new Promise<void>((resolve) => {
+        releaseProtection = resolve;
+      });
+  };
+  const manager = new ScreenShareManager({
+    startPublishing: async () => undefined,
+    stopPublishing: async () => undefined,
+  });
+  const starting = manager.startShare({ sourceId: "display-one", includeSystemAudio: false });
+  while (!releaseProtection) await new Promise<void>((resolve) => setImmediate(resolve));
+  await manager.stopShare();
+  releaseProtection();
+  await assert.rejects(starting, /screen_share_superseded/);
+  assert.equal(manager.getSnapshot().status, "idle");
+});
+
 test("a superseded start cannot roll back a newer screen share operation", async (t) => {
   const fixture = installCaptureFixture(t);
   let rejectPublishing = (_error: Error) => undefined;

@@ -1,0 +1,11 @@
+.scene-league-lobby-slots > span {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #09182e38, #07132170);
+}
+.scene-league-lobby-slots > span[data-occupied="true"] {
+  background: linear-gradient(180deg, #27345eaa, #111832d9);
+  box-shadow: inset 0 1px #c8a66299;
+}

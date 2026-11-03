@@ -429,7 +429,7 @@ test("signed-in joins rely on verified access-token identity for legacy relay co
     "utf8",
   );
   const roomClient = await readFile(
-    new URL("../src/renderer/src/features/room/roomClient.ts", import.meta.url),
+    new URL("../src/renderer/src/features/room/roomClientOptions.ts", import.meta.url),
     "utf8",
   );
 

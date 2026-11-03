@@ -1,0 +1,52 @@
+.audio-settings .settings-item-copy {
+  min-width: 0;
+  max-width: none;
+}
+
+.settings-item-action:has(.audio-settings-device-picker) {
+  width: min(100%, 440px);
+}
+
+.audio-settings-device-picker {
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-item-action:has(> .shortcut-input-wrap-compact) {
+  width: min(100%, 300px);
+}
+
+.shortcut-input-default-spacer,
+.shortcut-input-default-button {
+  flex: none;
+  width: 42px;
+}
+
+.recording-item-delete {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 8px;
+  color: #91a2b7;
+}
+
+.recording-item-delete:hover,
+.recording-item-delete:focus-visible {
+  background: #fff0f0;
+  color: #d84b51;
+}
+
+.recording-item-delete:focus-visible {
+  outline: 2px solid rgba(216, 75, 81, 0.34);
+  outline-offset: 2px;
+}
+
+.recording-item-delete svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}

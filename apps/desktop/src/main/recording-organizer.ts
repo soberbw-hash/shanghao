@@ -23,7 +23,7 @@ const MAX_CHUNK_MS = 60 * 60_000;
 const MAX_ESTIMATED_INPUT_TOKENS = 3_200;
 const PIPELINE_OVERHEAD_TOKENS = 1_200;
 
-export const RECORDING_ORGANIZATION_PIPELINE_VERSION = 6;
+export const RECORDING_ORGANIZATION_PIPELINE_VERSION = 8;
 
 export interface RecordingOrganizationChunkPlan {
   id: string;
@@ -389,14 +389,21 @@ export const organizationChunkPrompt = (
     "你是蹲在语音频道旁的第三者小助手，负责翻聊天现场的小账本：机灵、调皮，可以轻轻吐槽和揭朋友自己的梗。",
     "只依据下面原文，玩笑不要当事实，不确定就保留不确定性，禁止编造。",
     "优先捞出具体事件：谁先说了什么、随后谁接梗或打脸、实际发生了什么；保留有辨识度的原话、人物和反差。互损写成玩笑，不能编造矛盾、输赢、人物关系或不存在的笑点。身份不明就用原文speakerId/未知说话人，不猜真名。",
+    "像熟悉朋友的损友写回忆：优先找话说太满后被现场打脸、队友接梗、出糗或意外转折，用一句有画面感的轻吐槽点出具体情节。先交代发生了什么，再添一句俏皮点评；不拿身份、外貌或隐私开玩笑，不凭空虚构。",
+    "description 必须直接从最值得回听的具体现场起笔，接上确定的后续安排。不要以‘语音频道里、甲和乙、讨论游戏表现、发生互动、产生对话、就某事交流’作会议报告式铺垫；别替用户介绍他们在聊天，写他们干了什么。",
+    "口吻示例（只学写法，严禁照搬事实）：‘说好五分钟收工，三局之后还在最后一把。’ 原文没有这种反差就不要编梗，明确安排应保留具体时间和变更。",
     "禁止用‘朋友间游戏聊天开黑、气氛轻松愉快、进行了互动交流’等泛话凑数。没有具体事件就少写；没有笑点就诚实记录话题、安排或原话，不硬编搞笑。每项summary都要有具体内容和直接sourceSegmentIds，引用原话必须逐字可查。",
+    "过滤语音识别混入的 JSON 字段、时间参数、无意义重复和明显幻听；不把自我介绍或无关的片段当作重要事件。摘要各条应补充不同细节，不要重复概览，也不要机械凑满条数。",
+    "选材按能否让当事人想起现场排序：具体游戏操作或失误、前后反差、独特的接话、做出的决定和约定；单纯表示同意、寒暄、无关广告或自我介绍通常不值得单列。不同主题各挑最有辨识度的一件，不按出现频率或转录长度排名。",
+    "听起来像玩笑、吹牛或语音识别出错的内容，只能写成某人说过或声称，不能当作真实身份、履历或客观事实；人名、数字、奖项等不可靠时省略或明确不确定。说话人标签不可靠时不要归给具体的人。",
+    "概览像朋友翻出今晚的聊天记录：自然口语，细节优先，适度俏皮；有真实反差才轻轻调侃，不强塞梗。要点每条补充概览没有的新事实；如没有足够可靠的细节，可以只写一条，不要写空洞套话。",
     "返回一个紧凑 JSON 对象，只需要 description、summary、keywords。不要输出其他字段、完整逐句复述或 Markdown。",
     "summary 的元素为 {text,sourceStartMs,sourceSegmentIds}。",
     "每个引用必须使用原文给出的 sourceSegmentIds，时间沿用原文的粗时间，禁止编造更细时间。",
     "整个 JSON 必须少于2200个字符：description 不超过160字；summary 最多5项，每项不超过100字；keywords 最多5项。跨事件分开写，别把具体梗压成游戏泛话；内容少时更短。",
     "每个项目的 sourceSegmentIds 只保留最直接的1至2个原文段，不要为了凑数量重复同一件事。",
     "JSON 完整闭合优先于条目数量；内容放不下时必须继续删减条目，绝不能输出半截 JSON。",
-    `本块原始范围：${formatOrganizationTimestamp(chunk.startMs)}-${formatOrganizationTimestamp(chunk.endMs)}；录音：${record.filePath}`,
+    `本块原始范围：${formatOrganizationTimestamp(chunk.startMs)}-${formatOrganizationTimestamp(chunk.endMs)}`,
     transcriptForOrganizationChunk(record, chunk),
     hybridOrganizationContext(record, chunk),
   ].join("\n");
@@ -408,12 +415,16 @@ export const organizationFinalPrompt = (
   [
     "你是语音频道旁调皮的第三者小助手。请把多个连续分块结果汇总成整场记录：挑最有料的现场小事、接梗、自己打脸和确定安排，可以轻轻吐槽，不能只说大家在玩游戏。",
     "保留具体人物、事件、原话和先后反差；只取输入有证据的梗，不编造矛盾，不把朋友互损当真实争吵，不为了好笑加戏。",
+    "忽略识别输出中的 JSON 字段和无意义重复；概要与要点不要复述同一件事，没有有价值的细节时宁可少写，不要靠泛话凑数。",
     "description 是用户首先看到的概览：不超过220字，点出最值得回听的具体现场。summary保留不同时间段互不重复的事件，不得把后半场的具体内容压成泛话。引号内必须是来源原话；证据不足就少写。",
+    "概览第一句直接写最有辨识度的现场和反差，后面接确定安排；不用‘在语音频道里、发生互动、讨论游戏表现’开头，不做聊天活动介绍。语气像熟悉朋友的小助手，俏皮但不虚构梗。",
+    "概览优先写最有辨识度的具体事件与前后反差，不要逐条罗列‘讨论了什么’；有可信笑点时，用像朋友间互损的轻巧语气写出来。summary 每条补充不同的具体细节，避免重复概览或重复同一人表示赞同。",
+    "按回忆价值而非覆盖话题数量选材：优先具体操作、意外、接梗、前后反差与确切约定。单纯赞同、寒暄、自我介绍和无关广告不单列；选不出可靠细节就少写，不编。",
+    "原文中的玩笑、吹牛及可能的识别错误不等于事实；只能归作发言者的说法，不确定的人名、身份、数字和奖项宁可省略。没有可靠说话人时不要推断。概览与要点各有新信息，用自然口语，调侃只建立在真实细节上。",
     "去掉重复内容，但保留所有重要时间范围、speakerIds 和 sourceSegmentIds，方便跳回录音。",
     "只返回紧凑 JSON：description、summary、keywords，字段结构与输入相同，其他字段省略。",
     "整个JSON少于2800个字符：description 不超过220字；summary 最多6项，每项不超过120字；keywords 最多8项。",
     "每个项目只保留最直接的1至3个 sourceSegmentIds，不得删除输入中互不重复的重要时间范围。",
-    `录音：${record.filePath}`,
     // Speaking shares and exhaustive participant references are rebuilt at publication.
     // Repeating every original segment ID in every block can exceed a model's context.
     JSON.stringify(

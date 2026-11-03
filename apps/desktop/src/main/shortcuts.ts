@@ -11,7 +11,8 @@ import { sendToWindow } from "./safe-web-contents";
 import { PhoneShortcut } from "./phone-shortcut";
 import { PhoneInputMonitor, type PhoneInputStatus } from "./phone-input-monitor";
 
-type ShortcutOwner = "mute" | "recording-marker" | "push-to-talk" | `quick-message:${number}`;
+type ShortcutOwner =
+  "mute" | "recording-marker" | "audio-preset" | "push-to-talk" | `quick-message:${number}`;
 
 type ShortcutBindingSnapshot = {
   applied: string | null;
@@ -96,6 +97,7 @@ const matchesMouseShortcut = (event: UiohookMouseEvent, binding: MouseShortcutBi
 export class ShortcutController {
   private currentMuteShortcut?: string;
   private currentRecordingMarkerShortcut?: string;
+  private currentAudioPresetShortcut?: string;
   private currentPushToTalkShortcut?: string;
   private readonly currentQuickMessageShortcuts = new Map<number, string>();
   private readonly mouseBindings = new Map<string, MouseShortcutBinding>();
@@ -210,9 +212,14 @@ export class ShortcutController {
       [
         this.currentMuteShortcut,
         this.currentRecordingMarkerShortcut,
+        this.currentAudioPresetShortcut,
         this.currentPushToTalkShortcut,
         ...this.currentQuickMessageShortcuts.values(),
-      ].some((key) => key?.toLowerCase() === normalized.toLowerCase())
+      ].some(
+        (key) =>
+          key?.replace(/^(Control|CommandOrControl)\+/, "Ctrl+").toLowerCase() ===
+          normalized.replace(/^(Control|CommandOrControl)\+/, "Ctrl+").toLowerCase(),
+      )
     )
       throw new Error("该快捷键已用于上号的其他功能，请先更改原快捷键");
     const previous = this.phoneBinding;
@@ -460,6 +467,37 @@ export class ShortcutController {
     }
   }
 
+  async configureAudioDevicePreset(accelerator: string): Promise<boolean> {
+    const next = accelerator.trim();
+    const previous = this.currentAudioPresetShortcut;
+    if (next === previous) return true;
+    if (!next) {
+      this.removeBinding("audio-preset", previous);
+      this.currentAudioPresetShortcut = undefined;
+      return true;
+    }
+    if (
+      !/^(?:Ctrl|Control|CommandOrControl)\+(?:Shift|Alt)\+F(?:[1-9]|1[0-2])$/.test(next) ||
+      next.replace(/^(Control|CommandOrControl)\+/, "Ctrl+") === "Ctrl+Shift+F8" ||
+      next.replace(/^(Control|CommandOrControl)\+/, "Ctrl+").toLowerCase() ===
+        this.phoneAccelerator.replace(/^(Control|CommandOrControl)\+/, "Ctrl+").toLowerCase()
+    )
+      return false;
+    try {
+      if (
+        !globalShortcut.register(next, () => {
+          sendToWindow(this.windowProvider(), IPC_CHANNELS.shortcuts.audioDevicePresetTriggered);
+        })
+      )
+        return false;
+      this.removeBinding("audio-preset", previous);
+      this.currentAudioPresetShortcut = next;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async configurePushToTalk(accelerator: string, enabled: boolean): Promise<boolean> {
     if (enabled && this.conflictsWithPhone(accelerator.trim())) return false;
     const previous = this.currentPushToTalkShortcut;
@@ -533,6 +571,7 @@ export class ShortcutController {
     this.mouseBindings.clear();
     this.currentMuteShortcut = undefined;
     this.currentRecordingMarkerShortcut = undefined;
+    this.currentAudioPresetShortcut = undefined;
     this.currentPushToTalkShortcut = undefined;
     this.currentQuickMessageShortcuts.clear();
   }

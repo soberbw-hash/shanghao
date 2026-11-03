@@ -7,6 +7,7 @@ import { statsFromTranscriptionUnits } from "../src/main/voice-memory-transcript
 import type { VoiceMemoryRecord } from "@private-voice/shared";
 import { isVoiceMemoryRecord } from "../src/main/voice-memory-store";
 import { transcribeWithRemoteProvider } from "../src/main/remote-transcription";
+import { needsAutomaticCloudAssist } from "../src/main/automatic-voice-memory-request";
 
 const fixture = () => {
   let current: VoiceMemoryRecord = {
@@ -55,6 +56,72 @@ const fixture = () => {
     },
   };
 };
+
+test("resource-interrupted assistance resumes from saved cloud text without another provider upload", async () => {
+  const f = fixture();
+  const original = f.current.transcript;
+  await assistCloudTranscription(f.current, {
+    ...f.host,
+    local: async () => {
+      throw Error("recording_priority");
+    },
+  });
+  assert.equal(f.current.transcriptionAssist?.errorCode, "recording_priority");
+  assert.equal(
+    needsAutomaticCloudAssist(f.current, { id: "qwen3-asr-0.6b-force", ready: true }),
+    true,
+  );
+  const result = await transcribeWithRemoteProvider({
+    record: f.current,
+    provider: "cloud",
+    manual: false,
+    ...f.host,
+    assistModelId: "qwen3-asr-0.6b-force",
+    isAssistModelReady: () => true,
+    store: {
+      status: async () => ({ cloudConfigured: true }),
+      transcribe: async () => assert.fail("completed cloud audio cannot be uploaded again"),
+    } as never,
+    updateDiagnostic: async (record) => record,
+    assist: async (input) => {
+      const transcript = original.map((segment) => ({ ...segment, startMs: 5200, endMs: 6500 }));
+      const stats = statsFromTranscriptionUnits(30000, [], transcript, {
+        audioDurationMs: 30000,
+        processedAudioMs: 30000,
+        coveredAudioMs: 30000,
+        totalUnits: 1,
+        completedUnits: 1,
+        failedUnits: 0,
+        retryCount: 0,
+        segmentCount: 1,
+        speakerCount: 1,
+      });
+      return f.host.save({
+        ...input,
+        transcriptionModel: { id: "qwen3-asr-0.6b-force", name: "Qwen + aligner" },
+        transcript,
+        transcriptionStats: {
+          ...stats,
+          totalUnits: 1,
+          completedUnits: 1,
+          failedUnits: 0,
+          pendingUnits: 0,
+          scheduledSpeechMs: 30000,
+          coveredAudioMs: 30000,
+          processedAudioMs: 30000,
+          terminationReason: "completed",
+          finalResultSaved: true,
+        },
+      });
+    },
+  });
+  assert.equal(result.transcriptionAssist?.status, "completed");
+  assert.deepEqual(
+    result.transcriptionVariants?.["siliconflow-sensevoice-small"]?.transcript,
+    original,
+  );
+  assert.equal(result.transcript[0]?.startMs, 5200);
+});
 
 test("a stronger selected assist model is used and preserved in the saved result", async () => {
   const f = fixture();

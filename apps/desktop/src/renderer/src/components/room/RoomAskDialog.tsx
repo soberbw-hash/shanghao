@@ -9,6 +9,7 @@ import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { roomAiError } from "../../features/room/roomAiError";
 import { useRoomAiShare } from "../../features/room/useRoomAiShare";
+import { formatRoomSourceTime, roomQuestionSources } from "../../features/room/roomQuestionSource";
 import { AssistantBotAvatar } from "./AssistantBotAvatar";
 import type { AssistantBotMood } from "../../features/ai/useAssistantBotState";
 
@@ -32,12 +33,6 @@ interface RoomAskDialogProps {
 
 type PendingAction = "ask";
 
-const formatOffset = (offsetMs: number): string => {
-  const seconds = Math.max(0, Math.floor(offsetMs / 1_000));
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
-};
-
 /** One room-level entry for asking a question without blocking the room. */
 export const RoomAskDialog = ({
   roomId,
@@ -50,7 +45,7 @@ export const RoomAskDialog = ({
   canSend,
   onAssistantMoodChange,
 }: RoomAskDialogProps) => {
-  const sharing = useRoomAiShare(onSendToChat);
+  const sharing = useRoomAiShare(onSendToChat, roomId);
   const inputRef = useRef<HTMLInputElement>(null);
   const askSequenceRef = useRef(0);
   const requestPendingRef = useRef(false);
@@ -155,10 +150,11 @@ export const RoomAskDialog = ({
         !Array.isArray(nextAnswer.sources)
       )
         throw new Error("ai_invalid_json_response");
-      setAnswer(nextAnswer);
+      const scopedAnswer = { ...nextAnswer, sources: roomQuestionSources(nextAnswer, roomId) };
+      setAnswer(scopedAnswer);
       setQuery("");
       onAssistantMoodChange("idle");
-      setQuestionHistory((current) => rememberQuestion(roomId, current, value, nextAnswer));
+      setQuestionHistory((current) => rememberQuestion(roomId, current, value, scopedAnswer));
     } catch (cause) {
       if (sequence !== askSequenceRef.current) return;
       setError(roomAiError(cause));
@@ -312,7 +308,9 @@ export const RoomAskDialog = ({
                     disabled={
                       !canSend || sharing.sending || !answer.text.trim() || Boolean(pending)
                     }
-                    onClick={() => void sharing.share(answer.text)}
+                    onClick={() =>
+                      void sharing.share(`【提问】${submittedQuestion}\n【回答】${answer.text}`)
+                    }
                   >
                     <Send className="size-3.5" aria-hidden="true" />
                     {sharing.sending ? "发送中…" : "发送到聊天"}
@@ -320,24 +318,44 @@ export const RoomAskDialog = ({
                 </div>
                 {answer.sources.length ? (
                   <div className="mt-3 space-y-2 border-t border-[#e2ebf5] pt-3">
-                    {answer.sources.map((source, index) => (
-                      <button
-                        type="button"
-                        disabled={!source.filePath}
-                        onClick={() =>
-                          source.filePath &&
-                          onOpenResult({ filePath: source.filePath, startMs: source.startMs })
-                        }
+                    {roomQuestionSources(answer, roomId).map((source, index) => (
+                      <div
                         key={`${source.recordingId ?? source.segmentId}-${source.startMs}-${index}`}
-                        className="block w-full rounded-[12px] bg-[#f3f7fc] px-3 py-2 text-left disabled:cursor-default"
+                        className="flex items-center gap-2 rounded-[12px] bg-[#f3f7fc] px-3 py-2"
                       >
-                        <strong className="block text-xs text-[#3974d8]">
-                          {source.roomName ?? "语音记录"} · {formatOffset(source.startMs)}
-                        </strong>
-                        <span className="mt-0.5 block text-xs leading-5 text-[#718096]">
-                          {source.quote}
-                        </span>
-                      </button>
+                        <button
+                          type="button"
+                          disabled={!source.filePath}
+                          onClick={() =>
+                            source.filePath &&
+                            onOpenResult({ filePath: source.filePath, startMs: source.startMs })
+                          }
+                          className="block min-w-0 flex-1 text-left disabled:cursor-default"
+                        >
+                          <strong className="block text-xs text-[#3974d8]">
+                            {formatRoomSourceTime(source)}
+                          </strong>
+                          <span className="mt-0.5 block text-xs leading-5 text-[#718096]">
+                            {source.quote}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg p-2 text-[#3974d8] hover:bg-[#e3efff] disabled:opacity-40"
+                          disabled={
+                            !canSend || sharing.sending || Boolean(pending) || !source.quote.trim()
+                          }
+                          aria-label="发送相关记录到聊天"
+                          title="发送相关记录到聊天"
+                          onClick={() =>
+                            void sharing.share(
+                              `【相关记录】${formatRoomSourceTime(source)}\n${source.quote}`,
+                            )
+                          }
+                        >
+                          <Send className="size-4" aria-hidden="true" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 ) : null}
@@ -360,7 +378,10 @@ export const RoomAskDialog = ({
                         onClick={() => {
                           setQuery("");
                           setSubmittedQuestion(entry.question);
-                          setAnswer(entry.answer);
+                          setAnswer({
+                            ...entry.answer,
+                            sources: roomQuestionSources(entry.answer, roomId),
+                          });
                           setError(undefined);
                           sharing.clearNotice();
                         }}

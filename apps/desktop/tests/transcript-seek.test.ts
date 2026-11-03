@@ -3,7 +3,31 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { buildReadableTranscriptParagraphs, type VoiceMemoryRecord } from "@private-voice/shared";
-import { transcriptSeekRuns } from "../src/renderer/src/features/ai/transcriptSeek";
+import {
+  cleanTranscriptDisplay,
+  transcriptSeekRuns,
+} from "../src/renderer/src/features/ai/transcriptSeek";
+
+test("display hides leaked ASR fields while preserving speech and ordinary text", () => {
+  assert.equal(
+    cleanTranscriptDisplay('Start":4.89,"End":6.03,"Content":"","Speaker":1}]嗯。'),
+    "嗯。",
+  );
+  assert.equal(cleanTranscriptDisplay('{"Start":1,"End":2,"Content":"你好","Speaker":1}'), "你好");
+  assert.equal(cleanTranscriptDisplay("Start 4.89 是我说的价格"), "Start 4.89 是我说的价格");
+  assert.equal(
+    cleanTranscriptDisplay('[{"Start":1.43,"End":4.68,"Content":"。","Speaker":1}]'),
+    "。",
+  );
+  assert.equal(
+    cleanTranscriptDisplay(JSON.stringify([{ Content: '他说"好"', Speaker: 1, End: 2, Start: 1 }])),
+    '他说"好"',
+  );
+  assert.equal(
+    cleanTranscriptDisplay('[{"Start":1,"Content":"保留原样"}]'),
+    '[{"Start":1,"Content":"保留原样"}]',
+  );
+});
 import {
   transcriptViewOptions,
   resolveTranscriptView,
@@ -19,6 +43,11 @@ const sentence = (id: string, startMs: number, text: string) => ({
   text,
   speakerId: "member",
   confidence: "high" as const,
+});
+test("cleaned structured output does not use offsets from raw wire text", () => {
+  const text = '[{"Start":1.43,"End":4.68,"Content":"。","Speaker":1}]';
+  const paragraph = buildReadableTranscriptParagraphs([sentence("wire", 12000, text)])[0]!;
+  assert.deepEqual(transcriptSeekRuns(paragraph), [{ text: "。", startMs: 12000 }]);
 });
 test("clickable text runs retain each sentence offset inside a merged paragraph", () => {
   const sources = [

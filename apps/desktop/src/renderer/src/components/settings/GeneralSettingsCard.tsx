@@ -28,8 +28,8 @@ export const GeneralSettingsCard = ({
         <TraySettingsRows settings={settings} onChange={onChange} />
         <InterfaceSoundVolumeRow settings={settings} onChange={onChange} />
         <SettingsItemRow
-          label="Windows 外观实验功能"
-          description="隐藏 Windows 桌面所有快捷方式的小箭头；此功能会影响整个 Windows，不会隐藏管理员盾牌。"
+          label="隐藏快捷方式小箭头和盾牌"
+          description="影响整个 Windows，操作时会重启资源管理器；管理员授权仍会弹出，不同系统版本的显示效果可能不同。"
         >
           <div className="flex flex-wrap gap-2">
             <Button
@@ -41,7 +41,11 @@ export const GeneralSettingsCard = ({
             </Button>
             <Button
               variant="ghost"
-              disabled={loadingWindows || windowsStatus?.iconOverlays.hidden !== true}
+              disabled={
+                loadingWindows ||
+                (!windowsStatus?.iconOverlays.arrowHidden &&
+                  !windowsStatus?.iconOverlays.shieldHidden)
+              }
               onClick={() => onIconOverlayChange(false)}
             >
               恢复默认

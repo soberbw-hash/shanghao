@@ -54,22 +54,19 @@ app.whenReady().then(() => {
       path.join(root, "scripts", "desktop-dev-runtime.mjs"),
       path.join(destination, "desktop-dev-runtime.mjs"),
     );
-    const launcher = require("./desktop-dev-shortcut.cjs").developmentPowerShellScript(
-      application,
-      root,
-      destination,
-    );
+    const launcherTools = require("./desktop-dev-shortcut.cjs");
+    const launcher = launcherTools.developmentPowerShellScript(application, root, destination);
     fs.writeFileSync(
       path.join(destination, "launch-dev.ps1"),
       Buffer.concat([Buffer.from([255, 254]), Buffer.from(launcher, "utf16le")]),
     );
     fs.writeFileSync(
       path.join(destination, "launch-dev.cmd"),
-      `@echo off\r\nstart "" "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${Buffer.from(launcher, "utf16le").toString("base64")}\r\n`,
+      `@echo off\r\nstart "" "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" ${launcherTools.developmentLauncherArguments(destination)}\r\n`,
     );
     fs.writeFileSync(
       path.join(destination, "launch-dev-admin.cmd"),
-      `@echo off\r\n"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoLogo -NoProfile -WindowStyle Hidden -Command "$taskShell = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'; Start-Process -FilePath $taskShell -Verb RunAs -WindowStyle Hidden -ArgumentList '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${Buffer.from(launcher, "utf16le").toString("base64")}'"\r\n`,
+      `@echo off\r\nstart "" "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" ${launcherTools.developmentLauncherArguments(destination)}\r\n`,
     );
     const load = createRequire(path.join(application, "package.json"));
     load("tsx/cjs");

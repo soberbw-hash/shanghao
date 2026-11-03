@@ -105,9 +105,19 @@ export class TemporaryHostInternet {
     });
     const publishedRole = role ?? (room.authorityId === profile.deviceId ? "authority" : "member");
     try {
-      await provider.publish(signed, publishedRole, handoff);
+      const registration = await provider.publish(
+        signed,
+        publishedRole,
+        handoff,
+        async (brokerTime) =>
+          this.identity.signInternetRegistration({
+            ...signed.payload,
+            issuedAt: brokerTime,
+            expiresAt: brokerTime + 15000,
+          }),
+      );
       if (this.closed || this.provider !== provider) throw Error("temporary_bridge_closed");
-      this.published.set(room.sessionId, signed);
+      this.published.set(room.sessionId, registration ?? signed);
       this.roles.set(room.sessionId, publishedRole);
     } catch (error) {
       if (this.closed || this.provider !== provider)

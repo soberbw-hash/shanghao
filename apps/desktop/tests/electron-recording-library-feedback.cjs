@@ -37,9 +37,8 @@ app.whenReady().then(async () => {
     );
     await window.webContents.executeJavaScript(`(()=>{
       const text=document.querySelector('.voice-memory-detail');
-      const clips=document.querySelector('.recording-clips-panel');
       if(!text.textContent.includes('先集合、补足河道视野'))throw Error('saved legacy summary disappeared');
-      if(!(text.compareDocumentPosition(clips)&Node.DOCUMENT_POSITION_FOLLOWING))throw Error('clip tools push transcript below the first screen');
+      if(document.querySelector('.recording-clips-panel'))throw Error('clip editor is expanded by default');
     })()`);
     const readingLayout = await window.webContents.executeJavaScript(`(()=>{
       const rect=selector=>document.querySelector(selector).getBoundingClientRect();
@@ -50,7 +49,7 @@ app.whenReady().then(async () => {
       if(panel.bottom-first.top<innerHeight*.45)throw Error('transcript gets too little first-screen reading space');
       const source=document.querySelector('.transcript-source-control');
       const timeline=document.querySelector('.voice-memory-timeline');
-      if(!(source.compareDocumentPosition(timeline)&Node.DOCUMENT_POSITION_FOLLOWING))throw Error('timeline appears before text');
+      if(timeline)throw Error('manual markers duplicated below text');
       const storage=document.querySelector('.recording-storage-settings');
       storage.querySelector('summary').click();
       if(!document.querySelector('[aria-label="录音库自动清理容量上限"]').checkVisibility())throw Error('storage controls cannot open');
@@ -71,7 +70,7 @@ app.whenReady().then(async () => {
       const frame = await window.webContents.executeJavaScript(`(async()=>{
         const dots=[...document.querySelectorAll('.recording-marker-dot')];dots[${index}].click();await new Promise(r=>setTimeout(r,70));
         const range=document.querySelector('.recording-timeline'), rect=range.getBoundingClientRect(), dot=dots[${index}].getBoundingClientRect();
-        const cue=document.querySelector('.recording-marker-cue'), title=document.querySelector('.recording-player-title').getBoundingClientRect(), slot=document.querySelector('.recording-marker-cue-slot').getBoundingClientRect();
+        const cue=document.querySelector('.recording-marker-bar'), title=document.querySelector('.recording-player-title').getBoundingClientRect(), slot=cue.getBoundingClientRect();
         const cueRect=cue.getBoundingClientRect();
         dots.forEach(dot=>dot.style.visibility='hidden');
         return {value:Number(range.value),max:Number(range.max),range:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},dot:{x:dot.x+dot.width/2,y:dot.y+dot.height/2},cueText:cue.textContent,cueBelowTitle:cueRect.top>=title.bottom,slotHeight:slot.height};
@@ -108,8 +107,8 @@ app.whenReady().then(async () => {
       const delta = Math.hypot(blue.x - frame.dot.x, blue.y - frame.dot.y);
       check(delta < 1, `marker/thumb center mismatch at ${frame.value}s: ${delta}px`);
       check(frame.cueBelowTitle, "marker cue overlapped the recording title");
-      check(frame.cueText.includes("演示"), "marker cue text is missing");
-      check(frame.slotHeight === 24, "marker cue did not reserve its independent 24px slot");
+      check(frame.cueText.includes("截取片段"), "marker clip action is missing");
+      check(frame.slotHeight <= 42, "persistent marker bar is too tall");
       geometry.push({
         seconds: frame.value,
         blueCenter: blue,
@@ -123,11 +122,11 @@ app.whenReady().then(async () => {
     const expiry = await window.webContents.executeJavaScript(`(async()=>{
       const pause=ms=>new Promise(r=>setTimeout(r,ms));
       document.querySelectorAll('.recording-marker-dot')[1].click();await pause(50);
-      const slot=document.querySelector('.recording-marker-cue-slot'), before=slot.getBoundingClientRect();
-      const cueVisible=!!document.querySelector('.recording-marker-cue');await pause(2600);
+      const slot=document.querySelector('.recording-marker-bar'), before=slot.getBoundingClientRect();
+      const cueVisible=!!slot;await pause(2600);
       const after=slot.getBoundingClientRect();
-      return {cueVisible,cueExpired:!document.querySelector('.recording-marker-cue'),slotStable:before.height===after.height&&before.top===after.top,
-        autoCleanup:document.querySelector('[aria-label="自动清理整段静音的录音"]')?.getAttribute('aria-pressed')==='true',
+      return {cueVisible,remainsVisible:!!document.querySelector('.recording-marker-bar'),slotStable:before.height===after.height&&before.top===after.top,
+        autoCleanup:document.querySelector('[aria-label="自动将可清理的录音移入回收站"]')?.getAttribute('aria-pressed')==='true',
         noManualCleanup:![...document.querySelectorAll('button')].some(button=>/扫描|清理废录音|手动清理/.test(button.textContent)),
         transcriptVisible:document.body.textContent.includes('演示：大家先在中路集合')};
     })()`);

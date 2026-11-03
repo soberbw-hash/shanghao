@@ -4,6 +4,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import * as audioSendGate from "../src/renderer/src/features/audio/audioSendGate";
+import * as availabilitySound from "../src/renderer/src/features/audio/availabilitySoundTransition";
 
 type State = { active: boolean; busy: boolean; error?: string; entryCue?: number };
 function fixture(initial: State | Promise<State> = { active: false, busy: false }) {
@@ -44,6 +45,7 @@ function fixture(initial: State | Promise<State> = { active: false, busy: false 
     require: (id: string) => {
       if (id in stores) return stores[id];
       if (id === "../features/audio/audioSendGate") return audioSendGate;
+      if (id === "../features/audio/availabilitySoundTransition") return availabilitySound;
       if (id === "react") return { useEffect: (effect: () => unknown) => effect() };
       if (id === "../utils/desktopApi")
         return {
@@ -142,4 +144,22 @@ test("phone snapshots rebaseline quietly and a late initial snapshot cannot over
   await Promise.resolve();
   assert.equal(late.audio.active, true);
   assert.deepEqual(late.sounds, ["phone-mode-enter"]);
+});
+
+test("mouse status transitions keep the pre-mute phone entry cue but suppress the intermediate phone exit cue", async () => {
+  const f = fixture();
+  await Promise.resolve();
+  const end = availabilitySound.beginAvailabilitySoundTransition();
+  try {
+    f.receive({ active: true, busy: true, entryCue: 12 });
+    f.receive({ active: true, busy: false });
+    f.receive({ active: false, busy: false });
+    assert.deepEqual(f.sounds, ["phone-mode-enter"]);
+  } finally {
+    end();
+  }
+  f.receive({ active: true, busy: true, entryCue: 13 });
+  f.receive({ active: true, busy: false });
+  f.receive({ active: false, busy: false });
+  assert.deepEqual(f.sounds, ["phone-mode-enter", "phone-mode-enter", "phone-mode-exit"]);
 });

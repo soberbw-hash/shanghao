@@ -5,6 +5,7 @@ import { AudioDeviceState } from "@private-voice/shared";
 
 import {
   createDeviceRefreshVersion,
+  headphoneOutputDisconnected,
   missingPreferredAudioDevices,
 } from "../src/renderer/src/features/audio/deviceRecovery";
 
@@ -19,6 +20,67 @@ test("a failed enumeration does not clear a selected microphone or speaker", () 
       outputState: AudioDeviceState.Failed,
     }),
     { missingInput: false, missingOutput: false },
+  );
+});
+
+test("headphone disconnect requires evidence, not a label refresh or a changed selection", () => {
+  const previous = { id: "headset", label: "USB 耳机" };
+  const base = {
+    previous,
+    previousPreference: "headset",
+    currentPreference: "headset",
+    outputState: AudioDeviceState.Ready,
+  };
+  assert.equal(
+    headphoneOutputDisconnected({ ...base, outputDevices: [{ id: "speaker", label: "扬声器" }] }),
+    true,
+  );
+  assert.equal(
+    headphoneOutputDisconnected({
+      ...base,
+      outputDevices: [{ id: "headset", label: "USB Headset" }],
+    }),
+    false,
+  );
+  assert.equal(
+    headphoneOutputDisconnected({ ...base, currentPreference: "speaker", outputDevices: [] }),
+    false,
+  );
+  assert.equal(
+    headphoneOutputDisconnected({
+      ...base,
+      outputState: AudioDeviceState.Failed,
+      outputDevices: [],
+    }),
+    false,
+  );
+});
+
+test("default headphone changes only notify if the physical headset disappeared", () => {
+  const base = {
+    previous: { id: "default", label: "Default - USB Headphones" },
+    outputState: AudioDeviceState.Ready,
+  };
+  assert.equal(
+    headphoneOutputDisconnected({
+      ...base,
+      outputDevices: [
+        { id: "headset", label: "USB Headphones" },
+        { id: "default", label: "Default - Speakers" },
+      ],
+    }),
+    false,
+  );
+  assert.equal(
+    headphoneOutputDisconnected({
+      ...base,
+      outputDevices: [{ id: "default", label: "Default - Speakers" }],
+    }),
+    true,
+  );
+  assert.equal(
+    headphoneOutputDisconnected({ ...base, outputDevices: [{ id: "default", label: "" }] }),
+    false,
   );
 });
 

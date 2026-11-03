@@ -26,10 +26,9 @@ export function RecordingOverview({ record, busy, onRetry, onSeek }: RecordingOv
           <span>{description || points[0]?.text}</span>
           <ChevronDown aria-hidden="true" />
         </summary>
-        {description ? <p>{description}</p> : null}
         {points.length ? (
           <ul>
-            {points.map(({ text, sourceStartMs }, index) => (
+            {(description ? points : points.slice(1)).map(({ text, sourceStartMs }, index) => (
               <li key={`${index}:${text}`}>
                 {sourceStartMs === undefined ? (
                   text

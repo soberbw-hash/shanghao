@@ -3,6 +3,7 @@ import { access, link, lstat, mkdir, realpath, stat, unlink } from "node:fs/prom
 import path from "node:path";
 import {
   recordingClipWindow,
+  recordingClipRange,
   type RecordingClipRequest,
   type RecordingClipResult,
 } from "@private-voice/shared";
@@ -12,28 +13,8 @@ import { probeRecordingMedia } from "./recording-media-probe";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { runLocalProcess } from "./local-process";
 import { mainResourceScheduler } from "./main-resource-scheduler";
-
-export const requireRecordingClipRequest = (value: unknown): RecordingClipRequest => {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("clip_invalid_request");
-  const request = value as RecordingClipRequest;
-  if (
-    typeof request.filePath !== "string" ||
-    !request.filePath ||
-    request.filePath.length > 2_048 ||
-    typeof request.markerId !== "string" ||
-    !request.markerId ||
-    request.markerId.length > 160
-  )
-    throw new Error("clip_invalid_request");
-  recordingClipWindow(120_000, 240_000, request.beforeMs, request.afterMs);
-  return {
-    filePath: request.filePath,
-    markerId: request.markerId,
-    beforeMs: request.beforeMs,
-    afterMs: request.afterMs,
-  };
-};
+import { requireRecordingClipRequest } from "./recording-clip-request";
+export { requireRecordingClipRequest } from "./recording-clip-request";
 
 export const recordingClipFileName = (
   roomName: string,
@@ -129,8 +110,11 @@ export class RecordingClipExporter {
     const recording = (await readRecordingLibraryItems(directory)).find(
       (item) => item.filePath === source,
     );
-    const marker = recording?.markers.find((item) => item.id === request.markerId);
-    if (!recording || !marker) throw new Error("clip_marker_missing");
+    if (!recording) throw new Error("clip_source_unreadable");
+    const marker = request.markerId
+      ? recording.markers.find((item) => item.id === request.markerId)
+      : undefined;
+    if (request.markerId && !marker) throw new Error("clip_marker_missing");
     const executable = resolveFfmpegExecutable();
     if (!executable) throw new Error("clip_component_missing");
     const media = await probeRecordingMedia(source, { signal }).catch((error: Error) => {
@@ -138,12 +122,10 @@ export class RecordingClipExporter {
         cause: error,
       });
     });
-    const window = recordingClipWindow(
-      marker.offsetMs,
-      media.durationMs,
-      request.beforeMs,
-      request.afterMs,
-    );
+    const window =
+      marker && request.beforeMs !== undefined && request.afterMs !== undefined
+        ? recordingClipWindow(marker.offsetMs, media.durationMs, request.beforeMs, request.afterMs)
+        : recordingClipRange(request.startMs!, request.endMs!, media.durationMs);
     const clips = await requireClipDirectory(directory).catch((error) => {
       throw new Error("clip_write_failed", { cause: error });
     });
@@ -206,7 +188,11 @@ export class RecordingClipExporter {
       const filePath = await commitRecordingClip(
         temporary,
         clips,
-        recordingClipFileName(recording.roomName ?? "上号", recording.createdAt, marker.offsetMs),
+        recordingClipFileName(
+          recording.roomName ?? "上号",
+          recording.createdAt,
+          marker?.offsetMs ?? window.startMs,
+        ),
       );
       return { filePath, fileName: path.basename(filePath), ...window };
     } finally {

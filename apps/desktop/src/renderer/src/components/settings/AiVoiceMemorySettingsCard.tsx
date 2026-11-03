@@ -31,6 +31,7 @@ import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { Switch } from "../base/Switch";
 import { SettingsItemRow } from "./SettingsItemRow";
+import { CloudAiAdminPanel } from "./CloudAiAdminPanel";
 import { SettingsSection } from "./SettingsSection";
 import { CloudLocalAssistControl } from "./CloudLocalAssistControl";
 import { TranscriptionDataNotice } from "./TranscriptionDataNotice";
@@ -574,7 +575,7 @@ export const AiVoiceMemorySettingsCard = ({
   const installedAsrCount = asrModels.filter((model) => model.activeRevision).length;
   const transcriptionName =
     transcriptionProvider === "cloud"
-      ? "SenseVoiceSmall 云端"
+      ? "内置云端转录"
       : transcriptionProvider === "custom"
         ? (transcriptionStatus?.customModel ?? "自定义转录 API")
         : (selectedAsr?.name ?? "未选择");
@@ -585,7 +586,7 @@ export const AiVoiceMemorySettingsCard = ({
         : customProvider
           ? (customProvider.model ?? "自定义 API（未配置）")
           : "正在读取配置…"
-      : "内置 GLM-4-Flash";
+      : "内置云端模型";
 
   const chooseAsrModel = (model: AiModelStatus) => {
     if (settings.aiTranscriptionProvider === "local" && model.id === settings.aiAsrModel) return;
@@ -819,6 +820,7 @@ export const AiVoiceMemorySettingsCard = ({
 
   return (
     <SettingsSection title="AI 功能">
+      <CloudAiAdminPanel />
       <section className="ai-overview" aria-labelledby="ai-overview-title">
         <div className="ai-model-group-heading">
           <h3 id="ai-overview-title">当前使用</h3>
@@ -871,11 +873,7 @@ export const AiVoiceMemorySettingsCard = ({
                 <option value="manual">仅手动</option>
               </select>
             </SettingsItemRow>
-          ) : (
-            <p className="text-xs text-[#718096]">
-              云端直接处理，不等待游戏结束；切换本地后按所选时机和电脑资源自动调度。
-            </p>
-          )}
+          ) : null}
           <SettingsItemRow
             label="自动转录"
             description={
@@ -972,7 +970,7 @@ export const AiVoiceMemorySettingsCard = ({
                 setCustomApiKey("");
               }}
             >
-              <option value="cloud">内置云端 · GLM-4-Flash</option>
+              <option value="cloud">内置云端模型</option>
               <option value="custom">自定义 API</option>
             </select>
             {textPreset === "cloud" ? (
@@ -1072,7 +1070,7 @@ export const AiVoiceMemorySettingsCard = ({
             title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
           >
             <h4>语音转文字</h4>
-            <p>SenseVoice 在云端识别音频；Qwen 等本地模型可单独转录或辅助校对时间轴。</p>
+            <p>云端识别音频；本地模型可单独转录或辅助校对时间轴。</p>
             <select
               className="ai-processing-select"
               aria-label="语音转录模型来源"
@@ -1084,7 +1082,7 @@ export const AiVoiceMemorySettingsCard = ({
                 });
               }}
             >
-              <option value="cloud">内置云端 · SenseVoice</option>
+              <option value="cloud">内置云端转录</option>
               <option value="local">本地转录 · 使用已下载模型</option>
               <option value="custom">自定义语音 API</option>
             </select>

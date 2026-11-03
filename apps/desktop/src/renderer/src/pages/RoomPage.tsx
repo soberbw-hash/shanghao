@@ -1,9 +1,11 @@
 import { useRecordingSpeakingTimeline } from "../hooks/useRecordingSpeakingTimeline";
 import { RemoteControlStatus } from "../components/room/RemoteControlStatus";
 import { MemberAvailabilityControls } from "../components/chat/MemberAvailabilityControls";
+import { hasRecordingCompanion } from "../features/recording/hasRecordingCompanion";
 import type { AwaySession } from "../features/room/autoAway";
 import { writeRendererLog } from "../utils/logger";
 import { useLocalInputRecovery } from "../features/audio/useLocalInputRecovery";
+import { useListenOnlyRecovery } from "../features/audio/useListenOnlyRecovery";
 import { useMicrophoneProcessingUpdate } from "../features/audio/useMicrophoneProcessingUpdate";
 import { finishSavedRoomRecording } from "../features/recording/finishSavedRoomRecording";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -46,6 +48,7 @@ import {
   shouldMuteAfterAwayReturn,
 } from "../features/room/autoAway";
 import { useRoomActivityDetection } from "../features/room/useRoomActivityDetection";
+import { useRoomLifecycleEffects } from "../features/room/useRoomLifecycleEffects";
 import { isSeatZone } from "../features/voice-scene/sceneZones";
 import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
 import { useMicTest } from "../hooks/useMicTest";
@@ -68,11 +71,10 @@ const KNOCK_COOLDOWN_MS = 10_000;
 export const RoomPage = () => {
   const [roomPickerOpen, setRoomPickerOpen] = useState(false);
   const pendingInvite = useAppStore((state) => state.pendingRoomInvite);
-  useEffect(() => {
-    if (pendingInvite) setRoomPickerOpen(true);
-  }, [pendingInvite]);
   const switchAfterRecordingRef = useRef<string | undefined>(undefined);
   const {
+    chronicle,
+    replay,
     room,
     leaveRoom,
     switchChannel,
@@ -96,6 +98,7 @@ export const RoomPage = () => {
     addRoomCollectionItem,
     removeRoomCollectionItem,
   } = useRoomState();
+  useRoomLifecycleEffects(pendingInvite, setRoomPickerOpen, leaveRoom);
   useTemporaryRoomState(leaveRoom);
   useTrayRoomCommands(leaveRoom, () => setRoomPickerOpen(true));
   const pushToast = useAppStore((state) => state.pushToast);
@@ -103,12 +106,6 @@ export const RoomPage = () => {
   const setSettingsReturnTo = useAppStore((state) => state.setSettingsReturnTo);
   const setVoiceMemoryOpenTarget = useAppStore((state) => state.setVoiceMemoryOpenTarget);
   const roomAction = useAppStore((state) => state.roomAction);
-  useEffect(() => {
-    const leaveReconnectingRoom = () => void leaveRoom().catch(() => undefined);
-    window.addEventListener("shanghao:leave-reconnecting-room", leaveReconnectingRoom);
-    return () =>
-      window.removeEventListener("shanghao:leave-reconnecting-room", leaveReconnectingRoom);
-  }, [leaveRoom]);
   const {
     localStream: localScreenShareStream,
     status: screenShareStatus,
@@ -153,12 +150,6 @@ export const RoomPage = () => {
     }),
   );
   useLocalInputRecovery(localStream, replaceInputDevice, !phoneMicSelected);
-  useEffect(
-    () => () => {
-      void phoneMicSource.stop();
-    },
-    [],
-  );
   const knockMessageCount = useRoomStore(
     (state) => state.chatMessages.filter((message) => message.id.startsWith("knock-")).length,
   );
@@ -172,7 +163,11 @@ export const RoomPage = () => {
   const outputDevices = useAudioStore((state) => state.outputDevices);
   const isMuted = useAudioStore((state) => state.isMuted);
   const isDeafened = useAudioStore((state) => state.isDeafened);
-  const toggleMicrophone = useAudioStore((state) => state.toggleMicrophone);
+  const { toggleMicrophone: handleToggleMicrophone, notice: microphoneRecoveryNotice } =
+    useListenOnlyRecovery(
+      replaceInputDevice,
+      phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId,
+    );
   const toggleDeafen = useAudioStore((state) => state.toggleDeafen);
   const setMuted = useAudioStore((state) => state.setMuted);
   const recordingStatus = useRecordingStore((state) => state.status);
@@ -401,6 +396,7 @@ export const RoomPage = () => {
     }
   }, [room.roomId]);
 
+  const hasAutoRecordingCompanion = hasRecordingCompanion(room.members);
   useEffect(() => {
     const hasLiveMicrophone = localStream
       ?.getAudioTracks()
@@ -408,6 +404,7 @@ export const RoomPage = () => {
     const canAutoRecord =
       isAutoRecordOnJoinEnabled &&
       canSend &&
+      hasAutoRecordingCompanion &&
       hasLiveMicrophone &&
       recordingStatus.state === RecordingState.Idle &&
       capability.encoderState !== RecordingEncoderState.Unsupported;
@@ -416,7 +413,12 @@ export const RoomPage = () => {
       return;
 
     const attemptAutoRecord = () => {
-      if (isAutoRecordSuppressedRef.current) {
+      const currentRoom = useRoomStore.getState().room;
+      if (
+        isAutoRecordSuppressedRef.current ||
+        currentRoom.roomId !== room.roomId ||
+        !hasRecordingCompanion(currentRoom.members)
+      ) {
         autoRecordRetryTimerRef.current = undefined;
         return;
       }
@@ -477,6 +479,8 @@ export const RoomPage = () => {
     localStream,
     pushToast,
     recordingStatus.state,
+    room.roomId,
+    hasAutoRecordingCompanion,
     isAutoRecordOnJoinEnabled,
     startRecording,
   ]);
@@ -531,7 +535,9 @@ export const RoomPage = () => {
 
       const decision = decideAutoAway({
         idleSeconds,
-        isInAwayZone: currentLocalMember.sceneZone === "restroomZone",
+        isInAwayZone:
+          awaySessionRef.current?.method === "auto" ||
+          currentLocalMember.sceneZone === "restroomZone",
         awayMethod: awaySessionRef.current?.method,
         isConnectionValid,
       });
@@ -551,7 +557,7 @@ export const RoomPage = () => {
         };
         setMuted(true);
         moveLocalMemberRef.current(
-          "restroomZone",
+          seat,
           "restroom",
           currentLocalMember.gameName,
           currentLocalMember.musicActivity,
@@ -566,7 +572,7 @@ export const RoomPage = () => {
         pushToast({
           tone: "neutral",
           title: "30 分钟没有操作，已切到离开。",
-          description: "重新操作电脑后会自动回到原来的位置。",
+          description: "重新操作电脑后会自动恢复。",
         });
         return;
       }
@@ -594,7 +600,7 @@ export const RoomPage = () => {
         });
         pushToast({
           tone: "success",
-          title: "欢迎回来，已回到原来的位置。",
+          title: "欢迎回来。",
           description: shouldRemainMuted ? "麦克风保持静音。" : "已恢复离开前的麦克风状态。",
         });
       }
@@ -1066,18 +1072,6 @@ export const RoomPage = () => {
     );
   };
 
-  const handleToggleMicrophone = () => {
-    if (isDeafened && isMuted) {
-      pushToast({
-        tone: "warning",
-        title: "先打开扬声器后才能开麦。",
-        description: "关闭扬声器时会同时关闭麦克风。",
-      });
-      return;
-    }
-    toggleMicrophone();
-  };
-
   return (
     <div
       ref={pageRef}
@@ -1085,6 +1079,7 @@ export const RoomPage = () => {
         isDeafened ? "is-speaker-closed" : ""
       }`}
     >
+      {microphoneRecoveryNotice}
       <div>
         {roomPickerOpen && (
           <RoomSwitchDialog
@@ -1164,9 +1159,8 @@ export const RoomPage = () => {
         <div className="room-chat-column min-h-0">
           <RoomChatPanel
             key={room.roomId}
-            presenceControls={
-              <MemberAvailabilityControls canSend={canSend} send={sendSceneReaction} />
-            }
+            chronicle={chronicle}
+            replay={replay}
             sendChatMessage={sendChatMessage}
             recallChatMessage={recallChatMessage}
             sendQuickMessage={sendQuickMessage}
@@ -1260,6 +1254,17 @@ export const RoomPage = () => {
 
       <RemoteControlStatus />
       <RoomDock
+        presenceControls={<MemberAvailabilityControls canSend={canSend} send={sendSceneReaction} />}
+        isAudioProcessingBusy={isProcessingBusy}
+        onApplyAudioPresetInput={(id) =>
+          isProcessingBusy()
+            ? Promise.resolve(false)
+            : replaceInputDevice(id, { reuseCapture: true })
+        }
+        onAudioPresetApplied={(id) => {
+          setPhoneMicSelected(id === PHONE_MIC_DEVICE_ID);
+          if (id !== PHONE_MIC_DEVICE_ID) void phoneMicSource.stop();
+        }}
         onApplicationAudioTrack={setApplicationAudioTrack}
         settings={roomDockSettings}
         selectedInputDeviceId={phoneMicSelected ? PHONE_MIC_DEVICE_ID : preferredInputDeviceId}

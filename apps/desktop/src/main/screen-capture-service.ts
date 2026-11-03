@@ -13,7 +13,6 @@ type Log = (
 
 export class ScreenCaptureService {
   private pendingSourceId: string | undefined;
-  private readonly sourceCache = new Map<string, DesktopCapturerSource>();
   readonly remoteControl = new RemoteControlCapture(() =>
     screen.getAllDisplays().map((display) => ({
       id: String(display.id),
@@ -24,7 +23,11 @@ export class ScreenCaptureService {
     })),
   );
 
-  constructor(private readonly log?: Log) {}
+  constructor(
+    private readonly log?: Log,
+    private readonly getSources: typeof desktopCapturer.getSources = (options) =>
+      desktopCapturer.getSources(options),
+  ) {}
 
   get capabilities() {
     return {
@@ -78,9 +81,6 @@ export class ScreenCaptureService {
           Number(right.id.startsWith("screen:")) - Number(left.id.startsWith("screen:")),
       )
       .slice(0, 24);
-    this.sourceCache.clear();
-    for (const source of visibleSources) this.sourceCache.set(source.id, source);
-
     return visibleSources.map((source) => {
       const isScreen = source.id.startsWith("screen:");
       const screenIndex = isScreen ? screenSourceIds.indexOf(source.id) + 1 : 0;
@@ -100,12 +100,10 @@ export class ScreenCaptureService {
   async resolveRequestedSource(
     requestedSourceId?: string,
   ): Promise<DesktopCapturerSource | undefined> {
-    const cachedSource = requestedSourceId ? this.sourceCache.get(requestedSourceId) : undefined;
-    if (cachedSource) return cachedSource;
-
+    // Re-enumerate at capture time: HWNDs and display handles can disappear after the picker opens.
+    // Retrying a failed capture must not keep returning the exact same stale native source object.
     const sources = await this.waitForSources(false);
-    for (const source of sources) this.sourceCache.set(source.id, source);
-    const primaryDisplayId = String(screen.getPrimaryDisplay().id);
+    const primaryDisplayId = requestedSourceId ? undefined : String(screen.getPrimaryDisplay().id);
     const selected = requestedSourceId
       ? sources.find((source) => source.id === requestedSourceId)
       : (sources.find((source) => source.display_id === primaryDisplayId) ??
@@ -122,7 +120,7 @@ export class ScreenCaptureService {
   }
 
   private enumerate(withThumbnails: boolean, fetchWindowIcons = withThumbnails) {
-    return desktopCapturer.getSources({
+    return this.getSources({
       types: ["screen", "window"],
       thumbnailSize: withThumbnails ? { width: 320, height: 180 } : { width: 0, height: 0 },
       fetchWindowIcons,

@@ -1,4 +1,14 @@
 {
+  "apps/desktop/src/renderer/src/styles/parts/264-dock-presence-viewer.css": 24,
+  "apps/desktop/src/renderer/src/styles/parts/266-dock-presence-controls.css": 40,
+  "apps/desktop/src/renderer/src/styles/parts/267-screen-expanded-viewer.css": 70,
+  "apps/desktop/src/renderer/src/styles/parts/268-room-chronicle-content.css": 115,
+  "apps/desktop/src/renderer/src/styles/parts/269-voice-replay-content.css": 100,
+  "apps/desktop/src/renderer/src/styles/parts/270-audio-preset-content.css": 145,
+  "apps/desktop/src/renderer/src/styles/parts/271-recording-narrow-layout.css": 25,
+  "apps/desktop/src/renderer/src/styles/parts/272-league-lobby-symbols.css": 40,
+  "apps/desktop/src/renderer/src/styles/parts/273-league-lobby-slots.css": 20,
+  "apps/desktop/src/renderer/src/styles/parts/274-transcript-source-control.css": 25,
   "apps/desktop/src/main/entry.ts": 35,
   "apps/desktop/src/main/asset-studio-ipc.ts": 80,
   "apps/desktop/src/renderer/src/components/settings/AssetStudioSettingsCard.tsx": 75,
@@ -207,6 +217,13 @@
   "apps/desktop/src/main/private-room-auth.ts": 62,
   "packages/shared/src/constants/music-apps.ts": 22,
   "apps/desktop/src/renderer/src/styles/parts/255-recording-list-cards.css": 38,
+  "apps/desktop/src/renderer/src/styles/parts/265-settings-recording-controls.css": 60,
   "apps/desktop/src/renderer/src/styles/parts/256-transcript-reading.css": 55,
-  "apps/desktop/src/renderer/src/styles/parts/257-recording-panel-accessibility.css": 25
+  "apps/desktop/src/renderer/src/styles/parts/257-recording-panel-accessibility.css": 25,
+  "apps/desktop/src/renderer/src/styles/parts/258-room-chronicle.css": 60,
+  "apps/desktop/src/renderer/src/styles/parts/259-room-input-behavior.css": 20,
+  "apps/desktop/src/renderer/src/styles/parts/260-voice-replay.css": 25,
+  "apps/desktop/src/renderer/src/styles/parts/261-audio-device-presets.css": 20,
+  "apps/desktop/src/renderer/src/styles/parts/262-recording-reading-layout.css": 260,
+  "apps/desktop/src/renderer/src/styles/parts/263-assistant-message-pointer.css": 22
 }

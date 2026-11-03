@@ -152,6 +152,38 @@ test("continuous model download updates cannot postpone an existing cloud retry 
   }
 });
 
+test("a stale retry scan cannot revive a newly paused recording", async () => {
+  const f = await fixture();
+  try {
+    f.state.asrReady = true;
+    f.state.failAsr = true;
+    const current = await f.open();
+    const deferred = await current.service.process(f.request);
+    const due = await current.store.save({
+      ...deferred,
+      remoteTranscriptionRetry: { attempts: 1, nextAttemptAt: 0 },
+    });
+    const originalList = current.store.list.bind(current.store);
+    current.store.list = async () => {
+      const stale = await originalList();
+      await current.store.save({
+        ...due,
+        phase: "paused",
+        taskStatus: "pending",
+        errorMessage: undefined,
+      });
+      return stale;
+    };
+    f.state.failAsr = false;
+    const before = f.state.asrCalls;
+    await current.retry();
+    assert.equal(f.state.asrCalls, before);
+    assert.equal((await current.store.get(due.recordingId))?.errorMessage, undefined);
+  } finally {
+    await f.close();
+  }
+});
+
 test("transient ASR recovery survives restart and backs off without requiring a manual retry", async () => {
   const f = await fixture();
   try {

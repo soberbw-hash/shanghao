@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { selectAppProfileSettings } from "../features/settings/settingsProjection";
@@ -7,6 +7,7 @@ import {
   APPLE_MOTION_DURATION,
   APPLE_MOTION_EASE,
   isTemporaryRoomSessionId,
+  RoomLifecycleState,
 } from "@private-voice/shared";
 
 import { AppErrorBoundary } from "../components/layout/AppErrorBoundary";
@@ -24,13 +25,14 @@ import { useAppBootstrap } from "../hooks/useAppBootstrap";
 import { useGlobalMuteSync } from "../hooks/useGlobalMuteSync";
 import { usePhoneModeSync } from "../hooks/usePhoneModeSync";
 import { useLocalAudioTransport } from "../hooks/useLocalAudioTransport";
+import { useBackgroundAudioBalance } from "../features/audio/backgroundAudioBalance";
 import { useMutedSpeechReminder } from "../hooks/useMutedSpeechReminder";
 import { useUiFeedbackSounds } from "../hooks/useUiFeedbackSounds";
 import { useWeatherPreload } from "../hooks/useWeatherPreload";
 import { useTrayBackground } from "../hooks/useTrayBackground";
 import { useAppRoomInvites } from "../hooks/useAppRoomInvites";
 import { useGameRecordingMarkers } from "../features/room/useGameRecordingMarkers";
-import { dispatchQuickMessageShortcut } from "../hooks/useRoomState";
+import { dispatchQuickMessageShortcut, leaveRoomOnAccountLoss } from "../hooks/useRoomState";
 import { AccountPage } from "../pages/AccountPage";
 import { SharedOverlays } from "../pages/SharedOverlays";
 import { useAppStore } from "../store/appStore";
@@ -57,6 +59,7 @@ export const App = () => {
   useGlobalMuteSync();
   usePhoneModeSync();
   useLocalAudioTransport();
+  useBackgroundAudioBalance();
   useMutedSpeechReminder();
   useWeatherPreload();
   useTrayBackground();
@@ -85,6 +88,7 @@ export const App = () => {
 
   const currentPage = useAppStore((state) => state.currentPage);
   const temporaryRoomId = useRoomStore((state) => state.room.temporaryRoom?.roomId);
+  const roomLifecycle = useRoomStore((state) => state.room.lifecycleState);
   useEffect(() => {
     const sync = () => {
       const state = useAppStore.getState();
@@ -108,6 +112,28 @@ export const App = () => {
   const avatarDataUrl = useSettingsStore((state) => state.avatarDataUrl);
   const accountSnapshot = useAccountStore((state) => state.snapshot);
   const isAccountHydrating = useAccountStore((state) => state.isHydrating);
+  useLayoutEffect(() => {
+    const inRoom =
+      currentPage === "room" ||
+      (currentPage === "settings" && settingsReturnTo === "room") ||
+      roomLifecycle === RoomLifecycleState.Opening ||
+      roomLifecycle === RoomLifecycleState.Open;
+    if (
+      inRoom &&
+      !isTemporaryRoomSessionId(temporaryRoomId) &&
+      !isAccountHydrating &&
+      ["signed_out", "verification_required", "unavailable"].includes(accountSnapshot.status)
+    ) {
+      leaveRoomOnAccountLoss();
+    }
+  }, [
+    accountSnapshot.status,
+    currentPage,
+    settingsReturnTo,
+    temporaryRoomId,
+    isAccountHydrating,
+    roomLifecycle,
+  ]);
   const [accountConfigReady, setAccountConfigReady] = useState(!cloudBaseClientConfig);
   const startupSettled =
     accountConfigReady &&

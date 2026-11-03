@@ -1,10 +1,12 @@
 import { useEffect } from "react";
-
 import { useAudioStore } from "../store/audioStore";
 import { useAppStore } from "../store/appStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { prewarmDeepFilterAssets } from "../features/audio/microphoneProcessor";
-import { missingPreferredAudioDevices } from "../features/audio/deviceRecovery";
+import {
+  headphoneOutputDisconnected,
+  missingPreferredAudioDevices,
+} from "../features/audio/deviceRecovery";
 import { writeRendererLog } from "../utils/logger";
 
 const BOOTSTRAP_TIMEOUT_MS = 8_000;
@@ -117,6 +119,13 @@ export const useAppBootstrap = (): void => {
 
     const handleDeviceChange = () => {
       void (async () => {
+        const previousOutputs = useAudioStore.getState().outputDevices;
+        const previousSettings = useSettingsStore.getState().settings;
+        const previousDevice = previousOutputs.find((device) =>
+          previousSettings?.preferredOutputDeviceId
+            ? device.id === previousSettings.preferredOutputDeviceId
+            : device.isDefault || device.id === "default",
+        );
         await refreshDevices();
         const currentSettings = useSettingsStore.getState().settings;
         if (!currentSettings) return;
@@ -134,6 +143,26 @@ export const useAppBootstrap = (): void => {
           inputState,
           outputState,
         });
+
+        // The system default can move to speakers without an explicit preferred device.
+        // Only report a disappeared, recognisable headphone; this never changes audio state.
+        if (
+          !missingOutput &&
+          headphoneOutputDisconnected({
+            previous: previousDevice,
+            previousPreference: previousSettings?.preferredOutputDeviceId,
+            currentPreference: currentSettings.preferredOutputDeviceId,
+            outputDevices,
+            outputState,
+          })
+        ) {
+          useAppStore.getState().pushToast({
+            tone: "warning",
+            title: "耳机已断开",
+            description: "请检查当前声音输出设备。",
+            dedupeKey: "headphone-disconnected",
+          });
+        }
 
         if (missingInput) patch.preferredInputDeviceId = undefined;
         if (missingOutput) patch.preferredOutputDeviceId = undefined;

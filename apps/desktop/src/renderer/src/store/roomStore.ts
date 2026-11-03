@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ChronicleStateMessage, ReplayStateMessage } from "@private-voice/signaling";
 
 import {
   DEFAULT_ROOM_NAME,
@@ -56,6 +57,10 @@ export interface RemoteScreenFrame {
 }
 
 interface RoomStoreState {
+  chronicle?: ChronicleStateMessage;
+  replay?: ReplayStateMessage;
+  setReplay: (message: ReplayStateMessage) => void;
+  setChronicle: (message: ChronicleStateMessage) => void;
   room: RoomSummary;
   localStream?: MediaStream;
   remoteStreams: Record<string, MediaStream>;
@@ -285,6 +290,10 @@ const initialRoomState = (): RoomSummary => {
 };
 
 export const useRoomStore = create<RoomStoreState>((set) => ({
+  setChronicle: (message) =>
+    set((state) => (message.roomId === state.room.roomId ? { chronicle: message } : {})),
+  setReplay: (message) =>
+    set((state) => (message.roomId === state.room.roomId ? { replay: message } : {})),
   room: initialRoomState(),
   localStream: undefined,
   remoteStreams: {},
@@ -557,6 +566,8 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       remoteScreenSharing: {},
       localScreenShareViewerPeerIds: [],
       chatMessages: [],
+      chronicle: undefined,
+      replay: undefined,
       collectionItems: [],
       sceneReactions: [],
       quickMessages: [],
@@ -674,6 +685,8 @@ export const useRoomStore = create<RoomStoreState>((set) => ({
       remoteScreenSharing: {},
       localScreenShareViewerPeerIds: [],
       chatMessages: [],
+      chronicle: undefined,
+      replay: undefined,
       collectionItems: [],
       sceneReactions: [],
       quickMessages: [],

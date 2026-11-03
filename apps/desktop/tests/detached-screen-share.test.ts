@@ -83,6 +83,7 @@ test("enlarged viewing follows track changes inside the same stream and ignores 
   const originalPeer = Object.getOwnPropertyDescriptor(globalThis, "RTCPeerConnection");
   let created = 0,
     closed = 0,
+    windowsOpened = 0,
     windowsClosed = 0,
     failOpen = false;
   class Peer {
@@ -103,8 +104,10 @@ test("enlarged viewing follows track changes inside the same stream and ignores 
     value: {
       desktopApi: {
         app: { writeLog: async () => {} },
+        screenCapture: { setContentProtection: async () => {} },
         screenShareViewer: {
           open: async () => {
+            windowsOpened++;
             if (failOpen) throw Error("viewer failed");
           },
           close: async () => {
@@ -154,4 +157,8 @@ test("enlarged viewing follows track changes inside the same stream and ignores 
   failOpen = true;
   await assert.rejects(manager.openDetachedViewer(item), /viewer failed/);
   assert.equal(manager.getSnapshot().displayMode, "inline");
+  manager.destroy();
+  const openedBefore = windowsOpened;
+  await assert.rejects(manager.openDetachedViewer(item), /screen_share_closed/);
+  assert.equal(windowsOpened, openedBefore, "an old room callback cannot open another viewer");
 });

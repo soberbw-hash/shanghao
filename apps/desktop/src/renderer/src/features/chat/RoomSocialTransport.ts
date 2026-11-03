@@ -5,18 +5,32 @@ import {
   type SceneReaction,
 } from "@private-voice/shared";
 import type { SignalEnvelope } from "@private-voice/signaling";
+import { serverBuildSupportsDailyRoomReports } from "./serverCapabilities";
 
 interface RoomSocialTransportOptions {
   roomId: string;
   peerId: string;
   getNickname: () => string;
   canSend: () => boolean;
+  getServerBuildNumber?: () => string | undefined;
   send: (payload: SignalEnvelope) => Promise<void>;
 }
 
 /** Sends collection, knock and scene-reaction commands that accompany room chat. */
 export class RoomSocialTransport {
   constructor(private readonly options: RoomSocialTransportOptions) {}
+
+  async requestDailyRoomReports(targetRoomId: string): Promise<boolean> {
+    this.assertConnected();
+    if (!serverBuildSupportsDailyRoomReports(this.options.getServerBuildNumber?.())) return false;
+    await this.options.send({
+      type: "request_daily_room_reports",
+      roomId: this.options.roomId,
+      peerId: this.options.peerId,
+      targetRoomId,
+    });
+    return true;
+  }
 
   async recall(messageId: string): Promise<void> {
     this.assertConnected();

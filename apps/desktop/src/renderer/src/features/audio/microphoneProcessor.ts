@@ -385,6 +385,7 @@ registerProcessor("${PROTECTION_WORKLET_NAME}", ShangHaoMicrophoneProtection);
 `;
 
 let deepFilterAssetsPromise: Promise<DeepFilterAssets> | undefined;
+let prewarmedDeepFilterCore: Promise<DeepFilterNet3Core> | undefined;
 
 const loadDeepFilterAssets = (): Promise<DeepFilterAssets> => {
   deepFilterAssetsPromise ??= window.desktopApi.audio.getDeepFilterAssets().catch((error) => {
@@ -400,6 +401,12 @@ export const prewarmDeepFilterAssets = async (): Promise<void> => {
     deepFilterAssetsPromise = undefined;
     throw new Error("deepfilter_assets_empty");
   }
+  // Compilation is independent of microphone permission and can finish on the home page.
+  prewarmedDeepFilterCore ??= initializeDeepFilterCore().catch((error) => {
+    prewarmedDeepFilterCore = undefined;
+    throw error;
+  });
+  await prewarmedDeepFilterCore;
 };
 
 const announceDeepFilterUnavailable = (reason: string): void => {
@@ -422,11 +429,7 @@ const crossfade = (context: AudioContext, from: GainNode, to: GainNode): void =>
   to.gain.linearRampToValueAtTime(1, now + PROCESSOR_CROSSFADE_SECONDS);
 };
 
-const createDeepFilterNode = async (context: AudioContext): Promise<DeepFilterNodeResult> => {
-  if (!context.audioWorklet) {
-    throw new Error("audio_worklet_unavailable");
-  }
-
+const initializeDeepFilterCore = async (): Promise<DeepFilterNet3Core> => {
   const core = new DeepFilterNet3Core({
     sampleRate: DEEPFILTER_SAMPLE_RATE,
     noiseReductionLevel: DEEPFILTER_BASE_SUPPRESSION_LEVEL,
@@ -446,6 +449,19 @@ const createDeepFilterNode = async (context: AudioContext): Promise<DeepFilterNo
 
   try {
     await core.initialize();
+    return core;
+  } catch (error) {
+    core.destroy();
+    throw error;
+  }
+};
+
+const createDeepFilterNode = async (context: AudioContext): Promise<DeepFilterNodeResult> => {
+  if (!context.audioWorklet) throw new Error("audio_worklet_unavailable");
+  const prepared = prewarmedDeepFilterCore;
+  prewarmedDeepFilterCore = undefined;
+  const core = await (prepared ?? initializeDeepFilterCore());
+  try {
     const node = await core.createAudioWorkletNode(context);
     core.setNoiseSuppressionEnabled(true);
     core.setSuppressionLevel(DEEPFILTER_BASE_SUPPRESSION_LEVEL);

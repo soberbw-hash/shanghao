@@ -140,14 +140,21 @@ export class ScreenShareManager {
     let publishingAttempted = false;
     try {
       const profile = SCREEN_SHARE_PROFILES[quality];
+      const ensureCurrent = (): void => {
+        if (operationId !== this.operationId || this.isDisposed)
+          throw new Error("screen_share_superseded");
+      };
       const requestStream = async (includeSystemAudio: boolean): Promise<MediaStream> => {
+        ensureCurrent();
         await shanghaoCore.screenCapture.selectSource(request.sourceId);
+        ensureCurrent();
         return navigator.mediaDevices.getDisplayMedia({
           video: true,
           audio: includeSystemAudio,
         });
       };
       const requestExactSourceFallback = async (): Promise<MediaStream> => {
+        ensureCurrent();
         const video: ElectronDesktopVideoConstraints = {
           mandatory: {
             chromeMediaSource: "desktop",
@@ -166,6 +173,7 @@ export class ScreenShareManager {
       try {
         stream = await requestStream(request.includeSystemAudio);
       } catch (error) {
+        ensureCurrent();
         if (!isRetryableDisplayCaptureError(error)) throw error;
         await this.log(
           "warn",
@@ -176,11 +184,13 @@ export class ScreenShareManager {
             error: this.errorMessage(error),
           },
         );
+        ensureCurrent();
         await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
         await new Promise((resolve) => window.setTimeout(resolve, WINDOWS_CAPTURE_RETRY_DELAY_MS));
         try {
           stream = await requestStream(false);
         } catch (retryError) {
+          ensureCurrent();
           if (!isRetryableDisplayCaptureError(retryError)) throw retryError;
           await this.log(
             "warn",
@@ -190,6 +200,7 @@ export class ScreenShareManager {
               error: this.errorMessage(retryError),
             },
           );
+          ensureCurrent();
           await shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);
           await new Promise((resolve) =>
             window.setTimeout(resolve, WINDOWS_LEGACY_CAPTURE_DELAY_MS),
@@ -239,6 +250,7 @@ export class ScreenShareManager {
         },
       });
       await shanghaoCore.screenCapture.setContentProtection(true);
+      ensureCurrent();
       await this.log("info", "Screen share started", {
         requestedQuality: quality,
         requestedWidth: profile.maxWidth,
@@ -246,6 +258,7 @@ export class ScreenShareManager {
         hasSystemAudio: this.snapshot.hasSystemAudio,
         videoTrackSettings: captureSettings,
       });
+      ensureCurrent();
       return stream;
     } catch (error) {
       const ownsOperation = () => operationId === this.operationId && !this.isDisposed;
@@ -319,6 +332,7 @@ export class ScreenShareManager {
   }
 
   async openDetachedViewer(item: ScreenShareItem): Promise<void> {
+    if (this.isDisposed || this.shutdownPromise) throw Error("screen_share_closed");
     this.closeDetachedPublisher(false);
     const sessionId = crypto.randomUUID();
     this.detachedSessionId = sessionId;

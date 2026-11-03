@@ -1,11 +1,12 @@
 .scene-game-monitor-content--screenshot {
   background: #142537;
+  container-type: size;
 }
 .scene-game-screenshot {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   /* Static official imagery stays crisp at the room's small monitor size. */
   filter: none;
 }

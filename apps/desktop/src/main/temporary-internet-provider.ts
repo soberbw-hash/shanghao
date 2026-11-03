@@ -57,11 +57,18 @@ export class TemporaryInternetProvider {
     signed: SignedInternetRegistration,
     role: "authority" | "member",
     handoff?: TemporaryInternetHandoff,
+    refresh?: (issuedAt: number) => Promise<SignedInternetRegistration>,
   ) {
     if (this.closed) throw Error("temporary_bridge_closed");
+    let published = signed;
     const result = (await this.control.request(
       "register",
-      { signed, role, handoff },
+      refresh
+        ? async (challenge) => {
+            published = await refresh(challenge.issuedAt);
+            return { signed: published, role, handoff };
+          }
+        : { signed, role, handoff },
       signed.payload.sessionId,
     )) as { iceServers?: IceServerConfig[] };
     if (
@@ -74,6 +81,7 @@ export class TemporaryInternetProvider {
       )
     )
       this.ice = result.iceServers;
+    return published;
   }
   async unpublish(sessionId: string) {
     if (!this.closed) await this.control.request("unregister", {}, sessionId);

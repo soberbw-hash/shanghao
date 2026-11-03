@@ -177,7 +177,7 @@
   opacity: 0;
   pointer-events: none;
   transform-origin: center bottom;
-  transition: opacity 70ms linear;
+  transition: none; /* Different pose silhouettes must not crossfade into a ghost. */
 }
 
 .room-character-visual-layer.is-active {

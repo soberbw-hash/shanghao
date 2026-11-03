@@ -177,7 +177,9 @@ export class TemporaryInternetConnection {
   }
   async request(
     command: string,
-    value: Record<string, unknown>,
+    value:
+      | Record<string, unknown>
+      | ((challenge: TemporaryAuthChallenge) => Promise<Record<string, unknown>>),
     sessionId?: string,
   ): Promise<unknown> {
     const profile = await this.identity.getProfile();
@@ -191,7 +193,8 @@ export class TemporaryInternetConnection {
       audience: TEMPORARY_AUTH_AUDIENCE,
       sessionId,
     });
-    return this.rpc({ command, proof, ...value });
+    const payload = typeof value === "function" ? await value(challenge) : value;
+    return this.rpc({ command, proof, ...payload });
   }
   close() {
     this.closed = true;

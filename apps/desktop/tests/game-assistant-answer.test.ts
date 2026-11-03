@@ -11,6 +11,8 @@ import {
   type VoiceMemorySearchResult,
 } from "@private-voice/shared";
 import { AiVoiceMemoryService } from "../src/main/ai-voice-memory-service";
+import { createEmptyVoiceMemoryRecord } from "../src/main/voice-memory-record";
+import { splitAssistantShare } from "../src/renderer/src/features/chat/splitAssistantShare";
 import {
   ASSISTANT_ANSWER_STYLE,
   assistantAnswerText,
@@ -105,6 +107,13 @@ test("production room questions apply the prompt and cleanup while retaining roo
       },
     } as never,
     {
+      get: async () =>
+        createEmptyVoiceMemoryRecord({
+          recordingId: candidate.recordingId,
+          filePath: candidate.filePath,
+          roomId: "main",
+          recordedAt: candidate.createdAt,
+        }),
       related: (_query: string, _limit: number, roomId: string) => {
         searchedRoom = roomId;
         return selected;
@@ -121,6 +130,8 @@ test("production room questions apply the prompt and cleanup while retaining roo
   assert.equal(next.sources.length, 1);
   assert.equal(next.sources[0].startMs, candidate.startMs);
   assert.equal(next.sources[0].recordingId, candidate.recordingId);
+  assert.equal(next.sources[0].roomId, "main");
+  assert.equal(next.sources[0].createdAt, candidate.createdAt);
   assert.equal(prompt.includes("memory-1"), true);
 });
 
@@ -169,6 +180,7 @@ test("assistant identity uses compatible client IDs and keeps the authenticated 
 const shareHook = (
   onSend: (text: string, id: string) => Promise<void>,
   getRoom: () => { roomId: string; connectionState: RoomConnectionState },
+  originatingRoomId?: string,
 ) => {
   const source = readFileSync(
     path.resolve("src/renderer/src/features/room/useRoomAiShare.ts"),
@@ -186,6 +198,7 @@ const shareHook = (
     "../../store/roomStore": { useRoomStore: { getState: () => ({ room: getRoom() }) } },
     "../audio/uiSound": { playUiSound: () => undefined },
     "../chat/gameAssistantMessage": { gameAssistantMessageId },
+    "../chat/splitAssistantShare": { splitAssistantShare },
   };
   const exports: Record<string, unknown> = {};
   new Function("require", "exports", js)((id: string) => {
@@ -193,8 +206,11 @@ const shareHook = (
     return imports[id];
   }, exports);
   return (
-    exports.useRoomAiShare as (send: typeof onSend) => { share: (text: string) => Promise<void> }
-  )(onSend);
+    exports.useRoomAiShare as (
+      send: typeof onSend,
+      roomId?: string,
+    ) => { share: (text: string) => Promise<void> }
+  )(onSend, originatingRoomId);
 };
 
 test("production share preserves assistant IDs through chunking and partial-failure retries", async () => {
@@ -237,4 +253,17 @@ test("production share stops before another chunk when the room changes", async 
   );
   await sharing.share("字".repeat(1000));
   assert.equal(sent, 1);
+});
+
+test("a stale assistant cannot begin sharing old-channel evidence into the new channel", async () => {
+  let sent = 0;
+  const sharing = shareHook(
+    async () => {
+      sent++;
+    },
+    () => ({ roomId: "new-channel", connectionState: RoomConnectionState.Connected }),
+    "old-channel",
+  );
+  await sharing.share("private old-channel record");
+  assert.equal(sent, 0);
 });

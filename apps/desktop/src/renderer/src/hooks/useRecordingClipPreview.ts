@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 
-/** Borrows the library's existing player; owns only the preview boundary and animation frame. */
+/** Borrows the library's existing player and owns only the preview boundary. */
 export const useRecordingClipPreview = (
   audio: RefObject<HTMLAudioElement | null>,
   recordingId?: string,
 ) => {
   const preview = useRef<{ start: number; end: number } | undefined>(undefined);
   const wasPreview = useRef(false);
-  const frame = useRef<number | undefined>(undefined);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const removeBoundary = useRef<(() => void) | undefined>(undefined);
   const generation = useRef(0);
   const stop = useCallback(() => {
     generation.current++;
-    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
-    frame.current = undefined;
+    if (timer.current !== undefined) clearTimeout(timer.current);
+    timer.current = undefined;
     preview.current = undefined;
     removeBoundary.current?.();
     removeBoundary.current = undefined;
@@ -46,8 +46,11 @@ export const useRecordingClipPreview = (
         wasPreview.current = false;
         return stop();
       }
-      if (frame.current !== undefined) cancelAnimationFrame(frame.current);
-      frame.current = requestAnimationFrame(tick);
+      if (timer.current !== undefined) clearTimeout(timer.current);
+      timer.current = setTimeout(
+        tick,
+        Math.max(10, Math.min(50, (segment.end - player.currentTime) * 1000)),
+      );
     };
     player.addEventListener("timeupdate", tick);
     const hidden = () => {
@@ -69,11 +72,7 @@ export const useRecordingClipPreview = (
       throw error;
     }
     if (generation.current !== owner) return;
-    frame.current = requestAnimationFrame(tick);
+    tick();
   };
-  return {
-    play,
-    reset,
-    wasPreview,
-  };
+  return { play, reset, wasPreview };
 };

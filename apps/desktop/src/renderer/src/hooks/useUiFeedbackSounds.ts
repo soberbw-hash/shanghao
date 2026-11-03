@@ -14,6 +14,10 @@ import {
   unlockUiSounds,
 } from "../features/audio/uiSound";
 import { RoomSoundFeedback } from "../features/audio/roomSoundFeedback";
+import {
+  readAvailabilitySoundTransition,
+  subscribeAvailabilitySoundTransition,
+} from "../features/audio/availabilitySoundTransition";
 import { prepareAnimalCalls } from "../features/audio/animalCall";
 import { setQuickMessageVolume } from "../features/audio/quickMessageAudio";
 
@@ -115,6 +119,7 @@ export const useUiFeedbackSounds = (enabled = true): void => {
         isMuted: audio.isMuted,
         isDeafened: audio.isDeafened,
         phoneModeActive: audio.phoneModeActive,
+        availabilitySound: readAvailabilitySoundTransition(),
       };
     }, playUiSound);
     let queued = false;
@@ -145,9 +150,11 @@ export const useUiFeedbackSounds = (enabled = true): void => {
       if (state.isMuted !== previous.isMuted || state.isDeafened !== previous.isDeafened)
         schedule();
     });
+    const unsubscribeAvailability = subscribeAvailabilitySoundTransition(schedule);
     return () => {
       disposed = true;
       unsubscribeRoom();
+      unsubscribeAvailability();
       unsubscribeAudio();
       feedback.dispose();
     };

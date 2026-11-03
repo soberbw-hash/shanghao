@@ -1,9 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { remoteControlApi } from "./remote-control";
+import { voiceReplayApi } from "./voice-replay";
+import { recordingRecycleApi } from "./recording-recycle";
+import { backgroundAudioApi } from "./background-audio";
 
 import { IPC_CHANNELS, type DesktopApi } from "@private-voice/shared";
 
 const desktopApi: DesktopApi = {
+  backgroundAudio: backgroundAudioApi,
+  recordingRecycle: recordingRecycleApi,
+  voiceReplay: voiceReplayApi,
   remoteControl: remoteControlApi,
   applicationAudio: {
     listSources: () => ipcRenderer.invoke(IPC_CHANNELS.applicationAudio.listSources),
@@ -216,6 +222,10 @@ const desktopApi: DesktopApi = {
   weather: {
     getSnapshot: (request) => ipcRenderer.invoke(IPC_CHANNELS.weather.getSnapshot, request),
   },
+  cloudAiAdmin: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.cloudAiAdmin.get),
+    change: (mutation) => ipcRenderer.invoke(IPC_CHANNELS.cloudAiAdmin.change, mutation),
+  },
   ai: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getSnapshot),
     controlModel: (modelId, action) =>
@@ -321,6 +331,12 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.windows.setIconOverlaysHidden, hidden),
   },
   shortcuts: {
+    onAudioDevicePresetTriggered: (listener) => {
+      const wrapped = () => listener();
+      ipcRenderer.on(IPC_CHANNELS.shortcuts.audioDevicePresetTriggered, wrapped);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.shortcuts.audioDevicePresetTriggered, wrapped);
+    },
     onMuteTriggered: (listener) => {
       const wrapped = () => listener();
       ipcRenderer.on(IPC_CHANNELS.shortcuts.muteTriggered, wrapped);

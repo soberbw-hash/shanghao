@@ -4,7 +4,11 @@ import { mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from "node:
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { recordingClipWindow, recordingClipErrorMessage } from "@private-voice/shared";
+import {
+  recordingClipWindow,
+  recordingClipRange,
+  recordingClipErrorMessage,
+} from "@private-voice/shared";
 import {
   commitRecordingClip,
   RecordingClipExporter,
@@ -59,6 +63,32 @@ test("clip IPC payload is nested, bounded and uses a saved marker identity", () 
   assert.equal(
     recordingClipErrorMessage(new Error("Error invoking remote method: clip_component_missing")),
     "导出组件缺失，请重新安装上号",
+  );
+});
+
+test("explicit clip ranges are bounded and cannot mix marker and range requests", () => {
+  assert.deepEqual(recordingClipRange(5_100, 9_300, 60_000), {
+    startMs: 5_100,
+    endMs: 9_300,
+    durationMs: 4_200,
+  });
+  assert.deepEqual(
+    requireRecordingClipRequest({ filePath: "recording.m4a", startMs: 5_100, endMs: 9_300 }),
+    { filePath: "recording.m4a", startMs: 5_100, endMs: 9_300 },
+  );
+  assert.throws(() => recordingClipRange(0, 2_999, 60_000), /clip_invalid_window/);
+  assert.throws(() => recordingClipRange(0, 60_001, 60_000), /clip_marker_out_of_range/);
+  assert.throws(
+    () =>
+      requireRecordingClipRequest({
+        filePath: "recording.m4a",
+        markerId: "x",
+        beforeMs: 1000,
+        afterMs: 2000,
+        startMs: 0,
+        endMs: 3000,
+      }),
+    /clip_invalid_request/,
   );
 });
 
@@ -162,6 +192,14 @@ test("real 60 s M4A exports preserve source, samples, boundaries and queued repe
     beforeMs: 20_000,
     afterMs: 8_000,
   });
+  const rangeClip = await exporter.export(directory, {
+    filePath: source,
+    startMs: 10_200,
+    endMs: 15_700,
+  });
+  assert.equal(rangeClip.startMs, 10_200);
+  assert.equal(rangeClip.endMs, 15_700);
+  assert.ok(Math.abs((await probeRecordingMedia(rangeClip.filePath)).durationMs - 5_500) <= 100);
   assert.notEqual(repeated.filePath, exports[0]!.filePath);
   assert.equal((await stat(source)).mtimeMs, before.mtimeMs);
   assert.equal((await stat(source)).size, before.size);

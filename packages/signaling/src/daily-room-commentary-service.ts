@@ -14,7 +14,7 @@ export class DailyRoomCommentaryService {
 
   constructor(
     private readonly reports: Promise<DailyRoomReportStore>,
-    private readonly cloudAi: CloudAiService,
+    private readonly cloudAi: Pick<CloudAiService, "isConfigured" | "execute">,
     private readonly logger?: Logger,
   ) {}
 

@@ -4,12 +4,11 @@ export const RECORDING_CLIP_PRESETS = {
   long: { beforeMs: 40_000, afterMs: 15_000 },
 } as const;
 
-export interface RecordingClipRequest {
-  filePath: string;
-  markerId: string;
-  beforeMs: number;
-  afterMs: number;
-}
+export type RecordingClipRequest = { filePath: string } & (
+  | { markerId: string; beforeMs: number; afterMs: number; startMs?: never; endMs?: never }
+  | { startMs: number; endMs: number; markerId?: never; beforeMs?: never; afterMs?: never }
+);
+
 export interface RecordingClipResult {
   filePath: string;
   fileName: string;

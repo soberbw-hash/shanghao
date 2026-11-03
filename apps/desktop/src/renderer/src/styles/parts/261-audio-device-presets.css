@@ -1,0 +1,16 @@
+.audio-presets-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  margin: auto;
+  padding: 22px;
+  border: 1px solid #ccdfed;
+  border-radius: 24px;
+  background: #f6fbff;
+  color: #304961;
+  box-shadow: 0 24px 80px #23436530;
+}
+.audio-presets-dialog::backdrop {
+  background: #16345445;
+  backdrop-filter: blur(8px);
+}

@@ -12,6 +12,7 @@ const fixture = (packaged = false, collision = true) => {
     options: { target: string; args: string; appUserModelId: string; icon: string };
   }> = [];
   const moved: string[] = [];
+  const elevated: string[] = [];
   const exports = {} as {
     repairDevelopmentShortcuts: () => void;
     developmentRelaunchCommand: () => string;
@@ -35,15 +36,23 @@ const fixture = (packaged = false, collision = true) => {
         return {
           existsSync: () => true,
           readFileSync: (file: string) =>
-            file.endsWith(".ps1")
+            file.endsWith(".lnk")
               ? Buffer.concat([
-                  Buffer.from([255, 254]),
-                  Buffer.from("Write-Output 'fixture launcher'", "utf16le"),
+                  Buffer.from("4c0000000114020000000000c000000000000046", "hex"),
+                  Buffer.alloc(56),
                 ])
-              : Buffer.from("fixture icon"),
+              : file.endsWith(".ps1")
+                ? Buffer.concat([
+                    Buffer.from([255, 254]),
+                    Buffer.from("Write-Output 'fixture launcher'", "utf16le"),
+                  ])
+                : Buffer.from("fixture icon"),
           mkdirSync: () => undefined,
           realpathSync: (p: string) => p,
           copyFileSync: (p: string) => moved.push(p),
+          writeFileSync: (file: string, bytes: Buffer) => {
+            if (file.endsWith(".lnk") && bytes.readUInt32LE(20) & 0x2000) elevated.push(file);
+          },
         };
       if (id === "@private-voice/shared") return { APP_ID: "com.sober.shanghao", APP_NAME: "上号" };
       if (id === "./platform/PlatformService") return { platformService: { isWindows: true } };
@@ -73,7 +82,7 @@ const fixture = (packaged = false, collision = true) => {
       throw Error(id);
     },
   });
-  return { writes, moved, ...exports };
+  return { writes, moved, elevated, ...exports };
 };
 
 test("development shortcuts back up only the conflicting Electron entry and share a branded launcher", () => {
@@ -81,6 +90,7 @@ test("development shortcuts back up only the conflicting Electron entry and shar
   f.repairDevelopmentShortcuts();
   assert.equal(f.moved.length, 1);
   assert.equal(f.writes.length, 3);
+  assert.equal(f.elevated.length, 3);
   for (const { options } of f.writes) {
     assert.equal(options.appUserModelId, "com.sober.shanghao.dev");
     assert.match(options.target, /powershell\.exe$/);
@@ -88,12 +98,12 @@ test("development shortcuts back up only the conflicting Electron entry and shar
     const command = Buffer.from(options.args.split("-EncodedCommand ")[1]!, "base64").toString(
       "utf16le",
     );
-    assert.match(command, /IsInRole.*Administrator/);
-    assert.match(command, /-Verb RunAs -WindowStyle Hidden/);
     assert.match(command, /ReadAllText/);
+    assert.match(command, /launch-dev\.ps1/);
+    assert.doesNotMatch(command, /Start-Process|FromBase64String/);
     assert.ok(
-      options.args.length < 8000,
-      "shortcut command stays below Windows command-line limits",
+      options.args.length < 900,
+      "shortcut command survives the Shell Link 1024-character argument buffer",
     );
     assert.equal(options.args.includes("ExecutionPolicy"), false);
     assert.match(options.icon, /ShangHaoDev[\\/]shanghao-dev-[a-f0-9]{12}\.ico$/);

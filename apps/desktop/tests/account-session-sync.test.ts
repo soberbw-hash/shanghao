@@ -61,6 +61,7 @@ function fixture(seconds = 3600) {
     cloudbase,
     original,
     writes,
+    store,
     refreshes: () => refreshes,
     clears: () => clears,
     rotate: (next: PersistedAccountSession) => {
@@ -127,6 +128,105 @@ test("a rejected refresh updates the account snapshot without deleting encrypted
     assert.equal(f.clears(), 0);
   } finally {
     f.account.dispose();
+  }
+});
+
+test("an expired AI session automatically reauthenticates the same remembered account once", async () => {
+  const f = fixture(-1);
+  let logins = 0;
+  Object.assign(f.store, {
+    readRememberedLogin: async () => ({ identifier: "fixture", password: "synthetic", profile }),
+  });
+  f.cloudbase.refresh = async () => {
+    throw new AccountDesktopError("account_session_expired");
+  };
+  f.cloudbase.login = async () => {
+    logins++;
+    return { profile, session: session("fixture-recovered") };
+  };
+  try {
+    assert.deepEqual(
+      await Promise.all([f.account.getFreshAccessToken(), f.account.getFreshAccessToken()]),
+      ["fixture-recovered", "fixture-recovered"],
+    );
+    assert.equal(logins, 1);
+    assert.equal(f.account.getSnapshot().status, "signed_in");
+    assert.equal(f.writes.at(-1)?.accessToken, "fixture-recovered");
+    await assert.rejects(f.account.getFreshAccessToken(true), /account_session_expired/);
+    assert.equal(logins, 1, "must not loop saved-password attempts");
+    assert.equal(f.clears(), 0);
+  } finally {
+    f.account.dispose();
+  }
+});
+
+test("an AI auth fallback cannot change accounts or commit after logout", async () => {
+  for (const leave of [false, true]) {
+    const f = fixture(-1);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    Object.assign(f.store, {
+      readRememberedLogin: async () => ({ identifier: "fixture", password: "synthetic", profile }),
+    });
+    f.cloudbase.refresh = async () => {
+      throw new AccountDesktopError("account_session_expired");
+    };
+    f.cloudbase.login = async () => {
+      await pending;
+      return {
+        profile: leave ? profile : { ...profile, userId: "other" },
+        session: session("wrong-owner"),
+      };
+    };
+    try {
+      const task = f.account.getFreshAccessToken();
+      const rejected = assert.rejects(task, /account_session_expired/);
+      await new Promise((resolve) => setImmediate(resolve));
+      if (leave) await f.account.logout();
+      release();
+      await rejected;
+      assert(!f.writes.some((value) => value.accessToken === "wrong-owner"));
+    } finally {
+      release();
+      f.account.dispose();
+    }
+  }
+});
+
+test("network failures and deliberately unremembered sessions never replay a saved password", async () => {
+  for (const transient of [false, true]) {
+    const f = fixture(-1);
+    let reads = 0,
+      logins = 0;
+    Object.assign(f.store, {
+      readRememberedLogin: async () => {
+        reads++;
+        return { identifier: "fixture", password: "synthetic", profile };
+      },
+    });
+    if (!transient) Object.assign(f.account, { rememberSession: false });
+    f.cloudbase.refresh = async () => {
+      throw new AccountDesktopError(
+        transient ? "account_network_error" : "account_session_expired",
+      );
+    };
+    f.cloudbase.login = async () => {
+      logins++;
+      return { profile, session: session("unexpected") };
+    };
+    try {
+      await assert.rejects(
+        f.account.getFreshAccessToken(),
+        transient ? /account_network_error/ : /account_session_expired/,
+      );
+      assert.equal(reads, 0);
+      assert.equal(logins, 0);
+      assert.equal(f.writes.length, 0);
+    } finally {
+      f.account.dispose();
+    }
   }
 });
 

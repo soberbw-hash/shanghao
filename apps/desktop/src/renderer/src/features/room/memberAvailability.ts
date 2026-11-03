@@ -8,11 +8,12 @@ export const availabilityLabels: Record<MemberAvailability, string> = {
 };
 /** Phone mode masks the stored away state; ending it restores that state without another write. */
 export const memberAvailabilityPresentation = (
-  member: Pick<RoomMember, "callModeActive" | "availabilityStatus" | "sceneZone">,
+  member: Pick<RoomMember, "callModeActive" | "availabilityStatus" | "sceneZone" | "activity">,
 ): { label: string; icon: string } | undefined => {
   if (member.callModeActive) return { label: "通话中", icon: "📞" };
   const status =
-    member.availabilityStatus ?? (member.sceneZone === "restroomZone" ? "away" : undefined);
+    member.availabilityStatus ??
+    (member.sceneZone === "restroomZone" || member.activity === "restroom" ? "away" : undefined);
   if (!status) return;
   return {
     label: availabilityLabels[status],

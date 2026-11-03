@@ -20,10 +20,16 @@ test("phone mode restores every pre-existing mic/speaker combination without ove
     isDeafened: boolean;
     phoneModeActive: boolean;
     setPhoneMode(active: boolean): void;
+    setPhoneModeResumeState(state: {
+      isMuted: boolean;
+      isDeafened: boolean;
+      isManuallyMuted: boolean;
+    }): void;
     toggleMicrophone(): void;
     toggleDeafen(): void;
     setMuted(active: boolean): void;
     setDeafened(active: boolean): void;
+    setListenOnly(active: boolean): void;
   };
   const exports = {} as {
     useAudioStore: { getState(): Audio; setState(value: Partial<Audio>): void };
@@ -39,6 +45,15 @@ test("phone mode restores every pre-existing mic/speaker combination without ove
     },
   });
   const store = exports.useAudioStore;
+  store.getState().setListenOnly(true);
+  store.getState().setMuted(false);
+  store.getState().toggleMicrophone();
+  store.getState().toggleDeafen();
+  store.getState().toggleDeafen();
+  store.getState().setPhoneMode(true);
+  store.getState().setPhoneMode(false);
+  assert.equal(store.getState().isMuted, true, "receive-only cannot accidentally unmute");
+  store.getState().setListenOnly(false);
   for (const isMuted of [false, true])
     for (const isDeafened of [false, true]) {
       store.setState({ isMuted, isDeafened });
@@ -55,4 +70,28 @@ test("phone mode restores every pre-existing mic/speaker combination without ove
       assert.equal(store.getState().isDeafened, isDeafened);
       assert.equal(store.getState().phoneModeActive, false);
     }
+  store.getState().setPhoneMode(true);
+  store
+    .getState()
+    .setPhoneModeResumeState({ isMuted: false, isDeafened: false, isManuallyMuted: false });
+  assert.equal(
+    store.getState().isMuted,
+    true,
+    "planning the return state must not open active phone audio",
+  );
+  assert.equal(store.getState().isDeafened, true);
+  store.getState().setPhoneMode(false);
+  assert.equal(store.getState().isMuted, false);
+  assert.equal(store.getState().isDeafened, false);
+  store.getState().setListenOnly(true);
+  store.getState().setPhoneMode(true);
+  store
+    .getState()
+    .setPhoneModeResumeState({ isMuted: false, isDeafened: false, isManuallyMuted: false });
+  store.getState().setPhoneMode(false);
+  assert.equal(
+    store.getState().isMuted,
+    true,
+    "receive-only still wins over a planned return state",
+  );
 });

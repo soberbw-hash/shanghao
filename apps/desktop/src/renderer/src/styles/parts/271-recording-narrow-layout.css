@@ -1,0 +1,24 @@
+@media (max-width: 1023px) {
+  .settings-recording-shell .settings-page-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+  .settings-library-toolbar-slot .recording-library-toolbar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .settings-library-toolbar-slot .recording-storage-settings > summary {
+    gap: 4px;
+  }
+}
+@media (max-width: 650px) {
+  .settings-recording-shell .settings-page-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .settings-recording-shell .settings-page-header > :first-child {
+    display: none;
+  }
+  .settings-library-toolbar-slot .recording-storage-settings > summary > span:last-of-type {
+    display: none;
+  }
+}

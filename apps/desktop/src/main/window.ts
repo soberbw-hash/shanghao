@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { remoteControlViewerBinding } from "./remote-control-viewer-binding";
+import { loadScreenShareViewer } from "./screen-share-viewer-load";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,6 +25,7 @@ import {
 import { platformService } from "./platform/PlatformService";
 import { screenCaptureService } from "./screen-capture-service";
 import { developmentRelaunchCommand, windowsAppUserModelId } from "./development-shortcuts";
+import { fitMainWindow, normalizeSavedWindowBounds } from "./window-layout";
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
 
@@ -185,18 +187,23 @@ export const openScreenShareViewer = async ({
     }
   });
 
-  if (app.isPackaged) {
-    await viewer.loadFile(getRendererEntryPath(), {
-      query: { screenViewer: "1", screenViewerSession: sessionId },
-    });
-  } else {
-    await viewer.loadURL(
-      `${devServerUrl}?screenViewer=1&screenViewerSession=${encodeURIComponent(sessionId)}`,
-    );
-  }
-  viewer.setBounds(viewerBounds, false);
-  viewer.show();
-  viewer.focus();
+  await loadScreenShareViewer(
+    viewer,
+    () =>
+      app.isPackaged
+        ? viewer.loadFile(getRendererEntryPath(), {
+            query: { screenViewer: "1", screenViewerSession: sessionId },
+          })
+        : viewer.loadURL(
+            `${devServerUrl}?screenViewer=1&screenViewerSession=${encodeURIComponent(sessionId)}`,
+          ),
+    () => screenShareViewerWindow === viewer && screenShareViewerSessionId === sessionId,
+    () => {
+      screenShareViewerWindow = null;
+      screenShareViewerSessionId = undefined;
+    },
+    viewerBounds,
+  );
 };
 
 export const sendScreenShareViewerSignal = (signal: ScreenShareViewerSignal): boolean => {
@@ -276,7 +283,8 @@ export const createMainWindow = ({
   const boundsPath = path.join(app.getPath("userData"), "window-bounds.json");
   let savedBounds: Partial<Rectangle> = {};
   try {
-    if (existsSync(boundsPath)) savedBounds = JSON.parse(readFileSync(boundsPath, "utf8"));
+    if (existsSync(boundsPath))
+      savedBounds = normalizeSavedWindowBounds(JSON.parse(readFileSync(boundsPath, "utf8")));
   } catch {
     savedBounds = {};
   }
@@ -286,35 +294,15 @@ export const createMainWindow = ({
     width: savedBounds.width ?? 1,
     height: savedBounds.height ?? 1,
   });
-  const defaultWidth = Math.min(1_680, Math.max(1_440, Math.round(display.workArea.width * 0.88)));
-  const defaultHeight = Math.min(1_050, Math.max(900, Math.round(display.workArea.height * 0.9)));
-  const width = Math.min(display.workArea.width, Math.max(1120, savedBounds.width ?? defaultWidth));
-  const height = Math.min(
-    display.workArea.height,
-    Math.max(720, savedBounds.height ?? defaultHeight),
-  );
-  const x = Math.min(
-    display.workArea.x + display.workArea.width - width,
-    Math.max(
-      display.workArea.x,
-      savedBounds.x ?? display.workArea.x + Math.round((display.workArea.width - width) / 2),
-    ),
-  );
-  const y = Math.min(
-    display.workArea.y + display.workArea.height - height,
-    Math.max(
-      display.workArea.y,
-      savedBounds.y ?? display.workArea.y + Math.round((display.workArea.height - height) / 2),
-    ),
-  );
+  const { x, y, width, height, minWidth, minHeight } = fitMainWindow(display.workArea, savedBounds);
   const windowIcon = getWindowIcon();
   const window = new BrowserWindow({
     width,
     height,
     x,
     y,
-    minWidth: 1120,
-    minHeight: 720,
+    minWidth,
+    minHeight,
     backgroundColor: "#EEF5FF",
     frame: false,
     titleBarStyle: "hidden",
@@ -323,6 +311,8 @@ export const createMainWindow = ({
     icon: windowIcon,
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),
+      // Room audio and opt-in chronicle segmentation must keep running when hidden.
+      backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

@@ -39,19 +39,18 @@
   padding: 13px 18px;
 }
 
-.settings-page .phone-mode-settings .settings-item-row {
-  display: block;
-}
-
 .settings-page .phone-mode-settings .settings-item-action {
-  margin-top: 12px;
-  justify-content: stretch;
+  width: min(100%, 540px);
 }
 
 .settings-page .phone-mode-settings-controls {
   min-width: 0;
-  max-width: 880px;
-  justify-content: flex-start;
+  justify-content: flex-end;
+}
+
+.phone-mode-shortcut-control {
+  width: min(100%, 300px);
+  min-width: 0;
 }
 
 .settings-reset-section {

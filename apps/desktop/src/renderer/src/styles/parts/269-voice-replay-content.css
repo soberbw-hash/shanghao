@@ -1,0 +1,97 @@
+.voice-replay-dialog header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.voice-replay-dialog h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+.voice-replay-dialog p,
+.voice-replay-dialog small {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.voice-replay-dialog p {
+  margin: 8px 0;
+}
+.voice-replay-consent {
+  padding: 4px 8px;
+  color: #71879d;
+}
+.voice-replay-consent summary {
+  cursor: pointer;
+}
+.voice-replay-actions,
+.voice-replay-trim {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin: 10px 0;
+}
+.voice-replay-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+.voice-replay-dialog input,
+.voice-replay-dialog select {
+  min-width: 0;
+  border: 1px solid #d2e0ee;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+  color: inherit;
+}
+.voice-replay-dialog details {
+  font-size: 12px;
+  padding: 8px 0;
+}
+.voice-replay-library {
+  border-top: 1px solid #dce8f2;
+  padding-top: 14px;
+  margin-top: 16px;
+}
+.voice-replay-library h3 {
+  font-size: 15px;
+  font-weight: 700;
+}
+.voice-replay-library h3 span {
+  color: #7e96ad;
+  font-weight: 400;
+  margin-left: 6px;
+}
+.voice-replay-clips {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 10px 0;
+}
+.voice-replay-clips button {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid #dce8f2;
+  border-radius: 12px;
+  background: #fff;
+}
+.voice-replay-clips button.is-selected {
+  border-color: #67a5e4;
+  background: #eaf4ff;
+}
+.voice-replay-clips strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.voice-replay-editor audio {
+  width: 100%;
+  margin: 10px 0;
+}
+.voice-replay-trim input {
+  width: 110px;
+}

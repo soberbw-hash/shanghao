@@ -14,7 +14,7 @@ test("capability help describes actual app features without inventing system ope
           throw Error("must not ask a model to guess app capabilities");
         },
       },
-      { related: () => [] },
+      { related: () => [], get: async () => undefined },
       run,
     );
     assert.match(result.text, /游戏问题/);

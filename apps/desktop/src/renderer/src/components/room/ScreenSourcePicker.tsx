@@ -41,7 +41,8 @@ export const ScreenSourcePicker = ({
   const dialog = useRef<HTMLDialogElement>(null);
   const preview = useRef<HTMLDivElement>(null);
   const submitting = useRef(false);
-  const [kind, setKind] = useState<"window" | "screen">("window");
+  const userSelected = useRef(false);
+  const [kind, setKind] = useState<"window" | "screen">("screen");
   const [selectedId, setSelectedId] = useState<string>();
   const [quality, setQuality] = useState<ScreenShareQuality>(DEFAULT_SCREEN_SHARE_QUALITY);
   const selected = sources.find((source) => source.id === selectedId);
@@ -49,12 +50,18 @@ export const ScreenSourcePicker = ({
   useEffect(() => {
     if (!isOpen) return;
     submitting.current = false;
+    userSelected.current = false;
+    setKind("screen");
     setSelectedId(undefined);
     setQuality(DEFAULT_SCREEN_SHARE_QUALITY);
     const current = dialog.current;
     current?.showModal();
     return () => current?.close();
   }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen || status !== "ready" || userSelected.current) return;
+    setSelectedId(sources.find((source) => source.kind === "screen")?.id);
+  }, [isOpen, sources, status]);
   const start = () => {
     if (status !== "ready" || !selected || submitting.current) return;
     const bounds = preview.current?.getBoundingClientRect();
@@ -107,13 +114,14 @@ export const ScreenSourcePicker = ({
       </header>
       <div className="screen-source-picker-body">
         <div className="screen-source-category" aria-label="画面类型">
-          {(["window", "screen"] as const).map((value) => (
+          {(["screen", "window"] as const).map((value) => (
             <button
               key={value}
               type="button"
               aria-pressed={kind === value}
               className={kind === value ? "active" : ""}
               onClick={() => {
+                userSelected.current = true;
                 setKind(value);
                 setSelectedId(undefined);
               }}
@@ -160,7 +168,10 @@ export const ScreenSourcePicker = ({
                 className={`screen-source-picker-item ${selectedId === source.id ? "is-selected" : ""}`}
                 aria-pressed={selectedId === source.id}
                 disabled={status !== "ready"}
-                onClick={() => setSelectedId(source.id)}
+                onClick={() => {
+                  userSelected.current = true;
+                  setSelectedId(source.id);
+                }}
               >
                 <span className="screen-source-thumbnail">
                   {source.thumbnailDataUrl ? (

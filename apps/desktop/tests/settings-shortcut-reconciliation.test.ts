@@ -7,6 +7,36 @@ import {
   reconcileResetShortcuts,
 } from "../src/main/settings-shortcut-reconciliation";
 
+test("audio profile shortcut rollback preserves the previously registered choice", async () => {
+  const before = { ...defaultSettings, audioDevicePresetShortcut: "Ctrl+Shift+F9" };
+  const after = { ...before, audioDevicePresetShortcut: "Ctrl+Shift+F10" };
+  const shortcuts = {
+    configureGlobalMute: async () => true,
+    configureRecordingMarker: async () => true,
+    configurePushToTalk: async () => true,
+    configureQuickMessage: async () => true,
+    configureAudioDevicePreset: async () => false,
+  };
+  assert.deepEqual(
+    await applyShortcutSettingsPatch(
+      before,
+      after,
+      { audioDevicePresetShortcut: after.audioDevicePresetShortcut },
+      shortcuts,
+    ),
+    { audioDevicePresetShortcut: "Ctrl+Shift+F9" },
+  );
+  assert.deepEqual(
+    await applyShortcutSettingsPatch(
+      before,
+      { ...before, audioDevicePresetShortcut: "" },
+      { audioDevicePresetShortcut: "" },
+      { ...shortcuts, configureAudioDevicePreset: async () => true },
+    ),
+    {},
+  );
+});
+
 test("master releases all voice and music keyboard and mouse bindings without erasing slots", async () => {
   const active = new Map<number, string>();
   const shortcuts = {

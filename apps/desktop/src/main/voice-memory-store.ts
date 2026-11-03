@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { VoiceMemoryRecycleState, pauseRecycledVoiceMemory } from "./voice-memory-recycle-state";
 
 import {
   evaluateVoiceMemoryTranscriptionValidity,
@@ -300,7 +301,56 @@ export class VoiceMemoryStore {
   private mutationQueue: Promise<void> = Promise.resolve();
   private metadataRecoveryRequired = false;
 
-  constructor(private readonly rootDirectory: string) {}
+  private readonly recycled: VoiceMemoryRecycleState;
+  isRecycled(recordingId: string): boolean {
+    return this.recycled.has(recordingId);
+  }
+  constructor(private readonly rootDirectory: string) {
+    this.recycled = new VoiceMemoryRecycleState(rootDirectory);
+  }
+
+  async setRecycled(recordingId: string, token: string, recycled: boolean): Promise<void> {
+    await this.mutate(async () => {
+      await this.recycled.set(recordingId, token, recycled);
+      if (recycled) {
+        const record = await this.readOptionalJson<VoiceMemoryRecord>(this.recordPath(recordingId));
+        if (record !== undefined && !isVoiceMemoryRecord(record))
+          throw Error("voice_memory_record_unreadable");
+        if (record)
+          await atomicWrite(
+            this.recordPath(recordingId),
+            JSON.stringify(pauseRecycledVoiceMemory(record)),
+          );
+      }
+      try {
+        // A recycle operation must not decode every stored transcript to update one identity.
+        const restored = recycled ? undefined : await this.get(recordingId);
+        const index: PersistedVoiceMemoryIndex = {
+          schemaVersion: 1,
+          entries: [
+            ...this.index.entries.filter((entry) => entry.recordingId !== recordingId),
+            ...(restored ? indexEntriesFor(restored) : []),
+          ],
+        };
+        const summaries: PersistedVoiceMemorySummaries = {
+          schemaVersion: 1,
+          entries: [
+            ...(restored ? [toVoiceMemorySummary(restored)] : []),
+            ...this.summaries.entries.filter((entry) => entry.recordingId !== recordingId),
+          ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+        };
+        await this.beginMetadataMutation();
+        await atomicWrite(this.indexPath(), JSON.stringify(index));
+        await atomicWrite(this.summaryPath(), JSON.stringify(summaries));
+        await rm(this.pendingMetadataPath());
+        this.index = index;
+        this.summaries = summaries;
+      } catch (error) {
+        this.metadataRecoveryRequired = true;
+        throw error;
+      }
+    });
+  }
 
   async initialize(): Promise<void> {
     await mkdir(this.recordsDirectory(), { recursive: true });
@@ -440,6 +490,7 @@ export class VoiceMemoryStore {
   }
 
   async get(recordingId: string): Promise<VoiceMemoryRecord | undefined> {
+    if (this.recycled.has(recordingId)) return undefined;
     const record = await this.readOptionalJson<VoiceMemoryRecord>(this.recordPath(recordingId));
     if (record !== undefined && !isVoiceMemoryRecord(record)) {
       throw new Error("voice_memory_record_unreadable");
@@ -452,6 +503,7 @@ export class VoiceMemoryStore {
     options: VoiceMemorySaveOptions = {},
   ): Promise<VoiceMemoryRecord> {
     return this.mutate(async () => {
+      if (this.recycled.has(record.recordingId)) throw new Error("voice_memory_recycled");
       if (!isVoiceMemoryRecord(record)) {
         throw new Error("voice_memory_record_unreadable");
       }
@@ -518,6 +570,7 @@ export class VoiceMemoryStore {
     _expectedUpdatedAt?: string,
   ): Promise<void> {
     await this.mutate(async () => {
+      if (this.recycled.has(recordingId)) throw new Error("voice_memory_recycled");
       const directory = path.join(this.rootDirectory, TRANSCRIPTION_EVENT_DIRECTORY);
       await mkdir(directory, { recursive: true });
       const compactUnit = Object.fromEntries(
@@ -558,6 +611,7 @@ export class VoiceMemoryStore {
   }
 
   async list(): Promise<VoiceMemoryRecord[]> {
+    const recycled = this.recycled.snapshot();
     const files = (await readdir(this.recordsDirectory())).filter((file) => file.endsWith(".json"));
     const records: VoiceMemoryRecord[] = [];
     // Keep disk reads bounded when a user has accumulated many long recordings.
@@ -570,7 +624,9 @@ export class VoiceMemoryStore {
           if (record !== undefined && !isVoiceMemoryRecord(record)) {
             throw new Error("voice_memory_record_unreadable");
           }
-          return record ? normalizeLegacyRecord(record) : undefined;
+          return record && !this.recycled.has(record.recordingId, recycled)
+            ? normalizeLegacyRecord(record)
+            : undefined;
         }),
       );
       records.push(...batch.filter((record): record is VoiceMemoryRecord => Boolean(record)));
@@ -584,7 +640,11 @@ export class VoiceMemoryStore {
     this.assertMetadataReady();
     const limit = Math.max(1, Math.min(200, options.limit ?? 100));
     const offset = Math.max(0, options.offset ?? 0);
-    return this.summaries.entries.slice(offset, offset + limit).map((entry) => ({ ...entry }));
+    const recycled = this.recycled.snapshot();
+    return this.summaries.entries
+      .filter((entry) => !this.recycled.has(entry.recordingId, recycled))
+      .slice(offset, offset + limit)
+      .map((entry) => ({ ...entry }));
   }
 
   search(request: VoiceMemorySearchRequest): VoiceMemorySearchResult[] {
@@ -592,8 +652,10 @@ export class VoiceMemoryStore {
     const terms = normalize(request.query).split(" ").filter(Boolean);
     if (!terms.length) return [];
     const nickname = request.nickname ? normalize(request.nickname) : undefined;
+    const recycled = this.recycled.snapshot();
     return this.index.entries
       .filter((entry) => {
+        if (this.recycled.has(entry.recordingId, recycled)) return false;
         if (nickname && normalize(entry.nickname ?? "") !== nickname) return false;
         if (request.roomId && entry.roomId !== request.roomId) return false;
         if (request.dateFrom && entry.createdAt < request.dateFrom) return false;
@@ -621,8 +683,13 @@ export class VoiceMemoryStore {
     );
     const terms = [...new Set([...wordTerms, ...bigrams])].slice(0, 32);
     if (!terms.length) return [];
+    const recycled = this.recycled.snapshot();
     return this.index.entries
-      .filter((entry) => roomId === undefined || entry.roomId === roomId)
+      .filter(
+        (entry) =>
+          !this.recycled.has(entry.recordingId, recycled) &&
+          (roomId === undefined || entry.roomId === roomId),
+      )
       .map((entry) => ({
         entry,
         score: terms.reduce(

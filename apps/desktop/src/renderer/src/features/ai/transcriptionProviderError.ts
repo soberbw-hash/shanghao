@@ -1,5 +1,7 @@
 /** Provider codes only; never show an API response or credentials in the UI. */
 export const transcriptionProviderError = (message: string): string | undefined => {
+  if (message.includes("account_session_expired"))
+    return "登录已过期，请到“账号”页重新登录；录音和已有文字已保留，无需重新填写开发者密钥。";
   if (message.includes("participant_track_room_mismatch"))
     return "成员音轨与这条录音所属房间不一致，已停止上传。原录音和已有文字均已保留。";
   if (message.includes("participant_track_audio_missing"))

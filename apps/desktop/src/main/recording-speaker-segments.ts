@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { removeOwnedRecordingArtifacts } from "./recording-artifact-retention";
 import { constants } from "node:fs";
 import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -247,7 +248,7 @@ export const loadRecordingSpeakerSegments = async (
 export const cleanupRecordingSpeakerSegments = async (recordingId: string): Promise<void> => {
   await Promise.all(
     completedDirectories(recordingId).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
+      removeOwnedRecordingArtifacts(directory, recordingId),
     ),
   );
 };

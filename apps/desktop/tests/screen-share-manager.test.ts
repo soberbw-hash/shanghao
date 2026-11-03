@@ -177,6 +177,80 @@ test("screen share manager retries a temporarily unreadable Windows source witho
   await manager.stopShare();
 });
 
+test("cancelling while capture startup fails does not start another capture", async () => {
+  const environment = installCaptureEnvironment({ includeAudio: false });
+  let rejectCapture!: (reason: Error) => void;
+  let attempts = 0;
+  navigator.mediaDevices.getDisplayMedia = async () => {
+    attempts++;
+    return new Promise<MediaStream>((_resolve, reject) => {
+      rejectCapture = reject;
+    });
+  };
+  const manager = new ScreenShareManager({
+    startPublishing: async () => undefined,
+    stopPublishing: async () => undefined,
+  });
+  const starting = manager.startShare({ sourceId: "screen:1", includeSystemAudio: false });
+  while (!rejectCapture) await new Promise((resolve) => setTimeout(resolve, 0));
+  await manager.stopShare();
+  const error = new Error("Could not start video source");
+  error.name = "NotReadableError";
+  rejectCapture(error);
+  await assert.rejects(starting, /screen_share_superseded/);
+  assert.equal(attempts, 1);
+  assert.equal(environment.legacyCaptureRequests.length, 0);
+  assert.equal(manager.getSnapshot().status, "idle");
+});
+
+test("cancelling while source selection is pending never starts capture", async () => {
+  const environment = installCaptureEnvironment({ includeAudio: false });
+  let releaseSelection!: () => void;
+  window.desktopApi.screenCapture.selectSource = () =>
+    new Promise<void>((resolve) => {
+      releaseSelection = resolve;
+    });
+  const manager = new ScreenShareManager({
+    startPublishing: async () => undefined,
+    stopPublishing: async () => undefined,
+  });
+  const starting = manager.startShare({ sourceId: "screen:1", includeSystemAudio: false });
+  while (!releaseSelection) await new Promise((resolve) => setTimeout(resolve, 0));
+  await manager.stopShare();
+  releaseSelection();
+  await assert.rejects(starting, /screen_share_superseded/);
+  assert.equal(environment.captureRequests.length, 0);
+  assert.equal(environment.legacyCaptureRequests.length, 0);
+});
+
+test("cancel during retry logging does not alter capture protection again", async () => {
+  const environment = installCaptureEnvironment({ includeAudio: false });
+  const error = new Error("Could not start video source");
+  error.name = "NotReadableError";
+  navigator.mediaDevices.getDisplayMedia = async () => {
+    throw error;
+  };
+  let releaseLog!: () => void;
+  const manager = new ScreenShareManager({
+    startPublishing: async () => undefined,
+    stopPublishing: async () => undefined,
+    writeLog: async (_level, message) => {
+      if (message.includes("temporarily unavailable"))
+        await new Promise<void>((resolve) => {
+          releaseLog = resolve;
+        });
+    },
+  });
+  const starting = manager.startShare({ sourceId: "screen:1", includeSystemAudio: false });
+  while (!releaseLog) await new Promise((resolve) => setTimeout(resolve, 0));
+  await manager.stopShare();
+  const protectionAfterStop = environment.protection.length;
+  releaseLog();
+  await assert.rejects(starting, /screen_share_superseded/);
+  assert.equal(environment.protection.length, protectionAfterStop);
+  assert.equal(environment.legacyCaptureRequests.length, 0);
+});
+
 test("screen share manager falls back to the exact Electron desktop source after repeated Windows failures", async () => {
   const environment = installCaptureEnvironment({ includeAudio: false });
   navigator.mediaDevices.getDisplayMedia = async () => {
@@ -307,5 +381,6 @@ test("Windows capture handler only requests loopback audio when the renderer ask
     source,
     /request\.audioRequested && platformService\.capabilities\.systemAudioLoopback/,
   );
-  assert.match(service, /requestedSourceId[\s\S]*sourceCache\.get\(requestedSourceId\)/);
+  assert.match(service, /source\.id === requestedSourceId/);
+  assert.doesNotMatch(service, /if \(cachedSource\) return cachedSource/);
 });

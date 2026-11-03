@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import { useRoomStore } from "../../store/roomStore";
 import { selectCharacterChatBubbles } from "./roomViewModel";
+import { isGameAssistantMessage } from "../chat/gameAssistantMessage";
 
 /** A system message or network sample must not re-render the illustrated room. */
 export const useCharacterChatBubbles = () => {
@@ -11,6 +12,7 @@ export const useCharacterChatBubbles = () => {
       .filter(
         (message) =>
           message.kind !== "system" &&
+          !isGameAssistantMessage(message) &&
           message.deliveryState !== "failed" &&
           Boolean(message.content.trim()),
       )

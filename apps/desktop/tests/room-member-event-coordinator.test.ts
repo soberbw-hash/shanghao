@@ -225,3 +225,55 @@ test("persistent availability survives snapshots, clears on return, and never cr
   assert.equal(coordinator.currentMembers[0]?.availabilityStatus, undefined);
   assert.equal(reactions, 0);
 });
+
+test("local availability publishes immediately without a server echo and delayed echoes cannot undo newer choices", () => {
+  const snapshots: RoomMember[][] = [];
+  const coordinator = new RoomMemberEventCoordinator({
+    localPeerId: "local",
+    onMembers: (members) => snapshots.push(members),
+    onCollection: () => {},
+    onKnock: () => {},
+    onReaction: () => {},
+    onQuickMessage: () => {},
+  });
+  coordinator.setMembers([
+    createMember("local", true, "gameDesk1"),
+    createMember("remote", false, "gameDesk2"),
+  ]);
+  coordinator.updateLocalAvailability("eating");
+  assert.equal(snapshots.at(-1)?.[0]?.availabilityStatus, "eating");
+  coordinator.updateLocalAvailability("restroom");
+  coordinator.handleReaction({
+    type: "scene_reaction",
+    roomId: "main",
+    peerId: "local",
+    targetPeerId: "shanghao-status:v1:eating",
+    emoji: "👍",
+    createdAt: new Date().toISOString(),
+  });
+  assert.equal(coordinator.currentMembers[0]?.availabilityStatus, "restroom");
+  coordinator.setMembers([
+    createMember("local", true, "gameDesk1"),
+    createMember("remote", false, "gameDesk2"),
+  ]);
+  assert.equal(coordinator.currentMembers[0]?.availabilityStatus, "restroom");
+  coordinator.updateLocalAvailability(undefined);
+  coordinator.handleReaction({
+    type: "scene_reaction",
+    roomId: "main",
+    peerId: "local",
+    targetPeerId: "shanghao-status:v1:restroom",
+    emoji: "👍",
+    createdAt: new Date().toISOString(),
+  });
+  assert.equal(coordinator.currentMembers[0]?.availabilityStatus, undefined);
+  coordinator.handleReaction({
+    type: "scene_reaction",
+    roomId: "main",
+    peerId: "remote",
+    targetPeerId: "shanghao-status:v1:away",
+    emoji: "👍",
+    createdAt: new Date().toISOString(),
+  });
+  assert.equal(coordinator.currentMembers[1]?.availabilityStatus, "away");
+});

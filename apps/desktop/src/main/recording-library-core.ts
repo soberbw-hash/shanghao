@@ -636,3 +636,86 @@ const forgetRecordingInDirectoryUnsafe = async (
 
 export const isAllowedRecordingPathInDirectory = (directory: string, filePath: string): boolean =>
   isInsideDirectory(directory, filePath) && path.extname(filePath).toLowerCase() === ".m4a";
+
+/** Serializes recoverable file moves with rename/favorite writes and verifies scan identity. */
+export const moveRecordingToRecycleBin = (
+  directory: string,
+  expected: RecordingLibraryItem,
+  protect: boolean,
+  move: () => Promise<void>,
+): Promise<void> =>
+  mutateDirectory(directory, async () => {
+    const item = (await readRecordingLibraryItemsUnsafe(directory)).find(
+      (entry) => entry.filePath === expected.filePath,
+    );
+    const file = await lstat(expected.filePath);
+    if (
+      !isAllowedRecordingPathInDirectory(directory, expected.filePath) ||
+      !file.isFile() ||
+      !item ||
+      item.recordingId !== expected.recordingId ||
+      file.size !== expected.fileSize ||
+      file.mtime.toISOString() !== expected.modifiedAt
+    )
+      throw Error("recording_changed_since_scan");
+    if (protect && (item.isFavorite || item.markers.length)) throw Error("recording_protected");
+    await move(); // The journal keeps identity, favorites, title and originating room.
+    await detachRecycledCatalogUnsafe(directory, expected);
+  });
+
+const detachRecycledCatalogUnsafe = async (
+  directory: string,
+  item: RecordingLibraryItem,
+): Promise<void> => {
+  const present = await lstat(item.filePath).then(
+    () => true,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    },
+  );
+  if (present) return;
+  const metadata = await readLibraryMetadata(directory);
+  const entry = metadata.recordings?.find(
+    (candidate) =>
+      candidate.recordingId === item.recordingId && candidate.fileName === item.fileName,
+  );
+  if (!entry) return;
+  metadata.recordings = metadata.recordings?.filter((candidate) => candidate !== entry);
+  metadata.favoriteRecordingIds = metadata.favoriteRecordingIds?.filter(
+    (id) => id !== item.recordingId,
+  );
+  metadata.favorites = metadata.favorites.filter((name) => name !== item.fileName);
+  await writeLibraryMetadata(directory, metadata);
+};
+export const detachRecycledRecordingCatalog = (
+  directory: string,
+  item: RecordingLibraryItem,
+): Promise<void> => mutateDirectory(directory, () => detachRecycledCatalogUnsafe(directory, item));
+
+export const restoreRecordingFromRecycleBin = (
+  directory: string,
+  item: RecordingLibraryItem,
+  restore: () => Promise<void>,
+): Promise<void> =>
+  mutateDirectory(directory, async () => {
+    if (!isAllowedRecordingPathInDirectory(directory, item.filePath))
+      throw Error("invalid_recording_path");
+    const metadata = await readLibraryMetadata(directory);
+    const current = metadata.recordings?.find(
+      (entry) => entry.fileName === item.fileName || entry.recordingId === item.recordingId,
+    );
+    if (current && (current.fileName !== item.fileName || current.recordingId !== item.recordingId))
+      throw Error("recording_restore_conflict");
+    await restore(); // Caller journals interrupted audio/marker moves and never overwrites files.
+    if (!current) {
+      const { recordingId, fileName, title, isCustomTitle, createdAt, roomId, roomName } = item;
+      metadata.recordings = [
+        ...(metadata.recordings ?? []),
+        { recordingId, fileName, title, isCustomTitle, createdAt, roomId, roomName },
+      ];
+      if (item.isFavorite)
+        metadata.favoriteRecordingIds = [...(metadata.favoriteRecordingIds ?? []), recordingId];
+      await writeLibraryMetadata(directory, metadata);
+    }
+  });

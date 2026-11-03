@@ -1,6 +1,9 @@
+import { RATE_LIMITS } from "./signaling-rate-limits";
 import { IceConfigHttpController } from "./ice-config-http-controller";
 import { normalizeMemberActivity } from "./member-activity-update";
 import { TemporaryRoomRuntime } from "./temporary-room-runtime";
+import { RoomChronicleController } from "./room-chronicle-controller";
+import { RoomReplayController } from "./room-replay-controller";
 import { temporaryRuntimeOptions } from "./temporary-runtime-options";
 import { createRoomSnapshot, createChannelCounts } from "./room-snapshot";
 import { createSignalingStorage } from "./signaling-storage";
@@ -9,21 +12,18 @@ import { isTemporaryRoomSessionId } from "../../shared/src/types/temporary-room.
 import { buildRoomCollectionSnapshots } from "./room-collection-snapshots";
 import { buildIceServersForPeer } from "./signaling-ice-config";
 import { EventEmitter } from "node:events";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 
 import {
   APP_BUILD_NUMBER,
   APP_PROTOCOL_VERSION,
-  BUILT_IN_AVATAR_IDS,
   DEFAULT_CHANNEL_ID,
   HEARTBEAT_INTERVAL_MS,
   MAX_ROOM_COLLECTION_IMAGE_LENGTH,
   MAX_ROOM_COLLECTION_TEXT_LENGTH,
   isRoomAiScopeAllowed,
-  type BuiltInAvatarId,
   type RoomCollectionItem,
-  type SceneZoneId,
 } from "@private-voice/shared";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 
@@ -66,7 +66,13 @@ import type {
 import { isSignalEnvelope } from "./protocol";
 import { ChatHistoryStore } from "./chat-history-store";
 import { RoomCollectionStore } from "./room-collection-store";
-import { RoomManager, type SignalingRoom } from "./room-manager";
+import { RoomManager } from "./room-manager";
+import {
+  getOccupiedAvatarIds,
+  getAvailableAvatarIds,
+  resolveSceneZone,
+  normalizeAvatar,
+} from "./room-member-placement";
 import { SessionTokenStore } from "./session-token-store";
 import { DailyRoomReportStore } from "./daily-room-report-store";
 import { CloudAiRuntime } from "./cloud-ai-runtime";
@@ -84,6 +90,7 @@ import {
 } from "./account-service";
 
 export interface SignalingServerOptions {
+  chronicleServices?: Pick<CloudAiRuntime, "speechService" | "textService">;
   temporaryReplicaRequest?: ConstructorParameters<typeof TemporaryRoomRuntime>[0]["replicaRequest"];
   temporaryCommit?: (sessionId: string) => Promise<void>;
   temporaryIceServers?: () => import("./protocol").IceServerConfig[];
@@ -104,7 +111,6 @@ const MAX_SIGNALING_PAYLOAD_BYTES = 256 * 1024;
 const MAX_PENDING_AUTH_MESSAGES = 4;
 const MAX_PENDING_AUTH_PAYLOAD_BYTES = MAX_SIGNALING_PAYLOAD_BYTES;
 const CHAT_HISTORY_PAYLOAD_BUDGET_BYTES = MAX_SIGNALING_PAYLOAD_BYTES - 8 * 1024;
-const MAX_AVATAR_BYTES = 128 * 1024;
 const MAX_AUDIO_CHUNK_BYTES = 96 * 1024;
 const MAX_SCREEN_FRAME_BYTES = 220 * 1024;
 const MAX_REALTIME_SOCKET_BUFFER_BYTES = 256 * 1024;
@@ -138,86 +144,9 @@ interface SocketSession {
 
 type SocketIdentity = ({ kind: "account" } & VerifiedAccountIdentity) | { kind: "guest" };
 
-const RATE_LIMITS: Record<string, { windowMs: number; limit: number }> = {
-  chat_message: { windowMs: 10_000, limit: 40 },
-  chat_recall: { windowMs: 10_000, limit: 12 },
-  room_collection_add: { windowMs: 10_000, limit: 6 },
-  room_collection_remove: { windowMs: 10_000, limit: 10 },
-  knock_event: { windowMs: 10_000, limit: 1 },
-  scene_reaction: { windowMs: 10_000, limit: 12 },
-  member_state: { windowMs: 10_000, limit: 40 },
-  peer_offer: { windowMs: 10_000, limit: 40 },
-  peer_answer: { windowMs: 10_000, limit: 40 },
-  peer_restart_request: { windowMs: 10_000, limit: 20 },
-  ice_candidate: { windowMs: 10_000, limit: 160 },
-  audio_chunk: { windowMs: 1_000, limit: 120 },
-  audio_path_state: { windowMs: 10_000, limit: 40 },
-  audio_resync_request: { windowMs: 10_000, limit: 20 },
-  audio_resync_ack: { windowMs: 10_000, limit: 20 },
-  screen_frame: { windowMs: 1_000, limit: 24 },
-  screen_share_state: { windowMs: 10_000, limit: 10 },
-  screen_path_state: { windowMs: 10_000, limit: 30 },
-  request_daily_room_reports: { windowMs: 10_000, limit: 6 },
-  publish_recording_recap: { windowMs: 60_000, limit: 4 },
-  cloud_ai_request: { windowMs: 60_000, limit: 4 },
-  cloud_ai_cancel: { windowMs: 60_000, limit: 12 },
-};
-const SEAT_ZONES: SceneZoneId[] = ["gameDesk1", "gameDesk2", "gameDesk3", "gameDesk4", "gameDesk5"];
-
-const getOccupiedAvatarIds = (
-  room: SignalingRoom | undefined,
-  excludingPeerId?: string,
-): Set<BuiltInAvatarId> =>
-  new Set(
-    room?.peers
-      .listPeers()
-      .filter((peer) => peer.id !== excludingPeerId && peer.avatarId)
-      .map((peer) => peer.avatarId as BuiltInAvatarId) ?? [],
-  );
-
-const getAvailableAvatarIds = (
-  room: SignalingRoom | undefined,
-  excludingPeerId?: string,
-): BuiltInAvatarId[] => {
-  const occupied = getOccupiedAvatarIds(room, excludingPeerId);
-  return BUILT_IN_AVATAR_IDS.filter((avatarId) => !occupied.has(avatarId));
-};
-
-const resolveSceneZone = (
-  occupiedZones: Array<{ peerId: string; sceneZone?: SceneZoneId; disconnectedAt?: number }>,
-  peerId: string,
-  requestedZone?: SceneZoneId,
-): SceneZoneId => {
-  if (requestedZone && !SEAT_ZONES.includes(requestedZone)) {
-    return requestedZone;
-  }
-
-  const occupiedSeats = new Set(
-    occupiedZones
-      .filter((peer) => peer.peerId !== peerId && !peer.disconnectedAt)
-      .map((peer) => peer.sceneZone)
-      .filter((zone): zone is SceneZoneId => Boolean(zone && SEAT_ZONES.includes(zone))),
-  );
-  if (requestedZone && !occupiedSeats.has(requestedZone)) {
-    return requestedZone;
-  }
-  return SEAT_ZONES.find((zone) => !occupiedSeats.has(zone)) ?? "restroomZone";
-};
-
-const normalizeAvatar = (
-  avatarDataUrl?: string,
-): { avatarDataUrl?: string; avatarHash?: string } => {
-  if (!avatarDataUrl || Buffer.byteLength(avatarDataUrl, "utf8") > MAX_AVATAR_BYTES) {
-    return {};
-  }
-
-  return {
-    avatarDataUrl,
-    avatarHash: createHash("sha256").update(avatarDataUrl).digest("hex"),
-  };
-};
-
 export class SignalingServer extends EventEmitter {
+  private readonly chronicle = new RoomChronicleController();
+  private readonly replay = new RoomReplayController();
   private readonly socketAddresses = new WeakMap<WebSocket, string>();
   private readonly temporary: TemporaryRoomRuntime;
   private readonly roomManager = new RoomManager();
@@ -295,14 +224,27 @@ export class SignalingServer extends EventEmitter {
       (request) =>
         this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
       privateRoomFile ? `${privateRoomFile}.memory.json` : undefined,
+      {
+        isConfigured: () => this.cloudAi?.textService.isConfigured() ?? false,
+        execute: (request, signal) => this.cloudAi.textService.execute(request, signal),
+      },
     );
-    this.cloudAi = new CloudAiRuntime(this.dailyRoomReports, this.logger, (roomId) =>
-      this.roomMemories.context(roomId),
+    this.cloudAi = new CloudAiRuntime(
+      this.dailyRoomReports,
+      this.logger,
+      (roomId) => this.roomMemories.context(roomId),
+      options.temporaryOnly
+        ? undefined
+        : process.env.CLOUD_AI_CONFIG_FILE ||
+            (privateRoomFile ? `${privateRoomFile}.ai-providers.json` : undefined),
     );
     this.cloudAi.configureHttp(
       this.accountBackend,
       (request) =>
         this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
+    );
+    this.chronicle.configure(options.chronicleServices ?? this.cloudAi, (roomId) =>
+      this.broadcastSnapshot(roomId),
     );
     this.privateRoomHttp = new PrivateRoomHttpController(
       this.roomDirectory,
@@ -540,6 +482,8 @@ export class SignalingServer extends EventEmitter {
     return listeningPort;
   }
   async close(): Promise<void> {
+    this.chronicle.dispose();
+    this.replay.consent.clear();
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
     }
@@ -785,7 +729,19 @@ export class SignalingServer extends EventEmitter {
       );
       return;
     }
-    if (!this.consumeRateLimit(socket, session, message.type)) {
+    const withdrawingReplay =
+      message.type === "replay_control" &&
+      (message.action === "revoke" || message.action === "stop");
+    if (!this.consumeRateLimit(socket, session, message.type) && !withdrawingReplay) {
+      if (message.type === "chronicle_audio") {
+        this.safeSend(socket, {
+          type: "chronicle_state",
+          roomId: session.roomId,
+          chunkId: message.chunkId,
+          error: "chronicle_busy",
+          state: this.chronicle.sessions.snapshot(session.roomId, session.peerId),
+        });
+      }
       if (message.type === "chat_message") {
         this.safeSend(socket, {
           type: "chat_rejected",
@@ -815,6 +771,41 @@ export class SignalingServer extends EventEmitter {
       return;
     this.roomManager.getRoom(session.roomId)?.peers.updateHeartbeat(session.peerId);
     if (this.cloudAi.handleSignal(socket, authoritative, this.safeSend.bind(this, socket))) return;
+
+    if (authoritative.type === "replay_control") {
+      const room = this.roomManager.getRoom(session.roomId);
+      this.replay.handle(
+        session.roomId,
+        session.peerId,
+        room?.peers.listConnectedPeers().map((peer) => peer.id),
+        authoritative,
+        (target, response) => {
+          const recipient = room?.peers.getPeer(target);
+          if (recipient) this.safeSend(recipient.socket, response);
+        },
+      );
+      return;
+    }
+    if (authoritative.type === "chronicle_audio") {
+      const peer = this.roomManager.getRoom(session.roomId)?.peers.getPeer(session.peerId);
+      if (peer)
+        void this.chronicle.audio(authoritative, peer.nickname, this.safeSend.bind(this, socket));
+      return;
+    }
+    if (authoritative.type === "chronicle_control") {
+      const room = this.roomManager.getRoom(session.roomId);
+      this.chronicle.handle(
+        session.roomId,
+        session.peerId,
+        room?.peers.listConnectedPeers().map((peer) => peer.id),
+        authoritative,
+        (target, response) => {
+          const recipient = room?.peers.getPeer(target);
+          if (recipient) this.safeSend(recipient.socket, response);
+        },
+      );
+      return;
+    }
 
     switch (authoritative.type) {
       case "leave_channel":
@@ -1128,6 +1119,8 @@ export class SignalingServer extends EventEmitter {
     }
 
     const joinAck: JoinAckMessage = {
+      chronicleSupported: !this.options.temporaryOnly,
+      replaySupported: !this.options.temporaryOnly,
       type: "join_ack",
       roomId: room.roomId,
       peerId: message.peerId,
@@ -1680,6 +1673,8 @@ export class SignalingServer extends EventEmitter {
 
   private broadcastSnapshot(roomId: string): void {
     const room = this.roomManager.getRoom(roomId);
+    this.chronicle.sync(roomId, room?.peers.listConnectedPeers().map((peer) => peer.id) ?? []);
+    this.replay.consent.sync(roomId, room?.peers.listConnectedPeers().map((peer) => peer.id) ?? []);
     if (!room) {
       this.broadcastChannelCounts();
       return;
@@ -1690,6 +1685,11 @@ export class SignalingServer extends EventEmitter {
     for (const peer of room.peers.listConnectedPeers()) {
       const payload = createRoomSnapshot(room, peer.id, serverTime);
       this.safeSend(peer.socket, payload);
+      const chronicle = this.chronicle.sessions.snapshot(roomId, peer.id);
+      if (chronicle)
+        this.safeSend(peer.socket, { type: "chronicle_state", roomId, state: chronicle });
+      const replay = this.replay.consent.snapshot(roomId);
+      if (replay) this.safeSend(peer.socket, { type: "replay_state", roomId, state: replay });
       this.emit("snapshot", payload);
     }
     this.logger?.("room snapshot broadcast", {

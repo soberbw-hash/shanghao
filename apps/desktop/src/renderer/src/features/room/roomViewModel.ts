@@ -3,6 +3,7 @@ import type { ChatMessage, RoomMember, RoomQuickMessage } from "@private-voice/s
 import type { ScreenShareItem } from "../screen-share/types";
 import type { ScreenShareQuality } from "../screen-share/types";
 import type { RemoteScreenFrame } from "../../store/roomStore";
+import { isGameAssistantMessage } from "../chat/gameAssistantMessage";
 
 const CHARACTER_BUBBLE_LIFETIME_MS = 4_200;
 const STALE_SCREEN_FRAME_MS = 6_000;
@@ -25,6 +26,7 @@ export const selectCharacterChatBubbles = (
       .filter(
         (message) =>
           message.kind !== "system" &&
+          !isGameAssistantMessage(message) &&
           message.deliveryState !== "failed" &&
           Boolean(message.content.trim()),
       )

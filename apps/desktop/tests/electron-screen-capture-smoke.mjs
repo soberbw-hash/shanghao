@@ -52,6 +52,29 @@ app.whenReady().then(async () => {
             { quality: "1080p", width: 1920, height: 1080, frameRate: 30 },
             { quality: "1440p", width: 2560, height: 1440, frameRate: 30 },
           ];
+          // A live track alone does not prove the capture is producing frames.
+          // Inspect dimensions only; never persist or log screen pixels.
+          const readFrame = async (track) => {
+            if (!globalThis.MediaStreamTrackProcessor) throw new Error("capture_frame_verification_unavailable");
+            const clone = track.clone();
+            const reader = new MediaStreamTrackProcessor({ track: clone, maxBufferSize: 1 }).readable.getReader();
+            let timer;
+            try {
+              const result = await Promise.race([
+                reader.read(),
+                new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("capture_frame_timeout")), 4000); }),
+              ]);
+              if (result.done || !result.value) throw new Error("capture_frame_missing");
+              const frame = result.value;
+              const dimensions = { width: frame.displayWidth, height: frame.displayHeight };
+              frame.close();
+              return { supported: true, ...dimensions };
+            } finally {
+              clearTimeout(timer);
+              clone.stop();
+              await reader.cancel().catch(() => {});
+            }
+          };
           const captures = [];
           for (const profile of profiles) {
             const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -66,10 +89,12 @@ app.whenReady().then(async () => {
               frameRate: { ideal: profile.frameRate, max: profile.frameRate },
             });
             const actual = displayTrack?.getSettings?.() ?? {};
+            const frame = await readFrame(displayTrack);
             stream.getTracks().forEach((item) => item.stop());
             captures.push({
               requested: profile,
               actual,
+              frame,
               startedLive,
               stopped: displayTrack?.readyState === "ended" &&
                 stream.getTracks().every((item) => item.readyState === "ended"),
@@ -93,12 +118,16 @@ app.whenReady().then(async () => {
           });
           const fallbackSettings = fallbackTrack?.getSettings?.() ?? {};
           const fallbackStartedLive = fallbackTrack?.readyState === "live";
+          const fallbackFrame = await readFrame(fallbackTrack);
           fallbackStream.getTracks().forEach((item) => item.stop());
           return {
-            ok: captures.every((capture) => capture.startedLive && capture.stopped) &&
-              fallbackStartedLive && fallbackTrack?.readyState === "ended",
+            ok: captures.every((capture) => capture.startedLive && capture.stopped &&
+              capture.frame.width > 0 && capture.frame.height > 0) &&
+              fallbackStartedLive && fallbackTrack?.readyState === "ended" &&
+              fallbackFrame.width > 0 && fallbackFrame.height > 0,
             captures,
             fallbackSettings,
+            fallbackFrame,
             fallbackStopped: fallbackTrack?.readyState === "ended",
           };
         } catch (error) {

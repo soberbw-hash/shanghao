@@ -5,6 +5,7 @@ import { RELEASE_3412 } from "./release3412";
 import { RELEASE_3413 } from "./release3413";
 import { RELEASE_3415 } from "./release3415";
 import { RELEASE_3416 } from "./release3416";
+import { RELEASE_3417 } from "./release3417";
 import { RELEASE_343 } from "./release343";
 import { RELEASE_344 } from "./release344";
 import { RELEASE_345 } from "./release345";
@@ -85,6 +86,7 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 ];
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
+  RELEASE_3417,
   RELEASE_3416,
   RELEASE_3415,
   RELEASE_3413,

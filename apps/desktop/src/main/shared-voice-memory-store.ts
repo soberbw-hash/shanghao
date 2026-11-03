@@ -48,6 +48,10 @@ export class SharedVoiceMemoryStore extends VoiceMemoryStore {
     return this.transaction(() => super.listSummaries(options));
   }
 
+  override async setRecycled(recordingId: string, token: string, recycled: boolean): Promise<void> {
+    return this.transaction(() => super.setRecycled(recordingId, token, recycled));
+  }
+
   override async save(record: VoiceMemoryRecord, options: VoiceMemorySaveOptions = {}) {
     return this.transaction(async () => {
       const current = await super.get(record.recordingId);
@@ -188,7 +192,7 @@ export class SharedVoiceMemoryStore extends VoiceMemoryStore {
           current.transcript.length === 0 &&
           completed(record) &&
           (!current.roomId || current.roomId === record.roomId);
-        if (!deleted && (!current || recoverable)) {
+        if (!deleted && !this.isRecycled(record.recordingId) && (!current || recoverable)) {
           const backup = path.join(this.directory, "profile-import-backups", name, hash);
           await mkdir(backup, { recursive: true });
           await copyFile(sourcePath, path.join(backup, "source.json"));

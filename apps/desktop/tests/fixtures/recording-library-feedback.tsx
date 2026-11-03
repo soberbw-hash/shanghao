@@ -8,6 +8,8 @@ import {
   type VoiceMemoryRecord,
 } from "@private-voice/shared";
 import { RecordingLibrarySettingsCard } from "../../src/renderer/src/components/settings/RecordingLibrarySettingsCard";
+import { SettingsPageHeader } from "../../src/renderer/src/components/settings/SettingsPageHeader";
+import { SettingsNavigation } from "../../src/renderer/src/components/settings/SettingsNavigation";
 import { useSettingsStore } from "../../src/renderer/src/store/settingsStore";
 import "../../src/renderer/src/styles/index.css";
 
@@ -206,6 +208,10 @@ window.addEventListener("recording-fixture-state", (event) => {
 window.desktopApi = {
   app: { writeLog: async () => {} },
   recording: {
+    exportClip: async (request: unknown) => {
+      document.documentElement.dataset.clipRequest = JSON.stringify(request);
+      return { filePath: "demo-only/clip.m4a", fileName: "演示片段.m4a" };
+    },
     list: async () => ({
       directory: "演示录音库",
       totalBytes: item.fileSize,
@@ -303,6 +309,35 @@ window.desktopApi = {
 
 const Fixture = () => {
   const [current, setCurrent] = useState(settings);
+  const [toolbarTarget, setToolbarTarget] = useState<HTMLDivElement | null>(null);
+  if (new URLSearchParams(location.search).has("layout"))
+    return (
+      <main
+        className="settings-page settings-page--recording-library"
+        style={{ height: "100vh", paddingTop: 12 }}
+      >
+        <div className="settings-page-shell settings-recording-shell" style={{ height: "100%" }}>
+          <SettingsPageHeader
+            saveNotice="设置会自动保存"
+            onBack={() => {}}
+            libraryToolbarRef={setToolbarTarget}
+          />
+          <div className="mt-2 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)] settings-recording-layout">
+            <SettingsNavigation activeSection="recordings" onSelect={() => {}} />
+            <div className="min-w-0">
+              <div className="settings-recording-content">
+                <RecordingLibrarySettingsCard
+                  toolbarTarget={toolbarTarget}
+                  settings={current}
+                  onChange={(patch) => setCurrent((previous) => ({ ...previous, ...patch }))}
+                  pushToast={() => {}}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
   return (
     <main
       style={{

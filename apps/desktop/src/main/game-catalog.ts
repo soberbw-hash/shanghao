@@ -1,13 +1,7 @@
 import type { GameDetectionSnapshot } from "@private-voice/shared";
-
-interface GameRule {
-  name: NonNullable<GameDetectionSnapshot["gameName"]>;
-  processNames: string[];
-  titleNeedles?: string[];
-  pathNeedles?: string[];
-  commandLineNeedles?: string[];
-  evidenceRequiredProcessNames?: string[];
-}
+import { EMULATOR_GAME_RULES } from "./emulator-game-rules";
+import type { GameRule } from "./game-rule";
+export type { GameRule } from "./game-rule";
 
 export const KK_PLATFORM_GAME_NAME: NonNullable<GameDetectionSnapshot["gameName"]> = "KK 对战平台";
 export const KK_HOSTED_PROCESS_NAMES = [
@@ -82,6 +76,7 @@ export const GAME_RULES: GameRule[] = [
   { name: "Dota 2", processNames: ["dota2"] },
   { name: "Apex 英雄", processNames: ["r5apex"] },
   { name: "绝地求生", processNames: ["tslgame"] },
+  ...EMULATOR_GAME_RULES,
   { name: "守望先锋", processNames: ["overwatch"] },
   { name: "永劫无间", processNames: ["narakabladepoint", "naraka"] },
   { name: "原神", processNames: ["yuanshen", "genshinimpact"] },

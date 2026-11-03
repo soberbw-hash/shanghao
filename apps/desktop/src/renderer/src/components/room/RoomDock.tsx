@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ChevronDown as ChevronDownData, ChevronUp as ChevronUpData } from "lucide";
 
 import {
@@ -14,6 +14,7 @@ import type { MicrophoneTestControls } from "../audio/AudioControlPopover";
 import { MuteButton } from "../audio/MuteButton";
 import { MicrophoneLevelFill } from "../audio/MicrophoneLevelFill";
 import { ApplicationAudioControl } from "../audio/ApplicationAudioControl";
+import { AudioDevicePresets } from "../audio/AudioDevicePresets";
 import { RecordingButton } from "../audio/RecordingButton";
 import { Button } from "../base/Button";
 import { AnimatedControlIcon } from "../icons/AnimatedControlIcon";
@@ -45,6 +46,10 @@ export type RoomDockSettings = Pick<
 >;
 
 interface RoomDockProps {
+  presenceControls?: ReactNode;
+  isAudioProcessingBusy?: () => boolean;
+  onApplyAudioPresetInput?: (id?: string) => Promise<boolean>;
+  onAudioPresetApplied?: (id?: string) => void;
   settings?: RoomDockSettings;
   selectedInputDeviceId?: string;
   inputDevices: AudioDeviceDescriptor[];
@@ -85,6 +90,10 @@ interface RoomDockProps {
 }
 
 export const RoomDock = ({
+  presenceControls,
+  isAudioProcessingBusy,
+  onApplyAudioPresetInput,
+  onAudioPresetApplied,
   settings,
   selectedInputDeviceId,
   inputDevices,
@@ -124,7 +133,14 @@ export const RoomDock = ({
   onLeave,
 }: RoomDockProps) => {
   const microphoneStatus = useMicrophoneStatus(isMuted);
+  const [availabilityFeedback, setAvailabilityFeedback] = useState(0);
+  useEffect(() => {
+    const feedback = () => setAvailabilityFeedback((sequence) => sequence + 1);
+    window.addEventListener("shanghao:availability-audio-feedback", feedback);
+    return () => window.removeEventListener("shanghao:availability-audio-feedback", feedback);
+  }, []);
   const [activeAudioPanel, setActiveAudioPanel] = useState<AudioPanel>();
+  const [presetControlHost, setPresetControlHost] = useState<HTMLDivElement | null>(null);
   const [mountedAudioPanels, setMountedAudioPanels] = useState<Set<Exclude<AudioPanel, undefined>>>(
     () => new Set(),
   );
@@ -180,6 +196,7 @@ export const RoomDock = ({
             className="voice-segmented-main z-[1]"
             showLevelFill={false}
             status={microphoneStatus}
+            feedbackSequence={availabilityFeedback}
           />
           <button
             type="button"
@@ -204,6 +221,7 @@ export const RoomDock = ({
             <AudioControlPopover
               isOpen={activeAudioPanel === "microphone"}
               title="麦克风"
+              presetControlHost={setPresetControlHost}
               devices={inputDevices}
               deviceId={selectedInputDeviceId ?? settings.preferredInputDeviceId}
               volume={settings.microphoneSendVolume}
@@ -241,8 +259,20 @@ export const RoomDock = ({
             )}
             onClick={onToggleDeafen}
           >
-            <AnimatedControlIcon name="speaker" muted={isDeafened} className="voice-primary-icon" />
-            <span className="voice-action-label">{isDeafened ? "扬声器关" : "扬声器开"}</span>
+            <span
+              key={availabilityFeedback}
+              className={cn(
+                "voice-availability-feedback",
+                availabilityFeedback > 0 && "is-animating",
+              )}
+            >
+              <AnimatedControlIcon
+                name="speaker"
+                muted={isDeafened}
+                className="voice-primary-icon"
+              />
+              <span className="voice-action-label">{isDeafened ? "扬声器关" : "扬声器开"}</span>
+            </span>
           </Button>
           <button
             type="button"
@@ -283,7 +313,16 @@ export const RoomDock = ({
           ) : null}
         </div>
       </div>
+      {presenceControls ? <div className="voice-dock-presence">{presenceControls}</div> : null}
       <div className="flex-1" />
+      {onApplyAudioPresetInput && (
+        <AudioDevicePresets
+          buttonHost={presetControlHost}
+          isProcessingBusy={isAudioProcessingBusy}
+          replaceInput={onApplyAudioPresetInput}
+          onApplied={onAudioPresetApplied}
+        />
+      )}
       <div className="voice-action-group voice-session-actions" aria-label="分享与录音">
         {onApplicationAudioTrack && window.desktopApi.applicationAudio && (
           <ApplicationAudioControl onTrack={onApplicationAudioTrack} disabled={isLeaving} />

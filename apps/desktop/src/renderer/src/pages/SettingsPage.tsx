@@ -78,7 +78,9 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const [isWindowsDiagnosticsLoading, setIsWindowsDiagnosticsLoading] =
     useState(!cachedWindowsDiagnostics);
   const [isRepairingFirewall, setIsRepairingFirewall] = useState(false);
+  const [isChangingIconOverlays, setIsChangingIconOverlays] = useState(false);
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
+  const [libraryToolbarTarget, setLibraryToolbarTarget] = useState<HTMLDivElement | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const entranceActiveRef = useRef(false);
   const reduceMotion = usePrefersReducedMotion();
@@ -256,6 +258,8 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
       .finally(() => setIsRepairingFirewall(false));
   };
   const handleIconOverlayChange = (hidden: boolean) => {
+    if (isChangingIconOverlays) return;
+    setIsChangingIconOverlays(true);
     void window.desktopApi.windows
       .setIconOverlaysHidden(hidden)
       .then((iconOverlays) => {
@@ -266,11 +270,15 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
           return next;
         });
         pushToast({
-          tone: "success",
-          title: hidden ? "桌面图标标记已隐藏" : "桌面图标标记已恢复",
+          tone: hidden && !iconOverlays.hidden ? "warning" : "success",
+          title: hidden
+            ? iconOverlays.hidden
+              ? "已设置隐藏图标标记"
+              : "图标标记设置未完成"
+            : "桌面图标标记已恢复",
           description: hidden
-            ? "快捷方式小箭头已隐藏；管理员盾牌仍由 Windows 正常显示。"
-            : "已恢复修改前的 Windows 图标标记。",
+            ? "Windows 图标显示可能需要重新登录；管理员授权仍会正常弹出。"
+            : "已撤销上号写入的标记设置，其他软件的更改会保留。",
         });
       })
       .catch((error) =>
@@ -278,7 +286,8 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
           tone: "danger",
           ...toUserFacingError(error, "settings"),
         }),
-      );
+      )
+      .finally(() => setIsChangingIconOverlays(false));
   };
   const content: Record<SettingsSectionId, React.ReactNode> = {
     account: <AccountSettingsCard />,
@@ -287,7 +296,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         settings={settings}
         onChange={(patch) => void handleSaveSettings(patch)}
         windowsStatus={windowsDiagnostics}
-        loadingWindows={isWindowsDiagnosticsLoading}
+        loadingWindows={isWindowsDiagnosticsLoading || isChangingIconOverlays}
         onIconOverlayChange={handleIconOverlayChange}
         isActive={isActive && activeSection === "general"}
       />
@@ -329,6 +338,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         onChange={handleSaveSettings}
         pushToast={pushToast}
         openTarget={voiceMemoryOpenTarget}
+        toolbarTarget={libraryToolbarTarget}
       />
     ),
     ai: (
@@ -379,7 +389,11 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
           )}
         >
           <div data-gsap-settings="header">
-            <SettingsPageHeader saveNotice={saveNotice} onBack={() => navigate(settingsReturnTo)} />
+            <SettingsPageHeader
+              saveNotice={saveNotice}
+              onBack={() => navigate(settingsReturnTo)}
+              libraryToolbarRef={setLibraryToolbarTarget}
+            />
           </div>
           <div
             className={`mt-2 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)] ${

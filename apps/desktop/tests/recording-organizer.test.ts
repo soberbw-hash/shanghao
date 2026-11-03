@@ -12,8 +12,26 @@ import {
   planRecordingOrganizationChunks,
   transcriptForOrganizationChunk,
   organizationFinalPrompt,
+  organizationChunkPrompt,
   RECORDING_ORGANIZATION_PIPELINE_VERSION,
 } from "../src/main/recording-organizer";
+
+test("cloud organization prompts omit local account and recording directory metadata", () => {
+  const record = {
+    ...longRecord(),
+    filePath: "C:\\Users\\private-account\\Documents\\private-recording.m4a",
+  };
+  const chunks = materializeOrganizationChunks(planRecordingOrganizationChunks(record), undefined);
+  const partial = normalizeOrganizationResult({ description: "有来源的事件" }, record);
+  for (const prompt of [
+    organizationChunkPrompt(record, chunks[0]!),
+    organizationFinalPrompt(record, [partial]),
+  ]) {
+    assert.ok(!prompt.includes(record.filePath));
+    assert.doesNotMatch(prompt, /private-account|private-recording/);
+    assert.match(prompt, /sourceSegmentIds/);
+  }
+});
 
 test("recap normalization removes generic gaming filler and fabricated quotes while retaining a specific sourced joke", () => {
   const record = longRecord();

@@ -7,6 +7,75 @@ import {
 import { createEmptyVoiceMemoryRecord } from "../src/main/voice-memory-record";
 import type { VoiceMemoryRecord, VoiceMemoryProcessRequest } from "@private-voice/shared";
 
+test("an interrupted partial transcript resumes recognition instead of only postprocessing", async () => {
+  const item = { recordingId: "interrupted", filePath: "synthetic.wav" };
+  const record: VoiceMemoryRecord = {
+    ...createEmptyVoiceMemoryRecord(item),
+    phase: "paused",
+    taskStatus: "pending",
+    errorMessage: "deferred:app_restarted",
+    transcript: [
+      {
+        id: "s",
+        recordingId: item.recordingId,
+        speakerId: "s",
+        text: "已有文字",
+        startMs: 0,
+        endMs: 1000,
+      },
+    ],
+  };
+  const requests: VoiceMemoryProcessRequest[] = [];
+  await queueUntranscribedRecordings([item], true, {
+    enabled: () => true,
+    get: async () => record,
+    pending: () => false,
+    reconcile: async () => {},
+    start: async (request) => {
+      requests.push(request);
+    },
+  });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.transcribe, true);
+  assert.equal(requests[0]?.organize, false);
+  assert.notEqual(requests[0]?.restartTranscription, true);
+});
+
+test("interrupted summary does not retranscribe completed cloud audio", async () => {
+  const item = { recordingId: "summary-interrupted", filePath: "synthetic.wav" };
+  const record: VoiceMemoryRecord = {
+    ...createEmptyVoiceMemoryRecord(item),
+    phase: "paused",
+    taskStatus: "pending",
+    errorMessage: "deferred:app_restarted",
+    autoOrganizeRequested: true,
+    transcriptionModel: { id: "siliconflow-sensevoice-small", name: "cloud" },
+    transcriptionElapsedMs: 10,
+    transcript: [
+      {
+        id: "s",
+        recordingId: item.recordingId,
+        speakerId: "s",
+        text: "完整文字",
+        startMs: 0,
+        endMs: 1000,
+      },
+    ],
+  };
+  const requests: VoiceMemoryProcessRequest[] = [];
+  await queueUntranscribedRecordings([item], true, {
+    enabled: () => true,
+    get: async () => record,
+    pending: () => false,
+    reconcile: async () => {},
+    start: async (request) => {
+      requests.push(request);
+    },
+  });
+  // The deferred worker resumes organization; the catalog must not launch ASR.
+  assert.equal(requests.length, 0);
+});
+
 test("newly ready baseline assistance backfills completed cloud text without discarding it", async () => {
   const item = { recordingId: "cloud-assist", filePath: "synthetic.wav" };
   const record: VoiceMemoryRecord = {

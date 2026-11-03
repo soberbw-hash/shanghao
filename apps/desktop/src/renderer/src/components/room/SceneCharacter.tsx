@@ -483,11 +483,15 @@ const SceneCharacterView = ({
     if (!isPresent || shouldReduceMotion) return;
     // Chromium may suspend an entry animation while the game has focus. A
     // counted member must not remain transparent after its route's deadline.
-    const timeout = window.setTimeout(() => {
+    const timeout = window.setInterval(() => {
       const element = motionElementRef.current;
-      if (!element || !element.isConnected) return;
+      if (!element || !element.isConnected || document.hidden) return;
       const visibleOpacity = Number(window.getComputedStyle(element).opacity);
-      if (visibleOpacity > 0.08 && motionPhaseRef.current === "idle") return;
+      const actualPosition = readRenderedScenePosition(element, currentPositionRef.current);
+      const atDestination =
+        Math.abs(actualPosition.left - targetLeft) < 0.1 &&
+        Math.abs(actualPosition.top - targetTop) < 0.1;
+      if (visibleOpacity > 0.08 && motionPhaseRef.current === "idle" && atDestination) return;
       operationIdRef.current += 1;
       stopActiveAnimations();
       element.style.transform = sceneTransform(targetLeft, targetTop);
@@ -498,11 +502,11 @@ const SceneCharacterView = ({
       setDisplayZone(zone);
       setMotionPhase(zone === "restroomZone" ? "away-idle" : "idle");
       onSettledRef.current?.(member.id, zone);
-      void writeRendererLog("app", "warn", "Character route watchdog settled a hidden member", {
+      void writeRendererLog("app", "warn", "Character route watchdog settled an incomplete route", {
         zone,
       });
     }, 4_500);
-    return () => window.clearTimeout(timeout);
+    return () => window.clearInterval(timeout);
   }, [isPresent, member.id, shouldReduceMotion, stopActiveAnimations, targetLeft, targetTop, zone]);
 
   useEffect(() => {

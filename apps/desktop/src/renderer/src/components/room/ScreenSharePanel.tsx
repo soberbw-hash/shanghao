@@ -19,6 +19,7 @@ import type {
 } from "../../features/screen-share/types";
 import { recordScreenSharePresentation } from "../../features/screen-share/screenSharePresentationMetrics";
 import { RemoteControlViewer } from "./RemoteControlViewer";
+import { ScreenShareExpandedViewer } from "./ScreenShareExpandedViewer";
 
 interface VideoFrameCallbackMetadata {
   width?: number;
@@ -215,6 +216,7 @@ const ScreenSharePanelSurface = ({
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [selectedId, setSelectedId] = useState<string>();
   const [isDetaching, setIsDetaching] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [qualityNotice, setQualityNotice] = useState<string>();
   const [unfoldVector, setUnfoldVector] = useState<{
@@ -412,6 +414,15 @@ const ScreenSharePanelSurface = ({
           <button
             type="button"
             className="screen-share-icon-action"
+            onClick={() => setIsExpanded(true)}
+            title="放大共享画面"
+            aria-label="放大共享画面"
+          >
+            <AnimatedControlIcon name="screen-share" className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className="screen-share-icon-action"
             data-icon-motion="expand"
             disabled={isDetaching}
             onClick={() => void openDetachedViewer()}
@@ -443,12 +454,21 @@ const ScreenSharePanelSurface = ({
           </span>
         </div>
       ) : null}
-      <div className="screen-share-video-shell" aria-busy={!primaryPresentation}>
+      <div
+        className="screen-share-video-shell"
+        aria-busy={!primaryPresentation}
+        onDoubleClick={() => setIsExpanded(true)}
+      >
         <ScreenShareMedia item={primaryItem} onPresentation={handlePresentation} />
         {!primaryItem.isLocal && primaryItem.transport === "webrtc" && (
           <RemoteControlViewer peerId={primaryItem.id} />
         )}
       </div>
+      {isExpanded ? (
+        <ScreenShareExpandedViewer title={primaryItem.title} onClose={() => setIsExpanded(false)}>
+          <ScreenShareMedia item={primaryItem} onPresentation={handlePresentation} />
+        </ScreenShareExpandedViewer>
+      ) : null}
       {items.length > 1 ? (
         <div className="screen-share-stack" role="tablist" aria-label="切换共享画面">
           {items.map((item) => (

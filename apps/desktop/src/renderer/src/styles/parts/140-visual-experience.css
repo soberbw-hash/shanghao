@@ -1316,17 +1316,17 @@ dialog::backdrop {
   margin-top: 12px;
   overflow: hidden;
   border: 1px solid rgba(199, 216, 236, 0.75);
-  border-radius: 18px;
+  border-radius: 20px;
   background: rgba(248, 251, 255, 0.76);
 }
 
 .about-release-history > summary {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 11px;
-  min-height: 64px;
-  padding: 12px 14px;
+  gap: 12px;
+  min-height: 84px;
+  padding: 20px;
   cursor: pointer;
   list-style: none;
   transition: background-color 150ms ease;
@@ -1342,17 +1342,17 @@ dialog::backdrop {
 
 .about-release-summary-icon {
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   place-items: center;
-  border-radius: 12px;
+  border-radius: 14px;
   background: #edf4ff;
   color: #5b82bd;
 }
 
 .about-release-summary-icon svg {
-  width: 17px;
-  height: 17px;
+  width: 19px;
+  height: 19px;
 }
 
 .about-release-history summary strong,
@@ -1361,15 +1361,16 @@ dialog::backdrop {
 }
 
 .about-release-history summary strong {
-  color: #34445a;
-  font-size: 13px;
-  font-weight: 740;
+  color: #2b3a50;
+  font-size: 14px;
+  font-weight: 750;
 }
 
 .about-release-history summary small {
-  margin-top: 2px;
-  color: #8291a5;
-  font-size: 11px;
+  margin-top: 3px;
+  color: #77889e;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .about-release-count {

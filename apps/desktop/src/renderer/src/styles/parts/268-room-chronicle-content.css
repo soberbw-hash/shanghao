@@ -1,0 +1,110 @@
+.chat-panel-title-row:has(.chat-content-tabs) {
+  gap: 8px;
+}
+.chat-panel-title-row:has(.chat-content-tabs) .member-availability-controls {
+  margin-right: 0;
+}
+.chat-content-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.room-chronicle {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+}
+.room-chronicle-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 12px;
+  color: #62768e;
+}
+.room-chronicle-toolbar > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 136px;
+  width: 136px;
+  height: 36px;
+  min-height: 36px;
+  gap: 5px;
+  padding: 0 10px;
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid #d3e4f7;
+  background: #f8fbff;
+  border-radius: 10px;
+  color: #397bc7;
+}
+.room-chronicle-toolbar > button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.room-chronicle-toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.room-chronicle-hint {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #788a9f;
+  margin: 0;
+}
+.room-chronicle-entries {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.room-chronicle-entries article {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 12px 10px;
+  border-radius: 12px;
+  background: #f9fcffbf;
+}
+.room-chronicle-entries time {
+  color: #5897db;
+  font-size: 11px;
+  padding-top: 2px;
+}
+.room-chronicle-entries p {
+  font-size: 13px;
+  line-height: 1.75;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.room-chronicle-empty {
+  height: 100%;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #7c94ad;
+}
+.room-chronicle-empty p {
+  font-size: 12px;
+}
+@media (max-width: 1200px) {
+  .chat-content-tabs button {
+    padding-inline: 7px;
+  }
+  .chat-content-tabs button svg {
+    display: none;
+  }
+}

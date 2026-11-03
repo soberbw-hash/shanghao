@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -38,6 +39,9 @@ import { registerRoomMemoryIpc } from "./room-memory-ipc";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
 import { BuiltInAiClient } from "./built-in-ai-client";
+import { registerCloudAiAdminIpc } from "./cloud-ai-admin-ipc";
+import { registerVoiceReplayIpc } from "./voice-replay-ipc";
+import { registerBackgroundAudioIpc } from "./background-audio-ipc";
 import { HuggingFaceAccessStore } from "./hugging-face-access-store";
 import { preparePersistentAiStorage, resolveVoiceMemoryStoragePath } from "./ai-storage";
 import { registerStorageIpc } from "./storage-ipc";
@@ -397,8 +401,9 @@ const bootstrap = async (): Promise<void> => {
   );
   const builtInAi = new BuiltInAiClient(
     () => settingsStore?.getSnapshot().relayServerUrl,
-    () => accounts.getFreshAccessToken(),
+    (forceRefresh) => accounts.getFreshAccessToken(forceRefresh),
     (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    () => accounts.getSnapshot().profile?.userId,
   );
   const transcriptionProvider = new AiTranscriptionProviderStore(
     undefined,
@@ -406,6 +411,8 @@ const bootstrap = async (): Promise<void> => {
     undefined,
     builtInAi,
   );
+  registerCloudAiAdminIpc(() => mainWindow, builtInAi);
+  registerBackgroundAudioIpc(() => mainWindow, settingsStore);
   const huggingFaceAccess = new HuggingFaceAccessStore(
     app.getPath("userData"),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
@@ -546,6 +553,30 @@ const bootstrap = async (): Promise<void> => {
         aiModels.acquireComputeSlot(kind, manualRequest, signal),
       fetcher: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
       consumeBytes: (bytes, signal) => aiModels.consumeBackgroundDownloadBytes(bytes, signal),
+    },
+  );
+  registerVoiceReplayIpc(
+    () => mainWindow,
+    async (filePath, durationMs) => {
+      const result = await aiRuntime.transcribeChunk({
+        recordingId: `replay-${randomUUID()}`,
+        filePath,
+        offsetMs: 0,
+        durationMs,
+        modelId: "qwen3-asr-0.6b-force",
+        manual: true,
+        resourceMode: "low",
+        signal: AbortSignal.timeout(600_000),
+      });
+      if (result.outputStatus !== "normal" && result.outputStatus !== "vad_silence")
+        throw Error("voice_replay_transcription_unavailable");
+      if (result.outputStatus === "vad_silence") return "";
+      return (
+        result.segments
+          .map((segment) => segment.text.trim())
+          .filter(Boolean)
+          .join(" ") || result.rawText.trim()
+      ).slice(0, 20_000);
     },
   );
   const freeTokenRuntime = new FreeTokenManagedRuntime(aiRuntimeDirectory, {

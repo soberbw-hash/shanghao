@@ -1,7 +1,7 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import type { ReadableTranscriptParagraph } from "@private-voice/shared";
-import { transcriptSeekRuns } from "../../features/ai/transcriptSeek";
+import { cleanTranscriptDisplay, transcriptSeekRuns } from "../../features/ai/transcriptSeek";
 
 const clock = (ms: number) => {
   const seconds = Math.max(0, Math.floor(ms / 1000));
@@ -33,7 +33,9 @@ export const TranscriptParagraph = memo(function TranscriptParagraph({
       }}
     >
       <time>
-        {paragraph.sourceSegments.some((segment) => segment.fusionEstimated) ? "≈" : ""}
+        <span className="transcript-estimate">
+          {paragraph.sourceSegments.some((segment) => segment.fusionEstimated) ? "≈" : ""}
+        </span>
         {clock(paragraph.startMs)}
       </time>
       <strong>{name}</strong>
@@ -58,7 +60,7 @@ export const TranscriptParagraph = memo(function TranscriptParagraph({
             data-transcript-start-ms={run.startMs}
             title={`从 ${clock(run.startMs)} 回听`}
           >
-            {run.text}
+            {cleanTranscriptDisplay(run.text)}
           </span>
         ))}
       </span>

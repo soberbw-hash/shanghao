@@ -703,12 +703,7 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
 test("the first main window opens roomy while saved window bounds still take priority", () => {
   const source = readFileSync(mainWindowPath, "utf8");
 
-  assert.match(source, /display\.workArea\.width \* 0\.88/);
-  assert.match(source, /display\.workArea\.height \* 0\.9/);
-  assert.match(source, /Math\.min\(\s*1_680,/);
-  assert.match(source, /Math\.min\(\s*1_050,/);
-  assert.match(source, /savedBounds\.width \?\? defaultWidth/);
-  assert.match(source, /savedBounds\.height \?\? defaultHeight/);
+  assert.match(source, /fitMainWindow\(display\.workArea, savedBounds\)/);
 });
 
 test("room scene supports clickable seats and silent-away without daily summaries", () => {
@@ -727,7 +722,7 @@ test("room scene supports clickable seats and silent-away without daily summarie
   assert.equal(sceneCharacterSource.includes("DeskAnimalSprite"), true);
   assert.equal(roomSource.includes("decideAutoAway"), true);
   assert.equal(roomSource.includes("lastSpokeAtRef"), false);
-  assert.match(roomSource, /moveLocalMemberRef\.current\(\s*"restroomZone",\s*"restroom"/);
+  assert.match(roomSource, /moveLocalMemberRef\.current\(\s*seat,\s*"restroom"/);
   assert.equal(roomSource.includes("recordDailySession"), false);
   assert.equal(homeSource.includes("今日开黑小结"), false);
   assert.equal(homeSource.includes("dailySummary"), false);

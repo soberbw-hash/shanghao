@@ -3,13 +3,9 @@ import {
   RoomConnectionState,
   type BuiltInAvatarId,
   type ChatImageAttachment,
-  type ChatMessage,
-  type ChatRecallEvent,
-  type DailyRoomReport,
   type MemberActivity,
   type MusicActivity,
   type RoomMember,
-  type RoomQuickMessage,
   type RoomCollectionItem,
   type RealtimeFaultCommand,
   type SceneReaction,
@@ -20,7 +16,6 @@ import type {
   AudioChunkMessage,
   AudioPathStateMessage,
   ChatAckMessage,
-  ChannelCountsMessage,
   ErrorMessage,
   IceCandidateMessage,
   JoinAckMessage,
@@ -63,6 +58,7 @@ import { buildRoomDiagnosticsFromSources } from "./RoomDiagnostics";
 import { collectAudioRelayTargets, isPeerAudioPathReady } from "./peerAudioPath";
 import { PresenceCoordinator } from "./PresenceCoordinator";
 import { RoomMemberEventCoordinator } from "./RoomMemberEventCoordinator";
+import { decodeMemberAvailability } from "./memberAvailability";
 import {
   createSignalingReconnectCoordinator,
   SignalingReconnectCoordinator,
@@ -74,7 +70,6 @@ import { collectLongSessionAudioResources } from "./longSessionAudioResources";
 import { isSignalingSessionSupersededError } from "./signalingSessionOwnership";
 import { ReliableChatTransport } from "../chat/ReliableChatTransport";
 import { RoomSocialTransport } from "../chat/RoomSocialTransport";
-import type { QuickMessageControlEvent } from "../chat/quickReplies";
 import { ScreenAudioMixer } from "../screen-share/ScreenAudioMixer";
 import { RoomRemoteControlBridge } from "./RoomRemoteControlBridge";
 import { RoomScreenShareCoordinator } from "../screen-share/RoomScreenShareCoordinator";
@@ -82,48 +77,9 @@ import {
   serverBuildSupportsDailyRoomReports,
   serverBuildSupportsReliableChat,
 } from "../chat/serverCapabilities";
-interface RoomClientOptions {
-  signalingUrl: string;
-  roomId: string;
-  peerId: string;
-  profileId?: string;
-  nickname: string;
-  avatarDataUrl?: string;
-  avatarId?: BuiltInAvatarId;
-  localStream: MediaStream;
-  appVersion: string;
-  protocolVersion: string;
-  buildNumber: string;
-  onMembers: (members: RoomMember[]) => void;
-  onRoomName: (
-    roomName: string,
-    privateRoom?: import("@private-voice/shared").PrivateRoomInfo,
-  ) => void;
-  onConnectionState: (state: RoomConnectionState) => void;
-  onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
-  onChatMessage: (message: ChatMessage) => void;
-  onChatRecall: (event: ChatRecallEvent) => void;
-  onChatHistory: (messages: ChatMessage[]) => void;
-  onChannelCounts?: (counts: ChannelCountsMessage["counts"]) => void;
-  onDailyRoomReports: (roomId: string, reports: DailyRoomReport[]) => void;
-  onRoomCollection: (items: RoomCollectionItem[], replace: boolean) => void;
-  onKnock: (message: ChatMessage) => void;
-  onRemoteScreenFrame: (peerId: string, frame?: RemoteScreenFrame) => void;
-  onRemoteScreenShareState: (peerId: string, isSharing: boolean) => void;
-  onLocalScreenShareViewers?: (peerIds: string[]) => void;
-  onSceneReaction: (reaction: SceneReaction) => void;
-  onQuickMessage: (message: RoomQuickMessage) => void;
-  onQuickMessageControl?: (control: QuickMessageControlEvent) => void;
-  onDiagnosticEvent?: (payload: SignalingEventPayload) => void;
-  onReconnectAttempt?: (attempt: number) => void;
-  onReconnectExhausted?: (error: Error) => void;
-  onUpdateRequired?: (requiredVersion: string, currentVersion: string) => void;
-  onAvatarConflict?: (availableAvatarIds: BuiltInAvatarId[]) => void;
-  onSnapshotRevision?: (revision: number) => void;
-  onRtt?: (rttMs: number) => void;
-  onPeerLatency?: (peerId: string, latencyMs?: number) => void;
-  onPeerStats?: (stats: Record<string, PeerAudioStats>) => void;
-}
+import { RoomChronicleClient } from "./RoomChronicleClient";
+import { RoomReplayClient } from "./RoomReplayClient";
+import type { RoomClientOptions } from "./roomClientOptions";
 interface PendingConnection {
   resolve: () => void;
   reject: (error: Error) => void;
@@ -142,6 +98,8 @@ const SNAPSHOT_RETRY_TIMEOUT_MS = 5_000;
 const AUDIO_PATH_SYNC_INTERVAL_MS = 3_000;
 export { serverBuildSupportsDailyRoomReports, serverBuildSupportsReliableChat };
 export class RoomClient {
+  readonly chronicle: RoomChronicleClient;
+  readonly replay: RoomReplayClient;
   private readonly remoteControl: RoomRemoteControlBridge;
   private readonly signalingBridge = new SignalingBridge();
   private readonly peers = new Map<string, MeshPeerConnection>();
@@ -204,6 +162,18 @@ export class RoomClient {
   private hasLostSignalingOwnership = false;
 
   constructor(private readonly options: RoomClientOptions) {
+    this.chronicle = new RoomChronicleClient(
+      options.roomId,
+      options.peerId,
+      (message) => this.send(message),
+      options.onChronicleState,
+    );
+    this.replay = new RoomReplayClient(
+      options.roomId,
+      options.peerId,
+      (message) => this.send(message),
+      options.onReplayState,
+    );
     this.remoteControl = new RoomRemoteControlBridge(this.peers);
     this.localStream = options.localStream;
     this.primaryInputTrack = options.localStream.getAudioTracks()[0];
@@ -239,6 +209,7 @@ export class RoomClient {
       onRecall: options.onChatRecall,
     });
     this.socialTransport = new RoomSocialTransport({
+      getServerBuildNumber: () => this.serverBuildNumber,
       roomId: options.roomId,
       peerId: options.peerId,
       getNickname: () => this.nickname,
@@ -327,6 +298,8 @@ export class RoomClient {
   }
 
   private async disconnectNow(): Promise<void> {
+    this.chronicle.dispose();
+    this.replay.dispose();
     this.remoteControl.dispose();
     this.shouldReconnect = false;
     this.settlePendingConnection(new Error("room_client_disconnected"));
@@ -673,6 +646,12 @@ export class RoomClient {
 
   private async handleSignal(payload: SignalEnvelope): Promise<void> {
     switch (payload.type) {
+      case "chronicle_state":
+        this.chronicle.receive(payload);
+        return;
+      case "replay_state":
+        this.replay.receive(payload);
+        return;
       case "join_ack":
         this.handleJoinAck(payload);
         return;
@@ -834,6 +813,8 @@ export class RoomClient {
 
     this.joinAckReceived = true;
     this.serverBuildNumber = payload.buildNumber;
+    this.chronicle.capability(payload.chronicleSupported === true);
+    this.replay.capability(payload.replaySupported === true);
     this.reconnectSessionToken = payload.sessionToken;
     this.hasJoinedOnce = true;
     this.joinStage = "join_ack_received";
@@ -1078,16 +1059,7 @@ export class RoomClient {
   }
 
   async requestDailyRoomReports(targetRoomId: string): Promise<boolean> {
-    if (!this.canSendChat()) throw new Error("signaling_not_connected");
-    // Protocol-7 servers before this additive message reject it and disable the room connection.
-    if (!serverBuildSupportsDailyRoomReports(this.serverBuildNumber)) return false;
-    await this.send({
-      type: "request_daily_room_reports",
-      roomId: this.options.roomId,
-      peerId: this.options.peerId,
-      targetRoomId,
-    });
-    return true;
+    return this.socialTransport.requestDailyRoomReports(targetRoomId);
   }
 
   async recallChatMessage(messageId: string): Promise<void> {
@@ -1111,6 +1083,9 @@ export class RoomClient {
   }
 
   async sendSceneReaction(targetPeerId: string, emoji: SceneReaction["emoji"]): Promise<void> {
+    const status = decodeMemberAvailability(targetPeerId);
+    if (status)
+      this.memberEvents.updateLocalAvailability(status === "available" ? undefined : status);
     await this.socialTransport.react(targetPeerId, emoji);
   }
 

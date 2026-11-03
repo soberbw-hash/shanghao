@@ -1,0 +1,36 @@
+.voice-dock-presence .member-availability-controls button {
+  justify-content: center;
+  width: 62px;
+  height: 36px;
+  padding: 0 7px;
+  gap: 5px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.voice-dock-presence .member-availability-controls svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.voice-dock-presence .member-availability-controls button[aria-pressed="true"] {
+  background: #dcecff;
+  border-color: #8bbcf4;
+  color: #286cba;
+  box-shadow: inset 0 1px 0 #ffffffb3;
+}
+@media (max-width: 1180px) {
+  .room-page .voice-dock {
+    flex-wrap: wrap;
+  }
+  .voice-dock-presence {
+    margin-left: 0;
+    padding-left: 6px;
+  }
+  .voice-dock-presence .member-availability-controls button {
+    width: 51px;
+    padding: 0 4px;
+    gap: 3px;
+  }
+}

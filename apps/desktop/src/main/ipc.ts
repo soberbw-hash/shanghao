@@ -51,8 +51,6 @@ import {
   type OverlayState,
   type RelayStatusSnapshot,
   type RealtimeFaultCommand,
-  type RecordingAutomaticCleanupResult,
-  type RecordingBatchDeleteResult,
   type RecordingLibrarySnapshot,
   type RecordingLibraryItem,
   type RendererLogPayload,
@@ -85,17 +83,11 @@ import { exportQuickMessagePack } from "./quick-message-export";
 import { clearAvatarImage, pickAvatarImage, readAvatarImage } from "./profile-media";
 import { registerRecordingStreamIpcHandlers } from "./recording-stream-ipc";
 import { registerRecordingTrackIpcHandlers } from "./recording-tracks-ipc";
-import { cleanupRecordingParticipantTracks } from "./recording-participant-tracks";
+import { registerRecordingRecycleIpc } from "./recording-recycle-ipc";
 import { resolveRecordingDirectory, resolveUsableRecordingDirectory } from "./recording-path";
 import { requireVoiceMemoryProcessRequest } from "./voice-memory-ipc-validation";
 import { registerPrivateRoomsIpc } from "./private-rooms-ipc";
-import {
-  deleteRecording,
-  readRecordingLibrary,
-  renameRecording,
-  runAutomaticRecordingCleanup,
-  setRecordingFavorite,
-} from "./recording-library";
+import { readRecordingLibrary, renameRecording, setRecordingFavorite } from "./recording-library";
 import { readRelayStatus } from "./relay-status";
 import { buildRuntimeEventTimeline } from "./runtime-event-timeline";
 import { sendToWindow } from "./safe-web-contents";
@@ -1167,41 +1159,19 @@ export const registerIpcHandlers = ({
     return result.canceled ? undefined : result.filePaths[0];
   });
   registerRecordingMarkerIpcHandler(settingsStore);
-  ipcMain.handle(
-    IPC_CHANNELS.recording.applyAutomaticCleanup,
-    async (_event, filePath: string): Promise<RecordingAutomaticCleanupResult> => {
-      const currentFilePath = requireString(filePath, 2_048, "recording_file_path");
-      const settings = settingsStore.getSnapshot();
-      const cleanup = await runAutomaticRecordingCleanup(
-        settings.recordingSaveDirectory,
-        settings.recordingLibraryQuotaGb,
-        settings.isRecordingWasteAutoCleanupEnabled,
-        currentFilePath,
-      );
-      for (const item of cleanup.deletedItems) {
-        await voiceMemory.delete(item.recordingId).catch(() => undefined);
-        await voiceMemory.delete(item.filePath).catch(() => undefined);
-      }
-      if (cleanup.deletedItems.length > 0) {
-        await diagnostics.writeLog({
-          category: "recording",
-          level: "info",
-          message: "Automatic recording cleanup completed",
-          context: {
-            wasteDeletedCount: cleanup.wasteDeletedCount,
-            quotaDeletedCount: cleanup.quotaDeletedCount,
-          },
-        });
-      }
-      return {
-        deletedFilePaths: cleanup.deletedItems.map((item) => item.filePath),
-        deletedCurrentRecording: cleanup.deletedItems.some(
-          (item) => item.filePath === currentFilePath,
-        ),
-        wasteDeletedCount: cleanup.wasteDeletedCount,
-        quotaDeletedCount: cleanup.quotaDeletedCount,
-      };
+  const recycle = registerRecordingRecycleIpc(
+    () => settingsStore.getSnapshot(),
+    getMainWindow,
+    voiceMemory,
+    (error) => {
+      void diagnostics.writeLog({
+        category: "recording",
+        level: "warn",
+        message: "Recording recycle maintenance deferred",
+        context: { error: error instanceof Error ? error.message : "recording_recycle_failed" },
+      });
     },
+    (id) => aiModels.clearTaskCheckpointsForRecording(id),
   );
   ipcMain.handle(IPC_CHANNELS.recording.list, async (): Promise<RecordingLibrarySnapshot> => {
     const settings = settingsStore.getSnapshot();
@@ -1211,7 +1181,11 @@ export const registerIpcHandlers = ({
     );
     return reconcileRecordingMemories(snapshot, voiceMemory);
   });
-  registerRecordingCleanupIpc(() => settingsStore.getSnapshot(), getMainWindow);
+  registerRecordingCleanupIpc(
+    () => settingsStore.getSnapshot(),
+    getMainWindow,
+    recycle.recycleScanned,
+  );
   ipcMain.handle(
     IPC_CHANNELS.recording.setFavorite,
     async (_event, filePath: string, isFavorite: boolean): Promise<void> => {
@@ -1257,89 +1231,6 @@ export const registerIpcHandlers = ({
         ).catch(() => undefined);
         throw error;
       }
-    },
-  );
-  ipcMain.handle(IPC_CHANNELS.recording.delete, async (_event, filePath: string): Promise<void> => {
-    const recordingPath = requireString(filePath, 2_048, "recording_file_path");
-    const settings = settingsStore.getSnapshot();
-    const library = await readRecordingLibrary(
-      settings.recordingSaveDirectory,
-      settings.recordingLibraryQuotaGb,
-    );
-    const item = library.items.find((candidate) => candidate.filePath === recordingPath);
-    await deleteRecording(settings.recordingSaveDirectory, recordingPath);
-    try {
-      if (item) await voiceMemory.delete(item.recordingId);
-      await voiceMemory.delete(recordingPath);
-      await cleanupRecordingParticipantTracks(item?.recordingId ?? recordingPath);
-    } catch (error) {
-      await diagnostics.writeLog({
-        category: "recording",
-        level: "warn",
-        message: "Recording deleted but voice-memory cleanup failed",
-        context: {
-          recordingId: item?.recordingId ?? recordingPath,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
-    }
-  });
-  ipcMain.handle(
-    IPC_CHANNELS.recording.deleteMany,
-    async (_event, filePaths: unknown): Promise<RecordingBatchDeleteResult> => {
-      if (!Array.isArray(filePaths) || filePaths.length > 500) {
-        throw new Error("invalid_recording_delete_batch");
-      }
-      const requested = [
-        ...new Set(
-          filePaths.map((filePath) => requireString(filePath, 2_048, "recording_file_path")),
-        ),
-      ];
-      const deleteSettings = settingsStore.getSnapshot();
-      const deleteLibrary = await readRecordingLibrary(
-        deleteSettings.recordingSaveDirectory,
-        deleteSettings.recordingLibraryQuotaGb,
-      );
-      const itemsByPath = new Map(deleteLibrary.items.map((item) => [item.filePath, item]));
-      const result: RecordingBatchDeleteResult = { deletedFilePaths: [], failed: [] };
-      for (let index = 0; index < requested.length; index += 4) {
-        const batch = requested.slice(index, index + 4);
-        const settled = await Promise.allSettled(
-          batch.map(async (recordingPath) => {
-            const item = itemsByPath.get(recordingPath);
-            await deleteRecording(deleteSettings.recordingSaveDirectory, recordingPath);
-            try {
-              if (item) await voiceMemory.delete(item.recordingId);
-              await voiceMemory.delete(recordingPath);
-              await cleanupRecordingParticipantTracks(item?.recordingId ?? recordingPath);
-            } catch (error) {
-              await diagnostics.writeLog({
-                category: "recording",
-                level: "warn",
-                message: "Recording deleted but voice-memory cleanup failed",
-                context: {
-                  recordingId: item?.recordingId ?? recordingPath,
-                  error: error instanceof Error ? error.message : String(error),
-                },
-              });
-            }
-            return recordingPath;
-          }),
-        );
-        settled.forEach((entry, entryIndex) => {
-          const filePath = batch[entryIndex];
-          if (!filePath) return;
-          if (entry.status === "fulfilled") {
-            result.deletedFilePaths.push(filePath);
-          } else {
-            result.failed.push({
-              filePath,
-              message: entry.reason instanceof Error ? entry.reason.message : String(entry.reason),
-            });
-          }
-        });
-      }
-      return result;
     },
   );
   return rooms;

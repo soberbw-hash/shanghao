@@ -44,11 +44,23 @@ export class RoomMemberEventCoordinator {
   private localScene?: Pick<RoomMember, "sceneZone" | "activity">;
   private readonly avatars = new Map<string, { avatarHash?: string; avatarDataUrl?: string }>();
   private readonly availability = new Map<string, MemberAvailability>();
+  private localAvailabilitySelected = false;
 
   constructor(private readonly options: RoomMemberEventCoordinatorOptions) {}
 
   get currentMembers(): RoomMember[] {
     return this.members;
+  }
+
+  updateLocalAvailability(status?: MemberAvailability): void {
+    this.localAvailabilitySelected = true;
+    const id = this.options.localPeerId;
+    if (status) this.availability.set(id, status);
+    else this.availability.delete(id);
+    this.members = this.members.map((member) =>
+      member.id === id ? { ...member, availabilityStatus: status } : member,
+    );
+    this.options.onMembers(this.members);
   }
 
   setMembers(members: RoomMember[]): void {
@@ -118,6 +130,7 @@ export class RoomMemberEventCoordinator {
     const status = decodeMemberAvailability(payload.targetPeerId);
     if (status) {
       if (!this.members.some((member) => member.id === payload.peerId)) return;
+      if (payload.peerId === this.options.localPeerId && this.localAvailabilitySelected) return;
       if (status === "available") this.availability.delete(payload.peerId);
       else this.availability.set(payload.peerId, status);
       this.members = this.members.map((member) =>

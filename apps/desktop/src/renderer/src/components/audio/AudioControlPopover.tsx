@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
 
 import { Smartphone, Volume2 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -15,6 +15,7 @@ import { popoverSurfaceVariants, reducedFadeVariants } from "../../features/moti
 import { MIC_TEST_DURATION_SECONDS, type MicTestPhase } from "../../hooks/useMicTest";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { PHONE_MIC_DEVICE_ID } from "../../features/audio/phoneMicSource";
+import { BackgroundAudioBalanceSwitch } from "./BackgroundAudioBalance";
 
 export interface MicrophoneTestControls {
   phase: MicTestPhase;
@@ -28,6 +29,7 @@ export interface MicrophoneTestControls {
 }
 
 interface AudioControlPopoverProps {
+  presetControlHost?: Ref<HTMLDivElement>;
   isOpen?: boolean;
   title: string;
   devices: AudioDeviceDescriptor[];
@@ -59,6 +61,7 @@ interface AudioControlPopoverProps {
 }
 
 export const AudioControlPopover = ({
+  presetControlHost,
   isOpen = true,
   title,
   devices,
@@ -156,6 +159,7 @@ export const AudioControlPopover = ({
         <strong>{title}</strong>
         <span>{Math.round(draftVolume * 100)}%</span>
       </div>
+      {presetControlHost && <div ref={presetControlHost} className="audio-device-presets-host" />}
       {typeof noiseSuppressionEnabled === "boolean" && onNoiseSuppressionChange ? (
         <div
           className="audio-control-processing-option"
@@ -317,6 +321,7 @@ export const AudioControlPopover = ({
           />
         </div>
       ) : null}
+      {title === "扬声器" ? <BackgroundAudioBalanceSwitch /> : null}
       <div className="audio-control-popover-slider">
         <Slider
           min={min}

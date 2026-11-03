@@ -6,21 +6,42 @@ import "../../src/renderer/src/styles/index.css";
 function Fixture() {
   const [phase, setPhase] = useState<GameSessionActivity["phase"]>("lobby");
   const [size, setSize] = useState(1);
+  const [capacity, setCapacity] = useState(5);
+  const [mode, setMode] = useState<GameSessionActivity["mode"]>("大乱斗");
   return (
     <main style={{ padding: 32 }}>
-      <div id="monitor" style={{ position: "relative", width: 240, height: 144, borderRadius: 8 }}>
+      <div id="monitor" style={{ position: "relative", width: 112, height: 67, borderRadius: 8 }}>
         <GameMonitorContent
           gameName="英雄联盟"
           gameSession={{
             source: "league",
             phase,
-            mode: "大乱斗",
+            mode,
             partySize: size,
-            partyCapacity: 5,
+            partyCapacity: capacity,
           }}
         />
       </div>
       <button onClick={() => setSize(2)}>two</button>
+      <button
+        onClick={() => {
+          setCapacity(2);
+          setSize(1);
+        }}
+      >
+        one-of-two
+      </button>
+      <button
+        onClick={() => {
+          setCapacity(5);
+          setSize(2);
+        }}
+      >
+        two-of-five
+      </button>
+      <button onClick={() => setCapacity(14)}>fourteen</button>
+      <button onClick={() => setMode("训练模式")}>practice</button>
+      <button onClick={() => setPhase("ready-check")}>ready</button>
       <button onClick={() => setPhase("matchmaking")}>queue</button>
       <button onClick={() => setPhase("in-game")}>game</button>
     </main>

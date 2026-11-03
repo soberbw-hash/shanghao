@@ -7,6 +7,7 @@ import {
 type ShortcutBindings = {
   configureGlobalMute: (accelerator: string) => Promise<boolean>;
   configureRecordingMarker: (accelerator: string) => Promise<boolean>;
+  configureAudioDevicePreset?: (accelerator: string) => Promise<boolean>;
   configurePushToTalk: (accelerator: string, enabled: boolean) => Promise<boolean>;
   configureQuickMessage: (slot: number, accelerator: string) => Promise<boolean>;
 };
@@ -43,6 +44,13 @@ export const applyShortcutSettingsPatch = async (
   shortcuts: ShortcutBindings,
 ): Promise<Partial<AppSettings>> => {
   const rollback: Partial<AppSettings> = {};
+  if ("audioDevicePresetShortcut" in partial) {
+    const applied = await shortcuts
+      .configureAudioDevicePreset?.(current.audioDevicePresetShortcut ?? "")
+      .catch(() => false);
+    if (!applied && current.audioDevicePresetShortcut)
+      rollback.audioDevicePresetShortcut = previous.audioDevicePresetShortcut ?? "";
+  }
   if ("globalMuteShortcut" in partial) {
     const applied = await shortcuts
       .configureGlobalMute(current.globalMuteShortcut)
@@ -116,12 +124,18 @@ export const reconcileResetShortcuts = async (
 
   await shortcuts.configureGlobalMute("");
   await shortcuts.configureRecordingMarker("");
+  await shortcuts.configureAudioDevicePreset?.("");
   await shortcuts.configurePushToTalk("", false);
   for (let index = 0; index < bindings.length; index++) {
     await shortcuts.configureQuickMessage(index, "");
   }
 
   const failed: string[] = [];
+  if (
+    settings.audioDevicePresetShortcut &&
+    !(await shortcuts.configureAudioDevicePreset?.(settings.audioDevicePresetShortcut))
+  )
+    failed.push("audio-preset");
   if (
     settings.globalMuteShortcut &&
     !(await shortcuts.configureGlobalMute(settings.globalMuteShortcut))

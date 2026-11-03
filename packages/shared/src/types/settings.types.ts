@@ -35,11 +35,15 @@ export interface AppSettings {
   isHardwareAccelerationEnabled: boolean;
   isOverlayEnabled: boolean;
   preferredInputDeviceId?: string;
+  audioDevicePresets?: import("../audio-device-presets").AudioDevicePreset[];
+  audioDevicePresetShortcut?: string;
   phoneMicMode?: "wifi" | "usb" | "web";
   preferredOutputDeviceId?: string;
   microphoneSendVolume: number;
   speakerMasterVolume: number;
   isFriendLoudnessBalanceEnabled: boolean;
+  isBackgroundAudioBalanceEnabled?: boolean;
+  backgroundAudioBalanceShortcut?: string;
   micEqualizerGains: MicEqualizerGains;
   lowCutFrequency: LowCutFrequency;
   globalMuteShortcut: string;
@@ -50,6 +54,7 @@ export interface AppSettings {
   recordingSaveDirectory?: string;
   recordingLibraryQuotaGb: number;
   isRecordingWasteAutoCleanupEnabled: boolean;
+  isRecordingShortAutoCleanupEnabled?: boolean;
   aiAsrModel: AiAsrModelId;
   aiTranscriptionProvider?: AiTranscriptionProvider;
   isAiCloudLocalAssistEnabled?: boolean;

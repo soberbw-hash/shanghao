@@ -7,6 +7,8 @@ export class CloudAsrService {
   constructor(
     private readonly key = process.env.SILICONFLOW_API_KEY?.trim() ?? "",
     private readonly fetcher: typeof fetch = fetch,
+    private readonly provider = PROVIDER,
+    private readonly model = CLOUD_ASR_MODEL,
   ) {}
   isConfigured(): boolean {
     return Boolean(this.key);
@@ -19,8 +21,8 @@ export class CloudAsrService {
     if (!this.key) throw Error("cloud_asr_not_configured");
     const form = new FormData();
     form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), "audio-chunk");
-    form.append("model", CLOUD_ASR_MODEL);
-    const response = await this.fetcher(PROVIDER, {
+    form.append("model", this.model);
+    const response = await this.fetcher(this.provider, {
       method: "POST",
       redirect: "error",
       headers: { Authorization: `Bearer ${this.key}` },
@@ -61,6 +63,6 @@ export class CloudAsrService {
     }
     if (!payload || typeof payload.text !== "string") throw Error("cloud_asr_invalid_response");
     signal.throwIfAborted();
-    return { text: payload.text, modelName: CLOUD_ASR_MODEL };
+    return { text: payload.text, modelName: this.model };
   }
 }

@@ -6,6 +6,7 @@ import { desktopApi } from "../utils/desktopApi";
 import { useRoomStore } from "../store/roomStore";
 import { playUiSound } from "../features/audio/uiSound";
 import { setAudioSendEnabled } from "../features/audio/audioSendGate";
+import { readAvailabilitySoundTransition } from "../features/audio/availabilitySoundTransition";
 
 export function usePhoneModeSync(): void {
   useEffect(() => {
@@ -39,7 +40,8 @@ export function usePhoneModeSync(): void {
       if (!state.busy && !state.error) {
         // Busy/error states represent the privacy gate, not a completed native
         // transition. Reconciliation and duplicate acknowledgements stay quiet.
-        if (live && !state.active && confirmedActive) playUiSound("phone-mode-exit");
+        if (live && !state.active && confirmedActive && !readAvailabilitySoundTransition().active)
+          playUiSound("phone-mode-exit");
         confirmedActive = state.active;
       }
       if (state.error)

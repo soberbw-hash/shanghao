@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "./TemporaryRoomDialogs.css";
 import { LockKeyhole, UnlockKeyhole, RefreshCw, Copy } from "lucide-react";
 import { useRoomStore } from "../../store/roomStore";
+import { useAppStore } from "../../store/appStore";
 import { temporaryRoomMessage } from "../../features/room/temporaryRoomMessages";
 import type { TemporaryRoomManageRequest } from "@private-voice/shared";
 import { DialogCloseButton } from "../base/DialogCloseButton";
@@ -11,7 +12,7 @@ export function TemporaryRoomControls() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [opened, setOpened] = useState(false);
-  const [copiedCode, setCopiedCode] = useState("");
+  const pushToast = useAppStore((state) => state.pushToast);
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (!opened) return;
@@ -25,7 +26,7 @@ export function TemporaryRoomControls() {
   const copyCode = async () => {
     try {
       await window.desktopApi.clipboard.writeText(room.code);
-      setCopiedCode(room.code);
+      pushToast({ tone: "success", title: "房间号已复制到剪贴板" });
     } catch {
       setError("复制失败，请手动复制房间码。");
     }
@@ -70,7 +71,6 @@ export function TemporaryRoomControls() {
       >
         <Copy size={13} />
         {room.code.slice(0, 4)} {room.code.slice(4)}
-        {copiedCode === room.code ? " · 已复制" : ""}
       </button>
       <div className="temporary-room-controls">
         <button
@@ -111,7 +111,7 @@ export function TemporaryRoomControls() {
                   {room.code.slice(0, 4)} {room.code.slice(4)}
                 </strong>
                 <Copy size={16} />
-                {copiedCode === room.code ? "已复制" : "复制房间码"}
+                复制房间码
               </button>
               <p className="temporary-invite-hint">
                 朋友打开「临时联机 → 加入房间」，输入此码即可加入。

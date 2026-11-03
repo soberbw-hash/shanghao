@@ -78,9 +78,9 @@ small{display:block;color:#7890aa;margin-top:18px;line-height:1.5}#error{color:#
     if(stream){send({type:'stop'});stopMedia();return;}
     try{
       setError('');toggle.disabled=true;
-      stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
+      stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:false,autoGainControl:false,channelCount:1},video:false});
       const settings=stream.getAudioTracks()[0].getSettings();
-      details.textContent='麦克风：'+(stream.getAudioTracks()[0].label||'系统默认')+' · '+(settings.sampleRate||'设备原生')+' Hz';
+      details.textContent=(settings.echoCancellation===true?'手机回声抑制已开启。':'已请求手机回声抑制。')+'电脑使用耳机可减少扬声器回声。';
       meterContext=new AudioContext();meterSource=meterContext.createMediaStreamSource(stream);
       analyser=meterContext.createAnalyser();analyser.fftSize=512;meterSource.connect(analyser);
       const values=new Uint8Array(analyser.fftSize);

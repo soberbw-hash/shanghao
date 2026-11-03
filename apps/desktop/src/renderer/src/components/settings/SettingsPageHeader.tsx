@@ -5,9 +5,11 @@ import { Button } from "../base/Button";
 export const SettingsPageHeader = ({
   onBack,
   saveNotice,
+  libraryToolbarRef,
 }: {
   onBack: () => void;
   saveNotice: string;
+  libraryToolbarRef?: (element: HTMLDivElement | null) => void;
 }) => (
   <div className="settings-page-header flex items-center justify-between gap-4">
     <div>
@@ -16,6 +18,7 @@ export const SettingsPageHeader = ({
         设置
       </div>
     </div>
+    <div ref={libraryToolbarRef} className="settings-library-toolbar-slot" />
     <div className="settings-page-header-actions">
       <div className="settings-save-notice" aria-live="polite">
         {saveNotice}

@@ -119,7 +119,39 @@ const verify = async () => {
   if (Math.abs(point.left - 28) > 0.05 || Math.abs(point.top - 38) > 0.05) {
     throw new Error(`scaled position: ${JSON.stringify(point)}`);
   }
+  // A compositor or style reset can leave an otherwise visible, idle character
+  // at the door. The watchdog must check its position, not just opacity/phase.
+  await delay(4600); // Also recover a reset that happens after the first watchdog check.
+  const stuckElement = document.querySelector<HTMLElement>(".scene-character-motion")!;
+  stuckElement.style.transform = "translate3d(8cqw, 70cqh, 0)";
+  await waitFor(() => {
+    const recovered = api().read();
+    return Math.abs(recovered.left - 28) < 0.1 && Math.abs(recovered.top - 38) < 0.1;
+  }, "visible character stuck at entry");
   await waitFor(() => !doorOpen(), "door closes after arrival in StrictMode");
+  await waitFor(
+    () =>
+      [...document.querySelectorAll<HTMLImageElement>(".room-character-visual-layer img")].every(
+        (image) => image.complete && image.naturalWidth > 0,
+      ),
+    "character pose images load",
+  );
+  let poseFrames = 0;
+  let poseError = "";
+  let observePoses = true;
+  const checkPoseFrame = () => {
+    if (!observePoses) return;
+    const layers = [...document.querySelectorAll<HTMLElement>(".room-character-visual-layer")];
+    if (layers.length) {
+      const visible = layers.filter((layer) => Number(getComputedStyle(layer).opacity) > 0.01);
+      if (visible.length !== 1 || Number(getComputedStyle(visible[0]).opacity) < 0.99) {
+        poseError ||= `pose overlap or disappearance: ${layers.map((layer) => getComputedStyle(layer).opacity).join(", ")}`;
+      }
+      poseFrames++;
+    }
+    requestAnimationFrame(checkPoseFrame);
+  };
+  requestAnimationFrame(checkPoseFrame);
   for (const target of [
     "gameDesk2",
     "restroomZone",
@@ -161,6 +193,8 @@ const verify = async () => {
     () => settled("gameDesk4") && element.dataset.motionPhase === "idle",
     "failure recovery",
   );
+  observePoses = false;
+  if (poseError || poseFrames < 10) throw new Error(poseError || "too few pose frames sampled");
   api().setPresent(false);
   await waitFor(() => Boolean(doorOpen()), "door opens for departure");
   await waitFor(() => !document.querySelector(".scene-character-motion"), "exit");
@@ -170,6 +204,7 @@ const verify = async () => {
     scaledPosition: point,
     completedRoutes: 6,
     interruptions: 5,
+    poseFrames,
     failureRecovery: true,
     exit: true,
     welcomeDoor: true,

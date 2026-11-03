@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { normalizeAudioDevicePresets } from "@private-voice/shared";
 
 import {
   DEFAULT_ROOM_NAME,
@@ -63,6 +64,7 @@ export const defaultSettings: AppSettings = {
   recordingSaveDirectory: undefined,
   recordingLibraryQuotaGb: 20,
   isRecordingWasteAutoCleanupEnabled: true,
+  isRecordingShortAutoCleanupEnabled: true,
   aiAsrModel: DEFAULT_AI_ASR_MODEL_ID,
   aiTranscriptionProvider: "cloud",
   isAiCloudLocalAssistEnabled: true,
@@ -285,6 +287,11 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isHardwareAccelerationEnabled: true,
     isOverlayEnabled: true,
     preferredInputDeviceId: trimUnknownText(raw.preferredInputDeviceId),
+    audioDevicePresets: normalizeAudioDevicePresets(raw.audioDevicePresets),
+    audioDevicePresetShortcut: trimUnknownText(raw.audioDevicePresetShortcut)?.slice(0, 80) ?? "",
+    isBackgroundAudioBalanceEnabled: normalizeBoolean(raw.isBackgroundAudioBalanceEnabled, false),
+    backgroundAudioBalanceShortcut:
+      trimUnknownText(raw.backgroundAudioBalanceShortcut)?.slice(0, 80) ?? "",
     phoneMicMode:
       raw.phoneMicMode === "wifi" || raw.phoneMicMode === "usb" ? raw.phoneMicMode : "web",
     preferredOutputDeviceId: trimUnknownText(raw.preferredOutputDeviceId),
@@ -325,6 +332,10 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isRecordingWasteAutoCleanupEnabled: normalizeBoolean(
       raw.isRecordingWasteAutoCleanupEnabled,
       defaultSettings.isRecordingWasteAutoCleanupEnabled,
+    ),
+    isRecordingShortAutoCleanupEnabled: normalizeBoolean(
+      raw.isRecordingShortAutoCleanupEnabled,
+      true,
     ),
     // Saved and legacy configurations keep their choice or original fallback;
     // the new-profile recommendation only applies through defaultSettings.

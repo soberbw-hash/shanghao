@@ -13,6 +13,8 @@ import { MemberAvailabilityControls } from "../../src/renderer/src/components/ch
 import { ChatPanelHeader } from "../../src/renderer/src/components/chat/ChatPanelHeader";
 import { SceneCharacter } from "../../src/renderer/src/components/room/SceneCharacter";
 import { usePhoneModeSync } from "../../src/renderer/src/hooks/usePhoneModeSync";
+import { useLocalAudioTransport } from "../../src/renderer/src/hooks/useLocalAudioTransport";
+import { RoomClient } from "../../src/renderer/src/features/room/roomClient";
 import "../../src/renderer/src/styles/index.css";
 
 const initial: RoomMember[] = ["local", "friend-a", "friend-b"].map((id, index) => ({
@@ -38,8 +40,33 @@ const events = new RoomMemberEventCoordinator({
   onQuickMessage: () => {},
 });
 events.setMembers(initial);
+const context = new AudioContext(),
+  output = context.createMediaStreamDestination();
+useRoomStore.getState().setLocalStream(output.stream);
+let holdNetwork = false;
+document.addEventListener("fixture-hold-network", () => {
+  holdNetwork = true;
+});
+const sendReaction = RoomClient.prototype.sendSceneReaction.bind({
+  memberEvents: events,
+  socialTransport: {
+    react: async () => {
+      if (holdNetwork) await new Promise<void>(() => {});
+    },
+  },
+} as unknown as RoomClient);
+Object.assign(window, {
+  availabilityFixture: {
+    audio: () => ({
+      isMuted: useAudioStore.getState().isMuted,
+      isDeafened: useAudioStore.getState().isDeafened,
+      trackEnabled: output.stream.getAudioTracks()[0]!.enabled,
+    }),
+  },
+});
 const Fixture = () => {
   usePhoneModeSync();
+  useLocalAudioTransport();
   const snapshot = useRoomStore((state) => state.room.members);
   const members = snapshot.filter((member) => !member.isEmptySlot);
   const muted = useAudioStore((state) => state.isMuted);
@@ -52,21 +79,7 @@ const Fixture = () => {
         roomAiPanel={null}
         onOpenAssistant={() => {}}
         onOpenQuickSettings={() => {}}
-        presenceControls={
-          <MemberAvailabilityControls
-            canSend
-            send={async (targetPeerId, emoji) => {
-              events.handleReaction({
-                type: "scene_reaction",
-                roomId: "main",
-                peerId: "local",
-                targetPeerId,
-                emoji,
-                createdAt: new Date().toISOString(),
-              });
-            }}
-          />
-        }
+        presenceControls={<MemberAvailabilityControls canSend send={sendReaction} />}
       >
         <span>快捷消息区域</span>
       </ChatPanelHeader>

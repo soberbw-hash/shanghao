@@ -30,6 +30,22 @@ const launcherPath = () =>
     "launch-dev.ps1",
   );
 
+/** Preserve the Windows RunAs flag when Electron recreates a development shortcut. */
+export const ensureDevelopmentShortcutElevation = (shortcut: string): void => {
+  const bytes = readFileSync(shortcut);
+  const shellLinkClass = Buffer.from("0114020000000000c000000000000046", "hex");
+  if (
+    bytes.length < 76 ||
+    bytes.readUInt32LE(0) !== 76 ||
+    !bytes.subarray(4, 20).equals(shellLinkClass)
+  )
+    throw new Error("development_shortcut_invalid");
+  const flags = bytes.readUInt32LE(20);
+  if ((flags & 0x2000) !== 0) return;
+  bytes.writeUInt32LE(flags | 0x2000, 20);
+  writeFileSync(shortcut, bytes);
+};
+
 const developmentLaunch = () =>
   existsSync(launcherPath())
     ? {
@@ -45,20 +61,11 @@ const developmentLaunch = () =>
     : { target: process.execPath, args: `"${app.getAppPath()}"` };
 
 const elevatedDevelopmentCommand = (): string => {
-  const encodedPath = Buffer.from(launcherPath(), "utf16le").toString("base64");
-  const body = `$taskFile = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('${encodedPath}')); & ([ScriptBlock]::Create([IO.File]::ReadAllText($taskFile)))`;
-  const encoded = Buffer.from(body, "utf16le").toString("base64");
-  const script = [
-    "$taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()",
-    "$taskPrincipal = New-Object Security.Principal.WindowsPrincipal($taskIdentity)",
-    "if (-not $taskPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {",
-    "$taskShell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'",
-    `Start-Process -FilePath $taskShell -Verb RunAs -WindowStyle Hidden -ArgumentList '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${encoded}'`,
-    "exit",
-    "}",
-    body,
-  ].join("\n");
-  return Buffer.from(script, "utf16le").toString("base64");
+  // Shell Link readers commonly allocate only 1024 characters for arguments.
+  // Keep elevation and all startup logic in the stable file, never embed it in a link.
+  const file = launcherPath().replaceAll("'", "''");
+  const body = `& ([ScriptBlock]::Create([IO.File]::ReadAllText('${file}')))`;
+  return Buffer.from(body, "utf16le").toString("base64");
 };
 
 export const developmentRelaunchCommand = (): string => {
@@ -121,8 +128,10 @@ export const repairDevelopmentShortcuts = (): void => {
         current.args === launch.args &&
         current.icon === icon &&
         current.appUserModelId === `${APP_ID}.dev`
-      )
+      ) {
+        ensureDevelopmentShortcutElevation(shortcut);
         continue;
+      }
     }
     if (
       !shell.writeShortcutLink(shortcut, "create", {
@@ -135,6 +144,7 @@ export const repairDevelopmentShortcuts = (): void => {
       })
     )
       throw new Error("development_shortcut_write_failed");
+    ensureDevelopmentShortcutElevation(shortcut);
   }
   // Retire the displayed old Shell item only after the replacement is written.
   for (const folder of [app.getPath("desktop"), programs]) {

@@ -58,12 +58,14 @@ import art56 from "../../assets/games/screens/steam-271590.jpg";
 import art57 from "../../assets/games/screens/kk-platform.svg";
 import art58 from "../../assets/games/screens/steam-3241660.jpg";
 import art59 from "../../assets/games/screens/steam-230410.jpg";
+import peacekeeperEliteScene from "../../assets/games/peacekeeper-elite-scene.webp";
 
 export interface GameScreenshot {
   src: string;
   position: string;
 }
 export const gameScreenshotCatalog: Record<string, GameScreenshot> = {
+  和平精英: { src: peacekeeperEliteScene, position: "50% 50%" },
   艾尔登法环: { src: art0, position: "50% 50%" },
   "暗区突围：无限": { src: art1, position: "50% 50%" },
   "崩坏：星穹铁道": { src: art2, position: "50% 50%" },

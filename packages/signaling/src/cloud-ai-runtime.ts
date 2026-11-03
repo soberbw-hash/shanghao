@@ -9,16 +9,30 @@ import { CloudAsrHttpController } from "./cloud-asr-http-controller";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AccountBackend } from "./account-service";
 import { DailyRoomCommentaryService } from "./daily-room-commentary-service";
+import { CloudAiAdminStore } from "./cloud-ai-admin-store";
+import { CloudAiAdminAccess } from "./cloud-ai-admin-access";
+import { CloudAiAdminHttp } from "./cloud-ai-admin-http";
+import { CloudAsrService } from "./cloud-asr-service";
 
 type Logger = (message: string, context?: Record<string, unknown>) => void;
 
 /** Keeps optional cloud AI roles outside the realtime signaling orchestrator. */
 export class CloudAiRuntime {
   private http?: CloudAsrHttpController;
+  private adminHttp?: CloudAiAdminHttp;
+  private readonly configuration: Promise<CloudAiAdminStore>;
+  private store?: CloudAiAdminStore;
+  readonly textService: Pick<CloudAiService, "isConfigured" | "execute">;
+  readonly speechService: Pick<CloudAsrService, "isConfigured" | "transcribe">;
   configureHttp(accounts: AccountBackend, secure: (request: IncomingMessage) => boolean): void {
-    this.http = new CloudAsrHttpController(accounts, secure);
+    this.adminHttp = new CloudAiAdminHttp(
+      new CloudAiAdminAccess(accounts, secure),
+      this.configuration,
+    );
+    this.http = new CloudAsrHttpController(accounts, secure, this.speechService, this.textService);
   }
-  handleHttp(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+  async handleHttp(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+    if (await this.adminHttp?.handle(request, response)) return true;
     return this.http?.handle(request, response) ?? Promise.resolve(false);
   }
   private readonly requests: CloudAiRequestController;
@@ -28,8 +42,42 @@ export class CloudAiRuntime {
     reports: Promise<DailyRoomReportStore>,
     logger?: Logger,
     memoryContext?: (roomId: string) => Promise<string>,
+    configurationFile?: string,
   ) {
-    const service = new CloudAiService({ memoryContext });
+    this.configuration = CloudAiAdminStore.open(configurationFile).then((store) => {
+      this.store = store;
+      return store;
+    });
+    void this.configuration.catch(() =>
+      logger?.("Cloud AI configuration unavailable", { code: "cloud_ai_admin_storage_invalid" }),
+    );
+    const service: Pick<CloudAiService, "isConfigured" | "execute"> = {
+      isConfigured: () => Boolean(this.store?.provider("text")),
+      execute: async (request, signal) => {
+        const provider = (await this.configuration).provider("text");
+        if (!provider) throw Error("cloud_ai_not_configured");
+        return new CloudAiService({
+          apiKey: provider.apiKey,
+          baseUrl: provider.baseUrl,
+          model: provider.model,
+          memoryContext,
+        }).execute(request, signal);
+      },
+    };
+    this.textService = service;
+    this.speechService = {
+      isConfigured: () => Boolean(this.store?.provider("speech")),
+      transcribe: async (audio, mime, signal) => {
+        const provider = (await this.configuration).provider("speech");
+        if (!provider) throw Error("cloud_asr_not_configured");
+        return new CloudAsrService(
+          provider.apiKey,
+          fetch,
+          `${provider.baseUrl}/audio/transcriptions`,
+          provider.model,
+        ).transcribe(audio, mime, signal);
+      },
+    };
     this.requests = new CloudAiRequestController(logger, service);
     this.commentary = new DailyRoomCommentaryService(reports, service, logger);
   }

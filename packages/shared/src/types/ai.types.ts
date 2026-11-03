@@ -838,6 +838,8 @@ export interface VoiceMemoryAnswer {
     quote: string;
     recordingId?: string;
     filePath?: string;
+    /** Scope is stamped by the application, never accepted from model output. */
+    roomId?: string;
     roomName?: string;
     createdAt?: string;
   }>;

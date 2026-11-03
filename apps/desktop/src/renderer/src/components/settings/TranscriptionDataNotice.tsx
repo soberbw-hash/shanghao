@@ -15,7 +15,9 @@ export function TranscriptionDataNotice({
     >
       {provider === "local"
         ? "音频在本机转录，随后自动生成摘要；上传需手动操作。"
-        : `${automatic ? "保存后自动转录并生成摘要。" : "转录后自动生成摘要。"}音频发送至${provider === "cloud" ? "硅基流动" : "自定义服务"}；原录音保留本机，摘要不自动上传。`}
+        : automatic
+          ? "保存后自动转录并生成摘要。"
+          : "转录后自动生成摘要。"}
     </aside>
   );
 }

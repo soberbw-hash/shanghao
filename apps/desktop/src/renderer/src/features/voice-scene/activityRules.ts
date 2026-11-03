@@ -38,6 +38,9 @@ export const memberStatus = (member: RoomMember, now = Date.now()): MemberStatus
   if (member.availabilityStatus) {
     return { label: availabilityLabels[member.availabilityStatus], tone: "online" };
   }
+  if (member.activity === "restroom") {
+    return { label: "暂时离开", tone: "online" };
+  }
   if (member.isDeafened) {
     return { label: "已关闭扬声器", tone: "deafened", icon: VolumeX };
   }

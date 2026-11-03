@@ -1,0 +1,10 @@
+.team-island {
+  user-select: none;
+}
+.team-island :is(img, svg) {
+  -webkit-user-drag: none;
+}
+.room-page .chat-message-list {
+  padding-top: 12px;
+  scroll-padding-top: 12px;
+}

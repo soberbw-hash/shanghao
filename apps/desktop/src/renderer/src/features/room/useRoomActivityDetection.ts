@@ -39,9 +39,9 @@ export const useRoomActivityDetection = (refs: ActivityDetectionRefs): void => {
       const currentZone = localMember?.sceneZone ?? "gameDesk1";
 
       if (snapshot.gameName) {
-        if (currentZone === "restroomZone") {
+        if (currentZone === "restroomZone" || localMember?.activity === "restroom") {
           refs.moveLocalMember.current(
-            "restroomZone",
+            currentZone,
             "restroom",
             snapshot.gameName,
             snapshot.musicActivity,
@@ -62,7 +62,9 @@ export const useRoomActivityDetection = (refs: ActivityDetectionRefs): void => {
       } else if (previousGame) {
         refs.moveLocalMember.current(
           currentZone,
-          currentZone === "restroomZone" ? "restroom" : "idle",
+          currentZone === "restroomZone" || localMember?.activity === "restroom"
+            ? "restroom"
+            : "idle",
           undefined,
           snapshot.musicActivity,
           undefined,

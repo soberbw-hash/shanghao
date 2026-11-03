@@ -5,7 +5,13 @@ import { useAppStore } from "../../store/appStore";
 import { desktopApi } from "../../utils/desktopApi";
 
 /** Mouse interaction is always a toggle; keyboard trigger preferences stay independent. */
-export const PhoneModeButton = ({ canUse }: { canUse: boolean }) => {
+export const PhoneModeButton = ({
+  canUse,
+  onToggle,
+}: {
+  canUse: boolean;
+  onToggle?: () => void;
+}) => {
   const active = useAudioStore((state) => state.phoneModeActive);
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
@@ -30,10 +36,11 @@ export const PhoneModeButton = ({ canUse }: { canUse: boolean }) => {
   return (
     <button
       type="button"
-      disabled={!canUse || busy || !desktopApi?.phoneMode}
+      data-ui-sound="handled"
+      disabled={!canUse || (!onToggle && busy) || !desktopApi?.phoneMode}
       aria-pressed={Boolean(active)}
       title={active ? "结束电话 · 恢复之前状态" : "电话模式 · 点击开启，再点关闭"}
-      onClick={() => void toggle()}
+      onClick={() => (onToggle ? onToggle() : void toggle())}
     >
       <Phone aria-hidden="true" />
       电话

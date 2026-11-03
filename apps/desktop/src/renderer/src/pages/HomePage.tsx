@@ -252,35 +252,11 @@ export const HomePage = () => {
     try {
       await refreshDevices();
       const audioState = useAudioStore.getState();
-      const inputDeviceId = settings.preferredInputDeviceId;
       const outputDeviceId = audioState.outputDevices.some(
         (device) => device.id === settings.preferredOutputDeviceId,
       )
         ? settings.preferredOutputDeviceId
         : undefined;
-      const inputExists = inputDeviceId
-        ? audioState.inputDevices.some((device) => device.id === inputDeviceId)
-        : audioState.inputDevices.length > 0;
-      const outputExists = audioState.outputDevices.length > 0;
-
-      if (!inputExists || !outputExists) {
-        pushToast({
-          tone: "warning",
-          title: "先选好声音设备",
-          description: !inputExists ? "没有找到所选麦克风。" : "没有找到所选扬声器。",
-        });
-        return false;
-      }
-
-      if (audioState.permissionState === MicPermissionState.Denied) {
-        pushToast({
-          tone: "warning",
-          title: "请先允许麦克风",
-          description: "Windows 已阻止上号使用麦克风，请在系统隐私设置中允许后重试。",
-        });
-        return false;
-      }
-
       // The room connection acquires the real microphone stream immediately afterwards.
       // Opening and closing a temporary stream here made one click initialize the device twice,
       // which caused a visible renderer hitch on some Windows audio drivers.
@@ -295,7 +271,7 @@ export const HomePage = () => {
             ? "请允许上号使用麦克风后再进入。"
             : "无法打开所选麦克风或扬声器，请换一个设备重试。",
       });
-      return false;
+      return true;
     } finally {
       setIsCheckingAudio(false);
     }

@@ -1071,7 +1071,7 @@
 .recording-item-favorite {
   position: absolute;
   top: 7px;
-  right: 35px;
+  right: 63px;
   display: grid;
   width: 24px;
   height: 24px;
@@ -1095,7 +1095,7 @@
 .recording-item-show-in-folder {
   position: absolute;
   top: 7px;
-  right: 7px;
+  right: 35px;
   display: grid;
   width: 24px;
   height: 24px;

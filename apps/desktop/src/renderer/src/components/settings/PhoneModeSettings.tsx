@@ -28,18 +28,6 @@ export function PhoneModeSettings() {
         description="静音电脑全部音频设备，结束后恢复。独占音频可能绕过软件静音。"
       >
         <div className="phone-mode-settings-controls flex w-full flex-wrap items-center justify-end gap-3">
-          <div className="phone-mode-shortcut-control flex min-w-[250px] flex-1 items-center gap-2">
-            <span className="shrink-0 text-xs font-medium text-[#667085]">快捷键</span>
-            <div className="min-w-0 flex-1">
-              <ShortcutInput
-                value={shortcut}
-                onChange={(value) => void configure(value, trigger)}
-                defaultValue=""
-                compact
-                physicalKeys
-              />
-            </div>
-          </div>
           <label className="phone-mode-trigger-control flex shrink-0 items-center gap-2">
             <span className="text-xs font-medium text-[#667085]">触发方式</span>
             <select
@@ -55,6 +43,15 @@ export function PhoneModeSettings() {
               <option value="toggle">按一次切换</option>
             </select>
           </label>
+          <div className="phone-mode-shortcut-control">
+            <ShortcutInput
+              value={shortcut}
+              onChange={(value) => void configure(value, trigger)}
+              compact
+              physicalKeys
+              alignDefaultSlot
+            />
+          </div>
         </div>
       </SettingsItemRow>
     </div>

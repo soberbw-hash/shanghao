@@ -158,6 +158,14 @@ export interface RecordingLibrarySnapshot {
   items: RecordingLibraryItem[];
 }
 
+export interface RecordingRecycleItem {
+  id: string;
+  title: string;
+  fileSize: number;
+  deletedAt: string;
+  expiresAt: string;
+}
+
 export type RecordingCleanupReason = "too_short" | "silent" | "unreadable";
 
 export interface RecordingCleanupCandidate {

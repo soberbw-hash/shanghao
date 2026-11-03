@@ -1,47 +1,43 @@
 .scene-league-lobby {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 5px 9px 17px;
-  background: radial-gradient(ellipse at 50% 120%, #265365, #101e30 75%);
-  color: #d8c99f;
+  overflow: hidden;
+  color: #ebd8ab;
+  background:
+    linear-gradient(#07172585, #071725bf),
+    url("../assets/games/league-lobby-background.png") center / 100% 100%;
+}
+.scene-league-lobby[data-mode="大乱斗"] {
+  background:
+    linear-gradient(#051e3270, #082d42a8),
+    url("../assets/games/league-lobby-background.png") center / 100% 100%;
+}
+.scene-league-lobby:is([data-mode="自定义"], [data-mode="训练模式"]) {
+  background:
+    linear-gradient(#1024149c, #081712cf),
+    url("../assets/games/league-lobby-background.png") center / 100% 100%;
+}
+.scene-league-lobby-heading,
+.scene-league-lobby-count {
+  position: absolute;
+  top: 8%;
+  font-size: clamp(5px, 6cqw, 11px);
+  line-height: 1;
+  text-shadow: 0 1px 2px #000;
 }
 .scene-league-lobby-heading {
-  font-size: 9px;
-  line-height: 12px;
-  letter-spacing: 1px;
-}
-.scene-league-lobby-slots {
-  display: grid;
-  width: 100%;
-  gap: 4px;
-}
-.scene-league-lobby-slots > span {
-  min-width: 0;
-  padding: 2px;
-  border: 1px solid #47616b;
-  background: #152c3a;
-  opacity: 0.45;
-}
-.scene-league-lobby-slots > span[data-occupied="true"] {
-  opacity: 1;
-  border-color: #b7a274;
-  background: #2a4953;
-}
-.scene-league-lobby-slots svg {
-  display: block;
-  width: 100%;
-  height: 24px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1;
+  left: 7%;
 }
 .scene-league-lobby-count {
-  font-size: 10px;
-  line-height: 11px;
+  right: 7%;
   font-variant-numeric: tabular-nums;
+}
+.scene-league-lobby-slots {
+  position: absolute;
+  inset: 25% 7% 22%;
+  display: grid;
+  width: min(86%, 80cqw);
+  margin-inline: auto;
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 3%;
 }

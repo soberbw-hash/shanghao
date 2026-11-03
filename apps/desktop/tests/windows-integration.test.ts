@@ -37,6 +37,10 @@ test("firewall repair owns exactly four program-scoped TCP and UDP rules", async
   assert.match(firewall, /-Profile Any/);
   assert.match(firewall, /queueFirewallOperation/);
   assert.match(firewall, /-Name \$expectedRuleNames\[0\]/);
+  assert.match(
+    firewall,
+    /\$expectedNames\s*=\s*@\([\s\S]*?'ShangHao UDP Inbound'[\s\S]*?'ShangHao UDP Outbound'[\s\S]*?'ShangHao TCP Inbound'[\s\S]*?'ShangHao TCP Outbound'[\s\S]*?\)/,
+  );
   assert.match(firewall, /firewallOperationQueue = result\.then/);
   assert.match(firewall, /CategoryInfo\.Category -ne 'ObjectNotFound'\) \{ throw \}/);
   assert.match(firewall, /Get-NetFirewallApplicationFilter -ErrorAction Stop/);

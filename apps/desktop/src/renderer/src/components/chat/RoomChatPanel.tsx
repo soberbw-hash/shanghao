@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, type ReactNode } from "react";
+import { memo, useEffect, useId, useState, type ReactNode } from "react";
 
 import type { ChatImageAttachment, ChatMessage } from "@private-voice/shared";
 
@@ -10,8 +10,18 @@ import { TemporaryChatPanel } from "./TemporaryChatPanel";
 import { writeRendererLog } from "../../utils/logger";
 import type { AssistantBotMood } from "../../features/ai/useAssistantBotState";
 import { isGameAssistantMessage } from "../../features/chat/gameAssistantMessage";
+import type { RoomChronicleClient } from "../../features/room/RoomChronicleClient";
+import { useRoomChronicleCapture } from "../../features/room/useRoomChronicleCapture";
+import { RoomChroniclePanel } from "./RoomChroniclePanel";
+import { RoomContentTabs } from "./RoomContentTabs";
+import type { RoomContentTab } from "../../features/chat/roomContentUnread";
+import type { RoomReplayClient } from "../../features/room/RoomReplayClient";
+import { useVoiceReplay } from "../../features/recording/useVoiceReplay";
+import { VoiceReplayControl } from "../audio/VoiceReplayControl";
 
 interface RoomChatPanelProps {
+  chronicle?: RoomChronicleClient;
+  replay?: RoomReplayClient;
   sendChatMessage: (
     content: string,
     image?: ChatImageAttachment,
@@ -35,6 +45,8 @@ interface RoomChatPanelProps {
 /** Keeps chat traffic and composer state out of the room scene render domain. */
 export const RoomChatPanel = memo(
   ({
+    chronicle,
+    replay,
     sendChatMessage,
     recallChatMessage,
     sendQuickMessage,
@@ -50,6 +62,13 @@ export const RoomChatPanel = memo(
     canSend,
     reduceMotion,
   }: RoomChatPanelProps) => {
+    const chronicleStatus = useRoomChronicleCapture(chronicle);
+    // Capture and its shortcut stay mounted while viewing chat or closing the save dialog.
+    const voiceReplay = useVoiceReplay();
+    const [tab, setTab] = useState<RoomContentTab>("chat");
+    const tabId = useId();
+    const roomId = useRoomStore((state) => state.room.roomId);
+    useEffect(() => setTab("chat"), [roomId]);
     const messages = useRoomStore((state) => state.chatMessages);
     const latestGameAssistantMessageId = messages
       .slice(-100)
@@ -108,6 +127,24 @@ export const RoomChatPanel = memo(
 
     return (
       <TemporaryChatPanel
+        panelTitle={
+          <RoomContentTabs
+            roomId={roomId}
+            messages={messages}
+            tab={tab}
+            onSelect={setTab}
+            idPrefix={tabId}
+          />
+        }
+        alternateContent={
+          <RoomChroniclePanel
+            transport={chronicle}
+            status={chronicleStatus}
+            replayControl={<VoiceReplayControl transport={replay} controller={voiceReplay} />}
+          />
+        }
+        alternateContentActive={tab === "chronicle"}
+        contentTabId={tabId}
         className="h-full"
         messages={messages}
         chatInput={chatInput}

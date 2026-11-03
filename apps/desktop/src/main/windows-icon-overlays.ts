@@ -13,13 +13,18 @@ export interface WindowsIconOverlayStatus {
 const READ_SCRIPT = String.raw`
 $shellKey = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons'
 $arrow = $null
+$shield = $null
 if (Test-Path -LiteralPath $shellKey) {
-  $arrow = Get-ItemPropertyValue -LiteralPath $shellKey -Name '29' -ErrorAction SilentlyContinue
+  $reg = Get-Item -LiteralPath $shellKey
+  $arrow = $reg.GetValue('29', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+  $shield = $reg.GetValue('77', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 }
-$blank = '%SystemRoot%\System32\imageres.dll,197'
+$blank = Join-Path $env:ProgramData 'ShangHao\transparent-overlay.ico'
+$legacyBlank = '%SystemRoot%\System32\imageres.dll,197'
 @{
-  arrowHidden = [string]::Equals([string]$arrow, $blank, [System.StringComparison]::OrdinalIgnoreCase)
-  shieldHidden = $false
+  arrowHidden = [string]::Equals([string]$arrow, $blank, [System.StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]$arrow, $legacyBlank, [System.StringComparison]::OrdinalIgnoreCase)
+  shieldHidden = [string]::Equals([string]$shield, $blank, [System.StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]$shield, $legacyBlank, [System.StringComparison]::OrdinalIgnoreCase)
+  configured = (Test-Path -LiteralPath $blank) -and [string]::Equals([string]$arrow, $blank, [System.StringComparison]::OrdinalIgnoreCase) -and [string]::Equals([string]$shield, $blank, [System.StringComparison]::OrdinalIgnoreCase)
 } | ConvertTo-Json -Compress
 `;
 
@@ -34,17 +39,20 @@ const unsupported = (): WindowsIconOverlayStatus => ({
 export const readWindowsIconOverlayStatus = async (): Promise<WindowsIconOverlayStatus> => {
   if (!platformService.isWindows) return unsupported();
   try {
-    const parsed = parsePowerShellJson<{ arrowHidden?: boolean; shieldHidden?: boolean }>(
-      (await runWindowsPowerShell(READ_SCRIPT)).stdout,
-    );
+    const parsed = parsePowerShellJson<{
+      arrowHidden?: boolean;
+      shieldHidden?: boolean;
+      configured?: boolean;
+    }>((await runWindowsPowerShell(READ_SCRIPT)).stdout);
     const arrowHidden = parsed.arrowHidden === true;
     const shieldHidden = parsed.shieldHidden === true;
     return {
       supported: true,
-      hidden: arrowHidden,
+      hidden: parsed.configured === true,
       arrowHidden,
       shieldHidden,
-      message: arrowHidden ? "快捷方式小箭头已隐藏。" : "当前使用 Windows 默认图标标记。",
+      message:
+        arrowHidden && shieldHidden ? "已设置隐藏快捷方式标记。" : "快捷方式标记未全部隐藏。",
     };
   } catch {
     return {

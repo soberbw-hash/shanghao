@@ -67,6 +67,7 @@ export const ShortcutInput = ({
   conflictMessage,
   compact = false,
   physicalKeys = false,
+  alignDefaultSlot = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -75,6 +76,7 @@ export const ShortcutInput = ({
   conflictMessage?: string;
   compact?: boolean;
   physicalKeys?: boolean;
+  alignDefaultSlot?: boolean;
 }) => {
   const [isCapturing, setIsCapturing] = useState(false);
 
@@ -177,12 +179,16 @@ export const ShortcutInput = ({
           <Button
             variant="ghost"
             className={
-              compact ? "h-9 shrink-0 whitespace-nowrap rounded-[10px] px-2 text-xs" : undefined
+              compact
+                ? "shortcut-input-default-button h-9 shrink-0 whitespace-nowrap rounded-[10px] px-2 text-xs"
+                : undefined
             }
             onClick={() => onChange(defaultValue)}
           >
             默认
           </Button>
+        ) : alignDefaultSlot ? (
+          <span className="shortcut-input-default-spacer" aria-hidden="true" />
         ) : null}
       </div>
       {conflictMessage ? <div className="text-xs text-[#DC2626]">{conflictMessage}</div> : null}

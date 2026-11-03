@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8" /><title>合成音频配置检查</title>
+<script>window.desktopApi={app:{writeLog:async()=>{}},shortcuts:{onAudioDevicePresetTriggered:(callback)=>{window.audioPresetKey=callback;return()=>{window.audioPresetKey=undefined;}}}};</script>
+<script type="module">
+import { injectIntoGlobalHook } from "/@react-refresh";
+injectIntoGlobalHook(window);
+window.$RefreshReg$ = () => {};
+window.$RefreshSig$ = () => (type) => type;
+</script><script type="module" src="/@vite/client"></script>
+</head><body style="margin:0"><div id="root"></div><script type="module" src="./audio-device-presets.fixture.tsx"></script></body></html>

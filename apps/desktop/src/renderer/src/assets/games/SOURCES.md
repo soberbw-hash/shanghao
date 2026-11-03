@@ -29,3 +29,7 @@ request. They are used only to identify a game detected on the user's own comput
   composition rules and two-pass visual review.
 
 All game names, logos, and artwork remain the property of their respective owners.
+
+# 和平精英座位显示画面
+
+`peacekeeper-elite-scene.webp` 是按用户要求生成的海岛战术场景插画，不是游戏实机截图；不包含玩家 ID。为显示器裁切为 768 × 480，约 96 KiB。

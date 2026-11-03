@@ -21,8 +21,15 @@ interface AudioStoreState {
   localDiagnostics?: LocalAudioDiagnostics;
   isMuted: boolean;
   isManuallyMuted: boolean;
+  listenOnly: boolean;
+  setListenOnly: (enabled: boolean) => void;
   phoneModeActive: boolean;
   setPhoneMode: (active: boolean) => void;
+  setPhoneModeResumeState: (state: {
+    isMuted: boolean;
+    isDeafened: boolean;
+    isManuallyMuted: boolean;
+  }) => void;
   isDeafened: boolean;
   isNoiseSuppressionEnabled: boolean;
   isPushToTalkEnabled: boolean;
@@ -32,7 +39,11 @@ interface AudioStoreState {
   toggleDeafen: () => void;
   deafenAndMute: () => void;
   undeafenAndUnmute: () => void;
-  setAudioState: (state: { isMuted: boolean; isDeafened: boolean }) => void;
+  setAudioState: (state: {
+    isMuted: boolean;
+    isDeafened: boolean;
+    isManuallyMuted?: boolean;
+  }) => void;
   setMuted: (isMuted: boolean) => void;
   setDeafened: (isDeafened: boolean) => void;
   setNoiseSuppressionEnabled: (isEnabled: boolean) => void;
@@ -43,8 +54,15 @@ interface AudioStoreState {
 
 let beforePhone: { isMuted: boolean; isDeafened: boolean; isManuallyMuted: boolean } | undefined;
 const deviceRefreshVersion = createDeviceRefreshVersion();
-export const useAudioStore = create<AudioStoreState>((set) => ({
+export const useAudioStore = create<AudioStoreState>((set, get) => ({
+  listenOnly: false,
+  setListenOnly: (enabled) =>
+    set((state) => ({ listenOnly: enabled, isMuted: enabled || state.isMuted })),
   phoneModeActive: false,
+  setPhoneModeResumeState: (state) => {
+    // Update only the eventual return state; never open audio while phone mode is active.
+    if (get().phoneModeActive) beforePhone = { ...state };
+  },
   setPhoneMode: (active) =>
     set((state) => {
       if (active === state.phoneModeActive) return state;
@@ -58,7 +76,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       }
       const restored = beforePhone ?? { isMuted: true, isDeafened: true, isManuallyMuted: false };
       beforePhone = undefined;
-      return { phoneModeActive: false, ...restored };
+      return { phoneModeActive: false, ...restored, isMuted: state.listenOnly || restored.isMuted };
     }),
   inputDevices: [],
   outputDevices: [],
@@ -114,7 +132,7 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
   },
   toggleMicrophone: () =>
     set((state) =>
-      state.phoneModeActive || state.isDeafened
+      state.phoneModeActive || state.isDeafened || state.listenOnly
         ? state
         : { isMuted: !state.isMuted, isManuallyMuted: !state.isMuted },
     ),
@@ -123,23 +141,29 @@ export const useAudioStore = create<AudioStoreState>((set) => ({
       state.phoneModeActive
         ? state
         : state.isDeafened
-          ? { isMuted: false, isDeafened: false, isManuallyMuted: false }
+          ? { isMuted: state.listenOnly, isDeafened: false, isManuallyMuted: false }
           : { isMuted: true, isDeafened: true, isManuallyMuted: false },
     ),
   deafenAndMute: () => set({ isMuted: true, isDeafened: true, isManuallyMuted: false }),
   undeafenAndUnmute: () =>
     set((state) =>
-      state.phoneModeActive ? state : { isMuted: false, isDeafened: false, isManuallyMuted: false },
+      state.phoneModeActive
+        ? state
+        : { isMuted: state.listenOnly, isDeafened: false, isManuallyMuted: false },
     ),
-  setAudioState: ({ isMuted, isDeafened }) =>
+  setAudioState: ({ isMuted, isDeafened, isManuallyMuted = false }) =>
     set((state) =>
       state.phoneModeActive
         ? state
-        : { isDeafened, isMuted: isDeafened ? true : isMuted, isManuallyMuted: false },
+        : {
+            isDeafened,
+            isMuted: state.listenOnly || isDeafened ? true : isMuted,
+            isManuallyMuted: isMuted && !isDeafened && isManuallyMuted,
+          },
     ),
   setMuted: (isMuted) =>
     set((state) => ({
-      isMuted: state.phoneModeActive || state.isDeafened ? true : isMuted,
+      isMuted: state.phoneModeActive || state.isDeafened || state.listenOnly ? true : isMuted,
       isManuallyMuted: false,
     })),
   setDeafened: (isDeafened) =>

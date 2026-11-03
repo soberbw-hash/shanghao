@@ -16,7 +16,7 @@ const capabilityQuestions = new Set([
 export const answerGlobalVoiceQuestion = async (
   request: VoiceMemoryGlobalQuestionRequest,
   gateway: Pick<AiTextGateway, "questionRoomId" | "generateJson">,
-  store: Pick<VoiceMemoryStore, "related">,
+  store: Pick<VoiceMemoryStore, "related" | "get">,
   run: <T>(operation: (signal: AbortSignal) => Promise<T>) => Promise<T>,
 ): Promise<VoiceMemoryAnswer> => {
   const question = request.question.trim().slice(0, 500);
@@ -31,7 +31,25 @@ export const answerGlobalVoiceQuestion = async (
         sources: [],
       };
     }
-    const candidates = roomId ? store.related(question, 24, roomId) : [];
+    const records = new Map<string, ReturnType<VoiceMemoryStore["get"]>>();
+    const indexed = roomId ? store.related(question, 24, roomId) : [];
+    const verified = indexed.length
+      ? await Promise.all(
+          indexed.map(async (candidate) => {
+            if (!records.has(candidate.recordingId))
+              records.set(candidate.recordingId, store.get(candidate.recordingId));
+            const record = await records.get(candidate.recordingId);
+            if (!record || record.roomId !== roomId) return undefined;
+            // createdAt on the memory is processing time. Use the actual audio start.
+            return { ...candidate, createdAt: record.recordedAt ?? "", filePath: record.filePath };
+          }),
+        )
+      : [];
+    const candidates = verified.filter((entry): entry is NonNullable<typeof entry> =>
+      Boolean(entry),
+    );
+    if (signal.aborted) throw new Error("ai_task_paused");
+    if (gateway.questionRoomId() !== roomId) throw new Error("ai_question_room_changed");
     const answer = await gateway.generateJson<VoiceMemoryAnswer>({
       roomId,
       purpose: "question",
@@ -40,7 +58,7 @@ export const answerGlobalVoiceQuestion = async (
       signal,
       prompt: roomQuestionPrompt(question, candidates),
     });
-    signal.throwIfAborted();
+    if (signal.aborted) throw new Error("ai_task_paused");
     if (gateway.questionRoomId() !== roomId) throw new Error("ai_question_room_changed");
     return {
       text: assistantAnswerText(answer.text),
@@ -58,6 +76,7 @@ export const answerGlobalVoiceQuestion = async (
                   quote: String(source.quote || candidate.excerpt).slice(0, 240),
                   recordingId: candidate.recordingId,
                   filePath: candidate.filePath,
+                  roomId,
                   roomName: candidate.roomName,
                   createdAt: candidate.createdAt,
                 },

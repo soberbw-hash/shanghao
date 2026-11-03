@@ -19,6 +19,7 @@ import { AccountSessionStore, type PersistedAccountSession } from "./account-ses
 import { CloudBaseAccountClient } from "./cloudbase-account";
 import { isDeepLinkAuthCallback, SHANGHAO_AUTH_REDIRECT_URL } from "./deep-link";
 import { AccountDesktopError } from "./account-errors";
+import { RememberedAccountRecovery } from "./remembered-account-recovery";
 
 export { AccountDesktopError } from "./account-errors";
 
@@ -173,6 +174,7 @@ export class AccountDesktopService extends EventEmitter {
   private accountProvider: "supabase" | "cloudbase" = "supabase";
   /** Session persistence is opt-out from the login form, never password persistence. */
   private rememberSession = true;
+  private readonly rememberedRecovery = new RememberedAccountRecovery();
   private supabaseUrl?: string;
   private supabasePublishableKey?: string;
   private usernameLoginUrl?: string;
@@ -898,6 +900,37 @@ export class AccountDesktopService extends EventEmitter {
         this.scheduleRefresh();
         return { profile, session: this.session };
       } catch (error) {
+        if (
+          error instanceof AccountDesktopError &&
+          error.code === "account_session_expired" &&
+          this.rememberSession &&
+          this.snapshot.status === "signed_in" &&
+          this.snapshot.profile &&
+          typeof this.sessionStore.readRememberedLogin === "function"
+        ) {
+          assertCurrent();
+          const recovered = await this.rememberedRecovery.recover(
+            `${generation}:${server}`,
+            this.snapshot.profile.userId,
+            {
+              current: () =>
+                generation === this.authGeneration &&
+                owner === this.session &&
+                server === this.getRelayServerUrl(),
+              read: () => this.sessionStore.readRememberedLogin(),
+              login: (identifier, password) => this.requireCloudBase().login(identifier, password),
+            },
+          );
+          if (recovered) {
+            await accept(recovered.session);
+            this.updateSnapshot({
+              ...this.snapshot,
+              profile: recovered.profile,
+              message: undefined,
+            });
+            return { profile: recovered.profile, session: this.session };
+          }
+        }
         if (error instanceof AccountDesktopError) throw error;
         throw new AccountDesktopError("account_session_expired", { cause: error });
       }

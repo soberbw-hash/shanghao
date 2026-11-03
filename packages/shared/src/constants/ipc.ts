@@ -1,4 +1,23 @@
 export const IPC_CHANNELS = {
+  backgroundAudio: {
+    pulse: "background-audio:pulse",
+    configure: "background-audio:configure",
+    changed: "background-audio:changed",
+  },
+  recordingRecycle: { list: "recording-recycle:list", restore: "recording-recycle:restore" },
+  voiceReplay: {
+    list: "voice-replay:list",
+    save: "voice-replay:save",
+    read: "voice-replay:read",
+    rename: "voice-replay:rename",
+    trim: "voice-replay:trim",
+    remove: "voice-replay:remove",
+    transcribeLocal: "voice-replay:transcribe-local",
+    readTranscript: "voice-replay:read-transcript",
+    export: "voice-replay:export",
+    shortcut: "voice-replay:shortcut",
+    saveShortcut: "voice-replay:save-shortcut",
+  },
   remoteControl: {
     get: "remote-control:get",
     getCapture: "remote-control:capture",
@@ -148,6 +167,10 @@ export const IPC_CHANNELS = {
   weather: {
     getSnapshot: "weather:get-snapshot",
   },
+  cloudAiAdmin: {
+    get: "cloud-ai-admin:get",
+    change: "cloud-ai-admin:change",
+  },
   ai: {
     getSnapshot: "ai:get-snapshot",
     controlModel: "ai:control-model",
@@ -220,6 +243,7 @@ export const IPC_CHANNELS = {
   shortcuts: {
     muteTriggered: "shortcuts:mute-triggered",
     recordingMarkerTriggered: "shortcuts:recording-marker-triggered",
+    audioDevicePresetTriggered: "shortcuts:audio-device-preset-triggered",
     pushToTalkState: "shortcuts:push-to-talk-state",
     quickMessageTriggered: "shortcuts:quick-message-triggered",
   },
