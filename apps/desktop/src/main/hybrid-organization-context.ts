@@ -8,7 +8,13 @@ export function hybridOrganizationContext(
   if (record.transcriptionAssist?.status !== "completed") return "";
   const cloud = record.transcriptionVariants?.[record.transcriptionAssist.cloudModelId];
   const fused =
-    record.transcriptionFusion?.status === "completed" ? record.transcriptionFusion : undefined;
+    record.transcriptionFusion?.status === "completed" &&
+    record.transcriptionFusion.verificationPolicy === "agreement-v1" &&
+    record.transcriptionFusion.transcript.every(
+      (segment) => segment.fusionUncertain === false && !segment.fusionEstimated,
+    )
+      ? record.transcriptionFusion
+      : undefined;
   const relevant = (fused ?? cloud)?.transcript.filter(
     (segment) => segment.startMs < chunk.endMs && segment.endMs > chunk.startMs,
   );

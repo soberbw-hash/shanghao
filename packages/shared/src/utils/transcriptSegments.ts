@@ -144,6 +144,10 @@ export const mergeTranscriptIntoSentences = (
       ...current,
       endMs: Math.max(current.endMs, next.endMs),
       text: joinedText,
+      timestampPrecision:
+        current.timestampPrecision === "chunk" || next.timestampPrecision === "chunk"
+          ? "chunk"
+          : undefined,
       words: [...(current.words ?? []), ...(next.words ?? [])],
       rawSegments: [...(current.rawSegments ?? []), ...(next.rawSegments ?? [])],
     };

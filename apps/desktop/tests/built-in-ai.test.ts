@@ -252,7 +252,7 @@ test("provider failures never return raw upstream bodies or credentials", async 
   assert.deepEqual(await response.json(), { error: { code: "cloud_asr_http_401" } });
 });
 
-test("the built-in server defaults to GLM rather than the paid DeepSeek route", async () => {
+test("the low-level AI service ignores DeepSeek environment values unless selected by admin configuration", async () => {
   const names = [
     "CLOUD_AI_API_KEY",
     "CLOUD_AI_BASE_URL",

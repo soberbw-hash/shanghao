@@ -23,13 +23,43 @@ app.whenReady().then(async () => {
       const advanced=document.querySelector('#ai-model-management');
       if(!advanced||advanced.open)throw Error('advanced model configuration should start collapsed');
       if(!document.querySelector('[aria-label="自动转录"]').checkVisibility())throw Error('automatic controls hidden with advanced settings');
+      if(document.querySelector('[aria-label="自动转录"]').getAttribute('aria-pressed')!=='true')throw Error('fresh automatic transcription not enabled');
+      if(advanced.textContent.includes('按需更改 API、下载或管理本地模型')||advanced.querySelector('#model-management-title'))throw Error('redundant model heading remains');
       const processing=document.querySelector('.recording-processing-settings');
       if(!processing||processing.open)throw Error('recording processing settings should start collapsed');
       if(document.querySelector('[aria-label="录音库转录模型"]').checkVisibility())throw Error('collapsed recording processing settings expose model controls');
       processing.querySelector('summary').click();
       if(!processing.open||!document.querySelector('[aria-label="录音库转录模型"]').checkVisibility())throw Error('recording processing settings cannot be expanded');
+      processing.querySelector('select').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+      if(!processing.open)throw Error('inside click closed recording processing settings');
+      document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+      if(processing.open)throw Error('outside click did not close recording processing settings');
+      processing.querySelector('summary').click();
+      processing.querySelector('summary').focus();
+      processing.querySelector('summary').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+      if(processing.open||document.activeElement!==processing.querySelector('summary'))throw Error('Escape did not close settings and restore focus');
+      processing.querySelector('summary').click();
       if(advanced.querySelector('summary')?.tagName!=='SUMMARY')throw Error('advanced disclosure lost its native summary semantics');
       advanced.querySelector('summary').click();
+    })()`);
+    await view.webContents.sendInputEvent({
+      type: "mouseDown",
+      x: 8,
+      y: 8,
+      button: "left",
+      clickCount: 1,
+    });
+    await view.webContents.sendInputEvent({
+      type: "mouseUp",
+      x: 8,
+      y: 8,
+      button: "left",
+      clickCount: 1,
+    });
+    await view.webContents.executeJavaScript(`(()=>{
+      const processing=document.querySelector('.recording-processing-settings');
+      if(processing.open)throw Error('native outside click did not close recording settings');
+      processing.querySelector('summary').click();
     })()`);
     const result = await view.webContents.executeJavaScript(`(async()=>{
       const pause=ms=>new Promise(r=>setTimeout(r,ms)); const check=(v,m)=>{if(!v)throw Error(m)};
@@ -37,6 +67,8 @@ app.whenReady().then(async () => {
       const library=()=>document.querySelector('[aria-label="录音库转录模型"]');
       const settings=()=>document.querySelector('[aria-label="语音转录模型来源"]');
       check(library(),'recording library model selector missing');
+      check([...library().querySelectorAll('optgroup')].map(g=>g.label).join('|')==='本地 · 主力模型|本地 · 高级实验|本地 · 历史与兼容模型','recording model groups missing');
+      check([...library().querySelectorAll('option')].some(o=>o.value==='local:fun-asr-nano-2512'),'legacy local model lost');
       check(document.querySelector('#ai-model-management').open,'click did not expand model configuration');
       check(library().value==='cloud','library did not inherit cloud default');
       await pause(150);
@@ -56,9 +88,9 @@ app.whenReady().then(async () => {
       window.dispatchEvent(new Event('fixture-fail-settings-save'));saveText().click();await pause(100);
       check(activeText()==='glm-4-flash-250414','failed save replaced the active model');
       check(!saveText().disabled,'failed model save cannot be retried');
-      saveText().click();await pause(100);check(activeText()==='房间云端 AI','saved cloud model did not activate');
-      textModel().value='glm';textModel().dispatchEvent(new Event('change',{bubbles:true}));await pause(100);
-      check(activeText()==='房间云端 AI','GLM selection applied before Save');
+      saveText().click();await pause(100);check(activeText()==='内置云端模型','saved cloud model did not activate');
+      textModel().value='custom';textModel().dispatchEvent(new Event('change',{bubbles:true}));await pause(100);
+      check(activeText()==='内置云端模型','custom selection applied before Save');
       saveText().click();await pause(100);check(activeText()==='glm-4-flash-250414','saved GLM did not activate');
       const assist=()=>[...document.querySelectorAll('[aria-label="云端加本地辅助"]')];
       const assistModels=()=>[...document.querySelectorAll('select[aria-label="本地辅助模型"]')];
@@ -97,13 +129,20 @@ app.whenReady().then(async () => {
       settings().value='custom';settings().dispatchEvent(new Event('change',{bubbles:true}));await pause(100);
       check(library().value==='custom','AI settings did not reach library');
       settings().value='local';settings().dispatchEvent(new Event('change',{bubbles:true}));await pause(100);
+      check(document.querySelector('[aria-label="筛选模型"]'),'local model filters were lost');
       const local=document.querySelector('[data-model-id="paraformer-zh"] .ai-model-select-hit');
       check(local?.getAttribute('aria-pressed')==='true','local model card did not follow library selection');
       check(library().value==='local:paraformer-zh','local source did not restore selected model');
       library().value='cloud';library().dispatchEvent(new Event('change',{bubbles:true}));await pause(70);
+      const gameContext=document.querySelector('.recording-game-context');check(gameContext,'manual game context missing');gameContext.open=true;
+      const setValue=(element,value,prototype)=>{Object.getOwnPropertyDescriptor(prototype,'value').set.call(element,value);element.dispatchEvent(new Event('input',{bubbles:true}));};
+      const automatic=gameContext.querySelector('input[type="checkbox"]');check(automatic&&!automatic.checked,'automatic context must default off');automatic.click();
+      setValue(gameContext.querySelector('input:not([type="checkbox"])'),'英雄联盟',HTMLInputElement.prototype);
+      setValue(gameContext.querySelector('textarea'),'嘉文，EZ',HTMLTextAreaElement.prototype);await pause(50);
       [...document.querySelectorAll('.voice-memory-header-actions button')].find(b=>b.textContent.includes('开始转录')).click();await pause(120);
       const manualRequest=JSON.parse(document.documentElement.dataset.lastProcessRequest);
       check(manualRequest.manual===true&&manualRequest.transcribe===true&&manualRequest.organize===true&&manualRequest.restartTranscription===true,'manual transcription must automatically organize even when legacy automatic organization is disabled');
+      check(manualRequest.localAsrContext?.gameName==='英雄联盟'&&manualRequest.localAsrContext.terms.join(',')==='嘉文,EZ'&&manualRequest.localAsrAutoGameContext===true,'local context choices missing from this recording request');
       check(document.querySelector('.voice-memory-working'),'queued acknowledgement hid newer processing event');
       check(document.querySelector('.voice-memory-working').textContent.includes('第 1/3 段'),'cloud stage detail missing');
       const pauseButton=[...document.querySelectorAll('.voice-memory-detail button')].find(b=>b.textContent.includes('暂停'));
@@ -119,6 +158,16 @@ app.whenReady().then(async () => {
       const retryRequest=JSON.parse(document.documentElement.dataset.lastProcessRequest);
       check(retryRequest.manual===true&&retryRequest.transcribe===true&&retryRequest.organize===true&&retryRequest.restartTranscription===true,'existing cloud recording did not request transcription with automatic organization');
       window.dispatchEvent(new Event('fixture-show-hybrid'));await pause(150);
+      window.dispatchEvent(new Event('fixture-show-unexamined'));await pause(100);
+      check(document.body.textContent.includes('低音量区间无法确认是否有讲话'),'quiet audio uncertainty is hidden');
+      const quiet=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent.includes('低音量区间'));
+      check(quiet,'quiet range missing');quiet.querySelector('summary').click();quiet.querySelector('button').click();await pause(30);
+      check(document.documentElement.dataset.transcriptSeekMs==='0','quiet range lost its original offset');
+      const gap=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent.includes('未检查区间'));
+      check(gap && gap.textContent.includes('测试成员') && gap.textContent.includes('回听混音'),'unexamined member audio is not displayed');
+      gap.querySelector('summary').click();gap.querySelector('button').click();await pause(30);
+      check(document.documentElement.dataset.transcriptSeekMs==='2100','unexamined range lost its original audio offset');
+      window.dispatchEvent(new Event('fixture-clear-unexamined'));await pause(100);
       const fuse=[...document.querySelectorAll('.voice-memory-header-actions button')].find(b=>b.textContent.includes('融合校对'));
       check(fuse,'saved cloud and local originals have no fusion action');
       fuse.click();await pause(100);

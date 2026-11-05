@@ -33,8 +33,19 @@ export const TranscriptParagraph = memo(function TranscriptParagraph({
       }}
     >
       <time>
-        <span className="transcript-estimate">
-          {paragraph.sourceSegments.some((segment) => segment.fusionEstimated) ? "≈" : ""}
+        <span
+          className="transcript-estimate"
+          title={
+            paragraph.sourceSegments.some((segment) => segment.timestampPrecision === "chunk")
+              ? "仅有处理片段范围，具体发言时间需回听确认"
+              : undefined
+          }
+        >
+          {paragraph.sourceSegments.some(
+            (segment) => segment.fusionEstimated || segment.timestampPrecision === "chunk",
+          )
+            ? "≈"
+            : ""}
         </span>
         {clock(paragraph.startMs)}
       </time>

@@ -14,6 +14,7 @@ import { createRecordingTopologyGuard } from "../features/recording/recordingTop
 import { useRecordingStore } from "../store/recordingStore";
 import { useRoomStore } from "../store/roomStore";
 import { writeRendererLog } from "../utils/logger";
+import { createRecordingGameTimeline } from "../features/recording/recordingGameTimeline";
 
 type MixedCallStream = ReturnType<typeof createMixedCallStream>;
 
@@ -23,6 +24,8 @@ interface RecordingRuntime {
   finalizing?: Promise<RecordingResult>;
   roomName?: string;
   roomId?: string;
+  gameTimeline?: ReturnType<typeof createRecordingGameTimeline>;
+  finishedGameTimeline?: ReturnType<ReturnType<typeof createRecordingGameTimeline>["finish"]>;
 }
 
 const RECORDING_RUNTIME_KEY = "__shanghaoRecordingRuntimeV2__";
@@ -107,6 +110,12 @@ export const useRecordingController = () => {
     let removeMediaListeners = () => {};
     const sync = () => {
       const state = useRoomStore.getState();
+      if (recordingService.getState().state === RecordingState.Recording && runtime.mix)
+        runtime.gameTimeline?.capture(
+          state.room.roomId,
+          state.room.members,
+          runtime.mix.elapsedMs(),
+        );
       if (!changed(state)) return;
       removeMediaListeners();
       const streams = new Set(
@@ -134,7 +143,7 @@ export const useRecordingController = () => {
       unsubscribe();
       removeMediaListeners();
     };
-  }, [runtime]);
+  }, [runtime, recordingService]);
 
   useEffect(() => {
     // This is part of the recording pipeline, not a user preference. Reassert it for a
@@ -178,6 +187,8 @@ export const useRecordingController = () => {
     const roomState = useRoomStore.getState();
     runtime.roomId = roomState.room.roomId;
     runtime.roomName = roomState.room.roomName;
+    runtime.gameTimeline = undefined;
+    runtime.finishedGameTimeline = undefined;
     runtime.mix = createMixedCallStream(roomState.localStream, roomState.remoteStreams, {
       loudnessBalanceEnabled: true,
       finalRemotePlaybackStream: getRemoteAudioMixer().getFinalOutputStream(),
@@ -209,10 +220,15 @@ export const useRecordingController = () => {
           sessionId,
           recordingId,
           recordingFilePath,
+          gameTimeline: runtime.finishedGameTimeline,
         });
       },
     });
     const status = recordingService.start(runtime.mix.stream);
+    if (status.state === RecordingState.Recording && status.startedAt && runtime.roomId) {
+      runtime.gameTimeline = createRecordingGameTimeline(runtime.roomId, 0);
+      runtime.gameTimeline.capture(roomState.room.roomId, roomState.room.members, 0);
+    }
     if (status.state !== RecordingState.Recording) {
       runtime.mix.dispose();
       runtime.mix = null;
@@ -224,6 +240,7 @@ export const useRecordingController = () => {
   const stopRecording = useCallback((): Promise<RecordingResult> => {
     if (runtime.finalizing) return runtime.finalizing;
     const mix = runtime.mix;
+    runtime.finishedGameTimeline = runtime.gameTimeline?.finish(runtime.mix?.elapsedMs() ?? 0);
     const operation = (async () => {
       try {
         const result = await recordingService.stop(
@@ -256,6 +273,8 @@ export const useRecordingController = () => {
       } finally {
         mix?.dispose();
         if (runtime.mix === mix) runtime.mix = null;
+        runtime.gameTimeline = undefined;
+        runtime.finishedGameTimeline = undefined;
       }
     })();
     runtime.finalizing = operation;
@@ -281,6 +300,8 @@ export const useRecordingController = () => {
     } finally {
       mix?.dispose();
       if (runtime.mix === mix) runtime.mix = null;
+      runtime.gameTimeline = undefined;
+      runtime.finishedGameTimeline = undefined;
     }
   }, [recordingService, runtime, setStatus]);
 

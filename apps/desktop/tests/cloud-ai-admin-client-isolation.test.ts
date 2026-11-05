@@ -70,3 +70,56 @@ test("admin snapshot cannot enter a new account or relay after a slow response b
     await assert.rejects(pending, /account_session_expired/);
   }
 });
+
+test("admin key is bound to its server and does not require a signed-in account", async () => {
+  let relay = "wss://relay-one.example";
+  let requests = 0;
+  const key = "A".repeat(43);
+  const client = new BuiltInAiClient(
+    () => relay,
+    async () => undefined,
+    async (_url, init) => {
+      requests++;
+      assert.equal((init?.headers as Record<string, string>)["x-shanghao-admin-key"], key);
+      return new Response('{"revision":0,"providers":[]}');
+    },
+  );
+  await assert.rejects(
+    client.importAdminKey("https://other.example", key),
+    /cloud_ai_admin_key_invalid/,
+  );
+  assert.equal(requests, 0);
+  assert.equal(await client.importAdminKey("https://relay-one.example", key), true);
+  assert.equal((await client.adminSnapshot())?.revision, 0);
+  relay = "wss://relay-two.example";
+  await assert.rejects(client.adminSnapshot(), /cloud_ai_admin_key_invalid/);
+  assert.equal(requests, 2);
+});
+
+test("a delayed key-authorized response cannot enter a changed relay", async () => {
+  let relay = "wss://relay-one.example",
+    calls = 0;
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let delayed!: ReadableStream<Uint8Array>;
+  const client = new BuiltInAiClient(
+    () => relay,
+    async () => undefined,
+    async () => {
+      calls++;
+      if (calls === 1) return new Response('{"revision":0,"providers":[]}');
+      delayed = new ReadableStream<Uint8Array>({
+        start(value) {
+          controller = value;
+        },
+      });
+      return new Response(delayed);
+    },
+  );
+  await client.importAdminKey("https://relay-one.example", "A".repeat(43));
+  const pending = client.adminSnapshot();
+  while (!delayed?.locked) await new Promise<void>((resolve) => setImmediate(resolve));
+  relay = "wss://relay-two.example";
+  controller.enqueue(new TextEncoder().encode('{"revision":1,"providers":[]}'));
+  controller.close();
+  await assert.rejects(pending, /cloud_ai_admin_key_invalid/);
+});

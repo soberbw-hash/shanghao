@@ -15,6 +15,10 @@ Object.defineProperty(window, "desktopApi", {
   configurable: true,
   value: {
     cloudAiAdmin: {
+      importKey: async () => {
+        document.documentElement.dataset.imported = "true";
+        return true;
+      },
       get: async () => structuredClone(snapshot),
       change: async (mutation: CloudAiAdminMutation) => {
         document.documentElement.dataset.mutations = String(++calls);
@@ -26,6 +30,7 @@ Object.defineProperty(window, "desktopApi", {
             id: mutation.provider.id ?? "synthetic-service",
             hasKey: true,
             active: false,
+            fallback: snapshot.providers.find((p) => p.id === mutation.provider.id)?.fallback,
           };
           Reflect.deleteProperty(provider, "apiKey");
           snapshot.providers = [
@@ -34,6 +39,11 @@ Object.defineProperty(window, "desktopApi", {
           ];
         } else if (mutation.action === "delete")
           snapshot.providers = snapshot.providers.filter((p) => p.id !== mutation.id);
+        else if (mutation.action === "set-fallback" || mutation.action === "clear-fallback")
+          snapshot.providers = snapshot.providers.map((p) => ({
+            ...p,
+            fallback: mutation.action === "set-fallback" && p.id === mutation.id,
+          }));
         else
           snapshot.providers = snapshot.providers.map((p) =>
             p.id === mutation.id ? { ...p, active: mutation.action === "activate" } : p,

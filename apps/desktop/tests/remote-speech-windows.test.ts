@@ -65,12 +65,62 @@ test("cloud phrase times follow actual audible windows, not punctuation spread a
 });
 
 test("quiet nonzero audio is retained and long voiced windows remain bounded", () => {
-  assert.deepEqual(cloudSpeechWindows(pcm([[0, 30000, 1]])), [{ startMs: 0, endMs: 30000 }]);
+  const quiet = cloudSpeechWindows(pcm([[0, 30000, 1]]));
+  assert.equal(quiet[0]?.startMs, 0);
+  assert.equal(quiet.at(-1)?.endMs, 30000);
   const windows = cloudSpeechWindows(pcm([[0, 30000, 1000]]));
   assert.ok(windows.length >= 2);
   windows.forEach((window) => assert.ok(window.endMs - window.startMs <= 18000));
   assert.equal(windows[0]?.startMs, 0);
   assert.equal(windows.at(-1)?.endMs, 30000);
+});
+
+test("quiet audio is retained even when a louder phrase exists elsewhere", () => {
+  const windows = cloudSpeechWindows(
+    pcm([
+      [1000, 1400, 1000],
+      [15000, 15300, 1],
+    ]),
+  );
+  assert.ok(windows.some((window) => window.startMs <= 1000 && window.endMs >= 1400));
+  assert.ok(windows.some((window) => window.startMs <= 15000 && window.endMs >= 15300));
+});
+
+test("cloud window uploads retain quiet audio beside a louder phrase", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-quiet-cloud-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "mixed.wav");
+  await writeFile(
+    file,
+    pcm([
+      [1000, 1400, 1000],
+      [15000, 15300, 1],
+    ]),
+  );
+  let calls = 0;
+  const result = await transcribeCloudSpeechWindows(
+    file,
+    new AbortController().signal,
+    async (slice) => {
+      const audio = await readFile(slice);
+      calls++;
+      if (calls === 2) assert.ok(audio.subarray(44).some((byte) => byte !== 0));
+      return { text: `句子${calls}`, modelName: "fixture" };
+    },
+  );
+  assert.equal(calls, 2);
+  const segments = parseVibeVoiceOutput(result.text, "fixture", 0, 30000);
+  assert.equal(segments.length, 2);
+  assert.ok(segments[1]!.startMs <= 15000 && segments[1]!.endMs >= 15300);
+});
+
+test("sparse noise cannot cause an unbounded number of provider calls", () => {
+  const ranges = Array.from({ length: 20 }, (_, index): [number, number, number] => [
+    index * 1500,
+    index * 1500 + 20,
+    1,
+  ]);
+  assert.deepEqual(cloudSpeechWindows(pcm(ranges)), [{ startMs: 0, endMs: 30000 }]);
 });
 
 test("subsecond track tails upload safely without stretching transcript timestamps", async () => {

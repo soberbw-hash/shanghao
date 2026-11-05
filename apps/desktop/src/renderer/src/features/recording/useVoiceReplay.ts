@@ -4,6 +4,9 @@ import { useRoomStore } from "../../store/roomStore";
 import { getRemoteAudioMixer } from "../audio/RemoteAudioMixer";
 import { VoiceReplayCapture } from "./VoiceReplayCapture";
 import { useAppStore } from "../../store/appStore";
+import { readVoiceReplayShortcut } from "./voiceReplayShortcut";
+
+let shortcutOwner: symbol | undefined;
 
 export function useVoiceReplay() {
   const roomId = useRoomStore((state) => state.room.roomId);
@@ -112,8 +115,26 @@ export function useVoiceReplay() {
       saving.current = false;
     }
   };
+  const saveRef = useRef(save);
+  saveRef.current = save;
   useEffect(() => {
-    void window.desktopApi.voiceReplay?.shortcut("").catch(() => undefined);
+    const api = window.desktopApi.voiceReplay;
+    if (!api) return;
+    let active = true;
+    const owner = Symbol("voice-replay-shortcut");
+    shortcutOwner = owner;
+    const unsubscribe = api.onSaveShortcut(() => {
+      if (active && shortcutOwner === owner) void saveRef.current();
+    });
+    void api.shortcut(readVoiceReplayShortcut()).catch(() => undefined);
+    return () => {
+      active = false;
+      unsubscribe();
+      if (shortcutOwner === owner) {
+        shortcutOwner = undefined;
+        void api.shortcut("").catch(() => undefined);
+      }
+    };
   }, []);
   return { save, revision, status, setStatus, seconds, setSeconds };
 }

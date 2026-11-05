@@ -110,6 +110,10 @@ if (!app.isPackaged && process.env.SHANGHAO_CAPTURE_PATH) {
 
 const showWindow = () => {
   if (!mainWindow) {
+    // The primary instance can outlive its window after the user closes it to
+    // the tray. A second launch then needs the same recreation path as the OS
+    // activate event instead of silently returning without showing anything.
+    app.emit("activate");
     return;
   }
 
@@ -570,13 +574,30 @@ const bootstrap = async (): Promise<void> => {
       });
       if (result.outputStatus !== "normal" && result.outputStatus !== "vad_silence")
         throw Error("voice_replay_transcription_unavailable");
-      if (result.outputStatus === "vad_silence") return "";
-      return (
-        result.segments
-          .map((segment) => segment.text.trim())
-          .filter(Boolean)
-          .join(" ") || result.rawText.trim()
-      ).slice(0, 20_000);
+      const text =
+        result.outputStatus === "vad_silence"
+          ? ""
+          : (
+              result.segments
+                .map((segment) => segment.text.trim())
+                .filter(Boolean)
+                .join(" ") || result.rawText.trim()
+            ).slice(0, 20_000);
+      return {
+        text,
+        sourceModel: "qwen3-asr-0.6b-force",
+        segments: result.segments
+          .filter((segment) => segment.text.trim())
+          .map((segment) => ({
+            text: segment.text.trim(),
+            startMs: segment.startMs,
+            endMs: segment.endMs,
+            timestampPrecision:
+              segment.timestampPrecision === "chunk" || !segment.words?.length
+                ? ("chunk" as const)
+                : ("aligned" as const),
+          })),
+      };
     },
   );
   const freeTokenRuntime = new FreeTokenManagedRuntime(aiRuntimeDirectory, {

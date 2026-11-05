@@ -11,6 +11,7 @@ interface Provider {
   model: string;
   apiKey: string;
   active: boolean;
+  fallback?: boolean;
 }
 interface State {
   revision: number;
@@ -60,17 +61,26 @@ const validate = (raw: unknown): State => {
   const ids = new Set<string>();
   const active = new Set<string>();
   const providers = state.providers.map((p) => {
-    if (!p || !["text", "speech"].includes(p.kind) || typeof p.active !== "boolean")
+    if (
+      !p ||
+      !["text", "speech"].includes(p.kind) ||
+      typeof p.active !== "boolean" ||
+      (p.fallback !== undefined && typeof p.fallback !== "boolean") ||
+      (p.fallback && (p.kind !== "text" || p.active))
+    )
       throw Error("cloud_ai_admin_storage_invalid");
     const id = text(p.id, 64);
     if (ids.has(id) || (p.active && active.has(p.kind)))
       throw Error("cloud_ai_admin_storage_invalid");
     ids.add(id);
     if (p.active) active.add(p.kind);
+    if (p.fallback && active.has("fallback")) throw Error("cloud_ai_admin_storage_invalid");
+    if (p.fallback) active.add("fallback");
     return {
       id,
       kind: p.kind,
       active: p.active,
+      ...(p.fallback ? { fallback: true } : {}),
       name: text(p.name, 80),
       baseUrl: adminProviderUrl(p.baseUrl),
       model: text(p.model, 160),
@@ -106,24 +116,101 @@ export class CloudAiAdminStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT")
         throw Error("cloud_ai_admin_storage_invalid", { cause: error });
+      const legacyTextBaseUrl =
+        environment.CLOUD_AI_BASE_URL?.trim() ||
+        environment.CLOUD_AI_FALLBACK_BASE_URL?.trim() ||
+        "https://open.bigmodel.cn/api/paas/v4";
+      const legacyTextModel =
+        environment.CLOUD_AI_MODEL?.trim() ||
+        environment.CLOUD_AI_FALLBACK_MODEL?.trim() ||
+        "glm-4-flash-250414";
+      const isGlmUrl = (value: string | undefined) => {
+        try {
+          return (
+            new URL(value || "https://open.bigmodel.cn/api/paas/v4").hostname === "open.bigmodel.cn"
+          );
+        } catch {
+          return false;
+        }
+      };
+      const deepseekApiKey = environment.DEEPSEEK_API_KEY?.trim();
+      const glmBaseUrl =
+        environment.GLM_BASE_URL?.trim() ||
+        (isGlmUrl(environment.CLOUD_AI_FALLBACK_BASE_URL)
+          ? environment.CLOUD_AI_FALLBACK_BASE_URL?.trim()
+          : undefined) ||
+        (isGlmUrl(environment.CLOUD_AI_BASE_URL)
+          ? environment.CLOUD_AI_BASE_URL?.trim()
+          : undefined) ||
+        "https://open.bigmodel.cn/api/paas/v4";
+      const glmModel =
+        environment.GLM_MODEL?.trim() ||
+        (environment.CLOUD_AI_FALLBACK_MODEL?.trim().startsWith("glm-")
+          ? environment.CLOUD_AI_FALLBACK_MODEL.trim()
+          : undefined) ||
+        (environment.CLOUD_AI_MODEL?.trim().startsWith("glm-")
+          ? environment.CLOUD_AI_MODEL.trim()
+          : undefined) ||
+        "glm-4-flash-250414";
+      const glmApiKey = deepseekApiKey
+        ? environment.GLM_API_KEY?.trim() ||
+          (!environment.CLOUD_AI_FALLBACK_BASE_URL?.trim() ||
+          isGlmUrl(environment.CLOUD_AI_FALLBACK_BASE_URL)
+            ? environment.CLOUD_AI_FALLBACK_API_KEY?.trim()
+            : undefined) ||
+          (isGlmUrl(environment.CLOUD_AI_BASE_URL)
+            ? environment.CLOUD_AI_API_KEY?.trim()
+            : undefined)
+        : undefined;
+      const textProviders = deepseekApiKey
+        ? [
+            {
+              id: "builtin-text",
+              kind: "text" as const,
+              name: "DeepSeek",
+              baseUrl: environment.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com",
+              model: environment.DEEPSEEK_MODEL?.trim() || "deepseek-flash",
+              apiKey: deepseekApiKey,
+              active: true,
+            },
+            ...(glmApiKey
+              ? [
+                  {
+                    id: "builtin-text-glm-fallback",
+                    kind: "text" as const,
+                    name: "智谱 GLM 备用",
+                    baseUrl: glmBaseUrl,
+                    model: glmModel,
+                    apiKey: glmApiKey,
+                    active: false,
+                    fallback: true,
+                  },
+                ]
+              : []),
+          ]
+        : [
+            {
+              id: "builtin-text",
+              kind: "text" as const,
+              name: "内置文字服务",
+              baseUrl:
+                environment.GLM_BASE_URL?.trim() ||
+                (environment.GLM_API_KEY?.trim() ? glmBaseUrl : legacyTextBaseUrl),
+              model:
+                environment.GLM_MODEL?.trim() ||
+                (environment.GLM_API_KEY?.trim() ? glmModel : legacyTextModel),
+              apiKey:
+                environment.GLM_API_KEY?.trim() ||
+                environment.CLOUD_AI_API_KEY?.trim() ||
+                environment.CLOUD_AI_FALLBACK_API_KEY?.trim() ||
+                "",
+              active: true,
+            },
+          ];
       state = validate({
         revision: 0,
         providers: [
-          {
-            id: "builtin-text",
-            kind: "text",
-            name: "内置文字服务",
-            baseUrl:
-              environment.CLOUD_AI_BASE_URL ||
-              environment.CLOUD_AI_FALLBACK_BASE_URL ||
-              "https://open.bigmodel.cn/api/paas/v4",
-            model:
-              environment.CLOUD_AI_MODEL ||
-              environment.CLOUD_AI_FALLBACK_MODEL ||
-              "glm-4-flash-250414",
-            apiKey: environment.CLOUD_AI_API_KEY || environment.CLOUD_AI_FALLBACK_API_KEY || "",
-            active: true,
-          },
+          ...textProviders,
           {
             id: "builtin-speech",
             kind: "speech",
@@ -151,6 +238,10 @@ export class CloudAiAdminStore {
     const provider = this.state.providers.find((p) => p.kind === kind && p.active && p.apiKey);
     return provider ? { ...provider } : undefined;
   }
+  fallbackTextProvider(): Readonly<Provider> | undefined {
+    const provider = this.state.providers.find((p) => p.kind === "text" && p.fallback && p.apiKey);
+    return provider ? { ...provider } : undefined;
+  }
   mutate(input: CloudAiAdminMutation): Promise<CloudAiAdminSnapshot> {
     const operation = this.queue.then(async () => {
       if (!this.file) throw Error("cloud_ai_admin_storage_not_configured");
@@ -174,18 +265,29 @@ export class CloudAiAdminStore {
           model: text(p.model, 160),
           apiKey: p.apiKey?.trim() ? text(p.apiKey, 8192) : (old?.apiKey ?? ""),
           active: old?.active ?? false,
+          ...(old?.fallback ? { fallback: true } : {}),
         };
         if (!next.apiKey) throw Error("cloud_ai_admin_key_required");
         providers = old
           ? providers.map((entry) => (entry.id === old.id ? next : entry))
           : [...providers, next];
-      } else if (["activate", "disable", "delete"].includes(input.action)) {
+      } else if (
+        ["activate", "disable", "delete", "set-fallback", "clear-fallback"].includes(input.action)
+      ) {
         const selected = providers.find((p) => p.id === input.id);
         if (!selected) throw Error("cloud_ai_admin_not_found");
         if (input.action === "delete") providers = providers.filter((p) => p.id !== input.id);
-        else if (input.action === "disable") selected.active = false;
-        else {
+        else if (input.action === "disable") {
+          selected.active = false;
+          selected.fallback = false;
+        } else if (input.action === "clear-fallback") selected.fallback = false;
+        else if (input.action === "set-fallback") {
+          if (selected.kind !== "text" || selected.active || !selected.apiKey)
+            throw Error("cloud_ai_admin_invalid_input");
+          for (const p of providers) if (p.kind === "text") p.fallback = p.id === selected.id;
+        } else {
           if (!selected.apiKey) throw Error("cloud_ai_admin_key_required");
+          selected.fallback = false;
           for (const p of providers) if (p.kind === selected.kind) p.active = p.id === selected.id;
         }
       } else throw Error("cloud_ai_admin_invalid_input");

@@ -19,6 +19,20 @@ test("comparison failures explain recovery without relying on a disabled tab too
   assert.match(formatModelComparisonError(new Error("model_not_downloaded")), /下载/);
 });
 
+test("human reference never gives a failed model a misleading accuracy score", () => {
+  const payload = buildModelComparisonExport({
+    recording,
+    recordingTitle: "测试",
+    record,
+    modelIds: ["ark-asr-3b-q8_0"],
+    results: {
+      "ark-asr-3b-q8_0": { modelId: "ark-asr-3b-q8_0", status: "failed", message: "failed" },
+    },
+    groundTruthText: "这是测试文本。",
+  });
+  assert.equal(payload.models[0]?.evaluation, undefined);
+});
+
 const recording: RecordingLibraryItem = {
   id: "recording-1",
   recordingId: "recording-1",
@@ -146,6 +160,26 @@ test("model comparison export keeps per-model raw transcription data without CER
   const summary = buildModelComparisonSummaryExport(payload);
   assert.equal(JSON.stringify(summary).includes("rawRuntimeOutput"), false);
   assert.equal(summary.modelSummary[0]?.status, "success");
+});
+
+test("reference metrics use complete results and bound quadratic CER work", () => {
+  const input = {
+    recording,
+    recordingTitle: "测试",
+    record,
+    modelIds: ["cohere-transcribe-2b"] as AiAsrModelId[],
+    results: {},
+  };
+  const exact = buildModelComparisonExport({
+    ...input,
+    groundTruthText: "这是测试文本。",
+    expectedKeywords: ["测试"],
+  });
+  assert.equal(exact.models[0]?.evaluation?.cer, 0);
+  assert.equal(exact.models[0]?.evaluation?.keywordAccuracy, 1);
+  const long = buildModelComparisonExport({ ...input, groundTruthText: "长".repeat(400_000) });
+  assert.equal(long.models[0]?.evaluation?.cer, undefined);
+  assert.match(long.models[0]?.evaluation?.cerUnavailableReason ?? "", /文本过长/);
 });
 
 test("model comparison export never reports interrupted variants as completed", () => {

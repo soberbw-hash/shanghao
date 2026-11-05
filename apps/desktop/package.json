@@ -1,6 +1,6 @@
 {
   "name": "shanghao-desktop",
-  "version": "3.4.17",
+  "version": "3.4.18",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "description": "ShangHao desktop voice app for private friends group chat",
@@ -59,7 +59,7 @@
     "@types/ws": "8.18.1",
     "@vitejs/plugin-react-swc": "4.3.3",
     "concurrently": "9.2.4",
-    "electron": "42.11.8",
+    "electron": "45.2.2",
     "electron-builder": "26.15.7",
     "postcss": "8.5.26",
     "tailwindcss": "4.3.3",

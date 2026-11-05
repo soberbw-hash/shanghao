@@ -1,0 +1,28 @@
+.voice-replay-transcript-segments {
+  display: grid;
+  gap: 5px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0;
+}
+.voice-replay-transcript-segments button {
+  padding: 8px 10px;
+  border: 1px solid #dce8f2;
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.voice-replay-transcript-segments button:hover,
+.voice-replay-transcript-segments button:focus-visible {
+  border-color: #67a5e4;
+  background: #eaf4ff;
+}
+.voice-replay-transcript-edit textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 10px;
+  border: 1px solid #d2e0ee;
+  border-radius: 10px;
+  resize: vertical;
+}

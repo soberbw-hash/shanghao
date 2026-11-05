@@ -225,5 +225,9 @@
   "apps/desktop/src/renderer/src/styles/parts/260-voice-replay.css": 25,
   "apps/desktop/src/renderer/src/styles/parts/261-audio-device-presets.css": 20,
   "apps/desktop/src/renderer/src/styles/parts/262-recording-reading-layout.css": 260,
-  "apps/desktop/src/renderer/src/styles/parts/263-assistant-message-pointer.css": 22
+  "apps/desktop/src/renderer/src/styles/parts/263-assistant-message-pointer.css": 22,
+  "apps/desktop/src/renderer/src/styles/parts/00-text-selection.css": 12,
+  "apps/desktop/src/renderer/src/styles/parts/171-model-comparison-reference.css": 27,
+  "apps/desktop/src/renderer/src/styles/parts/275-voice-replay-transcript.css": 29,
+  "apps/desktop/src/renderer/src/styles/parts/121-recording-game-context.css": 40
 }

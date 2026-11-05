@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createEmptyVoiceMemoryRecord } from "../src/main/voice-memory-record";
 import { fuseTranscripts, processTranscriptFusion } from "../src/main/transcript-fusion";
-import { resolveTranscriptView } from "../src/renderer/src/features/ai/transcriptView";
+import {
+  resolveTranscriptView,
+  transcriptViewOptions,
+} from "../src/renderer/src/features/ai/transcriptView";
 import type { VoiceMemoryRecord } from "@private-voice/shared";
 import { voiceMemoryResumeRequest } from "../src/main/voice-memory-resume";
 import { isVoiceMemoryRecord } from "../src/main/voice-memory-store";
+import { archiveFusion } from "../src/main/voice-memory-fusion-history";
+import { archiveTranscriptionOriginals } from "../src/main/voice-memory-original-history";
 import {
   assignVoiceMemorySpeaker,
   migrateVoiceMemoryIdentity,
@@ -80,7 +85,7 @@ function fixture() {
   };
 }
 
-test("unreviewed originals retry only on an explicit request and can clear their review marker", async () => {
+test("unreviewed originals retry only on explicit request and conflicting sources stay marked", async () => {
   const f = fixture();
   const first = await fuseTranscripts(f.record, {
     ...f.host,
@@ -110,13 +115,17 @@ test("unreviewed originals retry only on an explicit request and can clear their
   assert.equal(calls, 0);
   const next = await fuseTranscripts(first, { ...host, retryUnreviewed: true });
   assert.equal(calls, 1);
-  assert.equal(next.transcriptionFusion?.transcript[0]?.text, "我们去下路。");
-  assert.equal(next.transcriptionFusion?.transcript[0]?.fusionReviewReason, undefined);
+  const local = next.transcriptionFusion?.transcript.find((segment) => segment.id === "local-1");
+  assert.equal(local?.text, "我们去下陆。");
+  assert.equal(local?.fusionUncertain, true);
+  assert.equal(local?.fusionReviewReason, undefined);
   assert.deepEqual(next.transcriptionVariants, first.transcriptionVariants);
 });
 
 test("organizing persisted cloud and local originals also starts missing fusion without another ASR run", async () => {
   const f = fixture();
+  f.record.transcriptionVariants!["siliconflow-sensevoice-small"]!.transcript[0]!.text =
+    "我们去下陆。";
   const original = JSON.stringify(f.record.transcriptionVariants);
   const result = await processTranscriptFusion(
     f.record,
@@ -124,7 +133,7 @@ test("organizing persisted cloud and local originals also starts missing fusion 
     {
       generateJson: async () => ({
         segments: [
-          { id: "local-1", text: "我们去下路。", uncertain: false, cloudIds: ["cloud-1"] },
+          { id: "local-1", text: "我们去下陆。", uncertain: false, cloudIds: ["cloud-1"] },
         ],
       }),
     } as never,
@@ -133,7 +142,7 @@ test("organizing persisted cloud and local originals also starts missing fusion 
     () => {},
   );
   assert.equal(result.transcriptionFusion?.status, "completed");
-  assert.equal(result.transcriptionFusion?.transcript[0]?.text, "我们去下路。");
+  assert.equal(result.transcriptionFusion?.transcript[0]?.text, "我们去下陆。");
   assert.equal(JSON.stringify(result.transcriptionVariants), original);
 });
 
@@ -185,18 +194,20 @@ test("a legacy completed assist missing its local original cannot advertise comp
   assert.notEqual(result.transcriptionFusion?.status, "completed");
 });
 
-test("fusion corrects wording with both sources, retains timing and identity, and never overwrites originals", async () => {
+test("fusion preserves agreed wording, timing and identity and never overwrites originals", async () => {
   const f = fixture();
+  f.record.transcriptionVariants!["siliconflow-sensevoice-small"]!.transcript[0]!.text =
+    "我们去下陆。";
   const originals = JSON.stringify(f.record.transcriptionVariants);
   const result = await fuseTranscripts(f.record, {
     ...f.host,
     generate: async (request) => {
       assert.equal(request.roomId, "room-a");
       assert.match(request.prompt, /我们去下陆/);
-      assert.match(request.prompt, /我们去下路/);
+      assert.match(request.prompt, /我们去下陆/);
       return {
         segments: [
-          { id: "local-1", text: "我们去下路。", uncertain: false, cloudIds: ["cloud-1"] },
+          { id: "local-1", text: "我们去下陆。", uncertain: false, cloudIds: ["cloud-1"] },
         ],
       };
     },
@@ -207,19 +218,15 @@ test("fusion corrects wording with both sources, retains timing and identity, an
   assert.equal(result.transcript[0]?.text, "我们去下陆。");
   const view = resolveTranscriptView(result);
   assert.equal(view?.kind, "fusion");
-  assert.equal(view?.transcript[0]?.text, "我们去下路。");
+  assert.equal(view?.transcript[0]?.text, "我们去下陆。");
   assert.equal(view?.transcript[0]?.startMs, 5200);
   assert.equal(view?.transcript[0]?.speakerId, "member-a");
-  assert.equal(
-    view?.transcript[0]?.words,
-    undefined,
-    "changed words must not reuse old word alignment",
-  );
+  assert.deepEqual(view?.transcript[0]?.words, f.record.transcript[0]?.words);
   assert.equal(resolveTranscriptView(result, "cloud")?.transcript[0]?.startMs, 0);
   assert.equal(resolveTranscriptView(result, "local")?.transcript[0]?.text, "我们去下陆。");
   const assigned = assignVoiceMemorySpeaker(result, "member-a", "confirmed-member", "已确认昵称");
   assert.equal(resolveTranscriptView(assigned)?.transcript[0]?.nickname, "已确认昵称");
-  assert.equal(resolveTranscriptView(assigned)?.transcript[0]?.text, "我们去下路。");
+  assert.equal(resolveTranscriptView(assigned)?.transcript[0]?.text, "我们去下陆。");
   assert.equal(resolveTranscriptView(assigned)?.transcript[0]?.startMs, 5200);
   assert.equal(
     assigned.transcriptionVariants?.["qwen3-asr-0.6b-force"]?.transcript[0]?.memberId,
@@ -243,6 +250,112 @@ test("fusion corrects wording with both sources, retains timing and identity, an
       assert.fail("trusted metadata migration must preserve completed correction"),
   });
   assert.equal(reused.transcriptionFusion?.status, "completed");
+});
+
+test("conflicting originals stay reviewable even if the language model confidently picks the cloud wording", async () => {
+  const f = fixture();
+  const result = await fuseTranscripts(f.record, {
+    ...f.host,
+    generate: async () => ({
+      segments: [{ id: "local-1", text: "我们去下路。", uncertain: false, cloudIds: ["cloud-1"] }],
+    }),
+  });
+  const local = result.transcriptionFusion?.transcript.find((segment) => segment.id === "local-1");
+  assert.equal(result.transcriptionFusion?.errorCode, "fusion_unreviewed");
+  assert.equal(local?.text, "我们去下陆。");
+  assert.equal(local?.fusionUncertain, true);
+  assert.equal(
+    result.transcriptionVariants?.["siliconflow-sensevoice-small"]?.transcript[0]?.text,
+    "我们去下路。",
+  );
+  assert.equal(
+    result.transcriptionVariants?.["qwen3-asr-0.6b-force"]?.transcript[0]?.text,
+    "我们去下陆。",
+  );
+});
+
+test("archived fusion survives serialization and recording identity migration", () => {
+  const f = fixture();
+  const fusion = {
+    status: "completed" as const,
+    sourceSignature: "a".repeat(64),
+    completedBatches: 1,
+    totalBatches: 1,
+    transcript: f.record.transcript,
+    speakers: [],
+  };
+  const archived = archiveFusion({ ...f.record, transcriptionFusion: fusion });
+  const restored: unknown = JSON.parse(JSON.stringify(archived));
+  assert.ok(isVoiceMemoryRecord(restored));
+  assert.deepEqual(restored.transcriptionFusionHistory?.[0]?.fusion, fusion);
+  const migrated = migrateVoiceMemoryIdentity(restored, "new-r", "new.wav");
+  assert.equal(
+    migrated.transcriptionFusionHistory?.[0]?.fusion.transcript[0]?.recordingId,
+    "new-r",
+  );
+});
+
+test("explicit restart archives each original and retains selectable text through identity migration", () => {
+  const f = fixture();
+  const archived = archiveTranscriptionOriginals(f.record);
+  assert.equal(archived.transcriptionOriginalHistory?.length, 3);
+  const choices = transcriptViewOptions(archived).filter((option) =>
+    option.kind.startsWith("history-original:"),
+  );
+  assert.equal(choices.length, 3);
+  assert.ok(choices.some((option) => option.transcript[0]?.text === "我们去下路。"));
+  assert.ok(choices.some((option) => option.transcript[0]?.text === "我们去下陆。"));
+  const migrated = migrateVoiceMemoryIdentity(archived, "new-r", "new.wav");
+  assert.ok(
+    migrated.transcriptionOriginalHistory?.every((entry) =>
+      entry.transcript.every((segment) => segment.recordingId === "new-r"),
+    ),
+  );
+  assert.equal(f.record.transcriptionOriginalHistory, undefined);
+  assert.equal(isVoiceMemoryRecord(archived), true);
+  assert.equal(isVoiceMemoryRecord({ ...archived, transcriptionOriginalHistory: [{}] }), false);
+});
+
+test("legacy fusion is not automatically trusted and manual retry archives it", async () => {
+  const f = fixture();
+  const legacy: VoiceMemoryRecord = {
+    ...f.record,
+    transcriptionFusion: {
+      status: "completed",
+      sourceSignature: "legacy",
+      completedBatches: 1,
+      totalBatches: 1,
+      transcript: [{ ...f.record.transcript[0]!, text: "历史校对。", fusionUncertain: false }],
+      speakers: [],
+    },
+  };
+  assert.equal(resolveTranscriptView(legacy)?.kind, "cloud");
+  const view = transcriptViewOptions(legacy).find((option) => option.kind === "fusion");
+  assert.match(view?.label ?? "", /历史融合稿/);
+  assert.equal(view?.transcript[0]?.text, "历史校对。");
+  const result = await fuseTranscripts(legacy, {
+    ...f.host,
+    generate: async () => ({ segments: [] }),
+  });
+  assert.deepEqual(result.transcriptionFusionHistory?.[0]?.fusion, legacy.transcriptionFusion);
+  const history = transcriptViewOptions(result).find((option) =>
+    option.kind.startsWith("history:"),
+  );
+  assert.equal(history?.transcript[0]?.text, "历史校对。");
+  assert.equal(resolveTranscriptView(result, history!.kind)?.kind, history!.kind);
+  const future = {
+    ...legacy,
+    transcriptionFusion: {
+      ...legacy.transcriptionFusion!,
+      verificationPolicy: "future-policy" as never,
+    },
+  };
+  const preserved = await fuseTranscripts(future, {
+    ...f.host,
+    manual: false,
+    generate: async () => assert.fail("unknown policy must remain intact"),
+  });
+  assert.deepEqual(preserved.transcriptionFusion, future.transcriptionFusion);
 });
 
 test("fusion tells the provider the exact cloud references allowed for each local sentence", async () => {

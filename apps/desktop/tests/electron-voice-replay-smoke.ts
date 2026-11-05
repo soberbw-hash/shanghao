@@ -127,19 +127,22 @@ void app.whenReady().then(async () => {
       return {ok:true,duration:audio.duration,peak,clips:3,inputStillLive:true,settingsBinding:true,conflictPreserved:true};
     })()`);
     // Notify only this isolated window through the production Preload channel, without sending OS keys.
+    const beforeShortcut = await view.webContents.executeJavaScript(
+      `window.desktopApi.voiceReplay.list().then(x=>x.length)`,
+    );
+    if (beforeShortcut !== 3) throw Error(`unexpected_count_before_shortcut:${beforeShortcut}`);
     view.webContents.send(IPC_CHANNELS.voiceReplay.saveShortcut);
     await view.webContents.executeJavaScript(`(async()=>{
       const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
       for(let i=0;i<30&&(await window.desktopApi.voiceReplay.list()).length<4;i++)await wait(100);
-      if((await window.desktopApi.voiceReplay.list()).length!==4)throw Error('shortcut stopped when viewing chat');
+      const count=(await window.desktopApi.voiceReplay.list()).length;
+      if(count!==4)throw Error('shortcut saved an unexpected number of clips: '+count);
       document.querySelector('#fixture-toggle-settings').click();await wait(50);
       document.querySelectorAll('[role="tab"]')[1].click();await wait(100);
       [...document.querySelectorAll('button')].find(button=>button.textContent==='保存刚才对话').click();await wait(100);
     })()`);
-    const screenshot = path.resolve("../../artifacts/voice-replay-integrated-20261101.png");
-    await fs.writeFile(screenshot, (await view.webContents.capturePage()).toPNG());
     await view.webContents.executeJavaScript("window.replayFixture.close()");
-    console.log(JSON.stringify({ ...result, clips: 4, savedFromChatShortcut: true, screenshot }));
+    console.log(JSON.stringify({ ...result, clips: 4, savedFromChatShortcut: true }));
     if (conflictOwned) globalShortcut.unregister(conflictKey);
     clearTimeout(deadline);
     app.exit(0);

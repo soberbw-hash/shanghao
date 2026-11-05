@@ -17,6 +17,8 @@ export interface AsrWorkerSegment {
 
 export interface AsrWorkerResult {
   text: string;
+  /** The model invocation received the context, not evidence of an accuracy gain. */
+  contextApplied?: boolean;
   rawText?: string;
   segments?: AsrWorkerSegment[];
   nativeSpeakerSegments?: Array<{
@@ -76,6 +78,7 @@ interface AsrWorkerRequest {
   wavPath: string;
   durationMs: number;
   resourceMode: "low" | "normal";
+  context?: string;
   timeoutMs: number;
   signal?: AbortSignal;
   resolve: (value: AsrWorkerResult) => void;
@@ -105,6 +108,7 @@ const launchKey = (launch: AsrWorkerLaunch): string =>
     launch.alignerModelPath,
     launch.vadModelPath,
     launch.puncModelPath,
+    launch.pythonPath,
   ].join("|");
 
 /** Keeps exactly one non-Vibe ASR model loaded and serializes inference off the Electron thread. */
@@ -116,6 +120,8 @@ export class AsrPersistentWorker {
   private stderrTail = "";
   private queue: AsrWorkerRequest[] = [];
   private active?: AsrWorkerRequest;
+  private pumping = false;
+  private releaseGeneration = 0;
   private startPromise?: Promise<void>;
   private startResolve?: () => void;
   private startReject?: (reason: Error) => void;
@@ -152,10 +158,16 @@ export class AsrPersistentWorker {
     wavPath: string;
     durationMs: number;
     resourceMode: "low" | "normal";
+    context?: string;
     timeoutMs: number;
     signal?: AbortSignal;
   }): Promise<AsrWorkerResult> {
     if (options.signal?.aborted) return Promise.reject(new Error("ai_task_paused"));
+    if (
+      options.context !== undefined &&
+      (typeof options.context !== "string" || options.context.length > 512)
+    )
+      return Promise.reject(new Error("invalid_asr_context"));
     this.clearIdleRelease();
     return new Promise<AsrWorkerResult>((resolve, reject) => {
       const request: AsrWorkerRequest = {
@@ -172,6 +184,7 @@ export class AsrPersistentWorker {
   }
 
   release(reason = "released"): void {
+    this.releaseGeneration++;
     this.clearIdleRelease();
     const error = new Error(
       reason === "idle_timeout" ? "asr_worker_idle_release" : "ai_task_paused",
@@ -195,56 +208,67 @@ export class AsrPersistentWorker {
   }
 
   private async pump(): Promise<void> {
-    if (this.active || !this.queue.length) return;
-    const request = this.queue[0];
-    if (!request) return;
-    const alreadyLoaded = Boolean(
-      this.child &&
-      this.phase === "ready" &&
-      launchKey(this.currentLaunch as AsrWorkerLaunch) === launchKey(request.launch),
-    );
-    const loadStartedAt = performance.now();
+    if (this.pumping || this.active || !this.queue.length) return;
+    this.pumping = true;
     try {
-      await this.ensureStarted(request.launch);
-      request.loadTimeMs = alreadyLoaded
-        ? 0
-        : Math.max(0, Math.round(performance.now() - loadStartedAt));
-    } catch (error) {
+      const request = this.queue[0];
+      if (!request) return;
+      const generation = this.releaseGeneration;
+      const alreadyLoaded = Boolean(
+        this.child &&
+        this.phase === "ready" &&
+        launchKey(this.currentLaunch as AsrWorkerLaunch) === launchKey(request.launch),
+      );
+      const loadStartedAt = performance.now();
+      try {
+        await this.ensureStarted(request.launch, generation);
+        request.loadTimeMs = alreadyLoaded
+          ? 0
+          : Math.max(0, Math.round(performance.now() - loadStartedAt));
+      } catch (error) {
+        const index = this.queue.indexOf(request);
+        if (index >= 0) {
+          this.queue.splice(index, 1);
+          this.finishRequest(request, error instanceof Error ? error : new Error(String(error)));
+        }
+        return;
+      }
+      if (this.queue[0] !== request || generation !== this.releaseGeneration) return;
+      if (this.active || !this.child || this.phase !== "ready") return;
       this.queue.shift();
-      this.finishRequest(request, error instanceof Error ? error : new Error(String(error)));
-      if (this.queue.length) void this.pump();
-      return;
+      if (request.signal?.aborted) {
+        this.finishRequest(request, new Error("ai_task_paused"));
+        return;
+      }
+      this.active = request;
+      this.phase = "running";
+      request.inferenceStartedAt = performance.now();
+      request.timeout = setTimeout(() => {
+        if (this.active !== request) return;
+        const error = new Error(`asr_worker_timeout:${request.timeoutMs}ms`);
+        this.lastError = error.message;
+        this.finishRequest(request, error);
+        this.stopChild(error);
+        if (this.queue.length) void this.pump();
+      }, request.timeoutMs);
+      this.child.stdin.write(
+        `${JSON.stringify({
+          id: request.id,
+          wavPath: request.wavPath,
+          durationMs: request.durationMs,
+          resourceMode: request.resourceMode,
+          context: request.context ?? "",
+        })}\n`,
+        "utf8",
+      );
+    } finally {
+      this.pumping = false;
+      if (!this.active && this.queue.length) void this.pump();
+      else if (!this.active) this.scheduleIdleRelease();
     }
-    if (this.active || !this.child || this.phase !== "ready") return;
-    this.queue.shift();
-    if (request.signal?.aborted) {
-      this.finishRequest(request, new Error("ai_task_paused"));
-      void this.pump();
-      return;
-    }
-    this.active = request;
-    this.phase = "running";
-    request.inferenceStartedAt = performance.now();
-    request.timeout = setTimeout(() => {
-      if (this.active !== request) return;
-      const error = new Error(`asr_worker_timeout:${request.timeoutMs}ms`);
-      this.lastError = error.message;
-      this.finishRequest(request, error);
-      this.stopChild(error);
-      if (this.queue.length) void this.pump();
-    }, request.timeoutMs);
-    this.child.stdin.write(
-      `${JSON.stringify({
-        id: request.id,
-        wavPath: request.wavPath,
-        durationMs: request.durationMs,
-        resourceMode: request.resourceMode,
-      })}\n`,
-      "utf8",
-    );
   }
 
-  private async ensureStarted(launch: AsrWorkerLaunch): Promise<void> {
+  private async ensureStarted(launch: AsrWorkerLaunch, generation: number): Promise<void> {
     this.clearIdleRelease();
     if (this.child && launchKey(this.currentLaunch as AsrWorkerLaunch) === launchKey(launch)) {
       if (this.phase === "ready" || this.phase === "running") return;
@@ -252,6 +276,7 @@ export class AsrPersistentWorker {
     }
     if (this.child) this.stopChild(new Error("asr_model_changed"));
     await this.terminationPromise;
+    if (generation !== this.releaseGeneration) throw new Error("ai_task_paused");
     if (
       [...this.terminatingChildren].some(
         (child) => child.exitCode === null && child.signalCode === null,
@@ -375,6 +400,12 @@ export class AsrPersistentWorker {
     const index = this.queue.indexOf(request);
     if (index >= 0) this.queue.splice(index, 1);
     this.finishRequest(request, new Error("ai_task_paused"));
+    if (index === 0 && this.pumping) {
+      // The head request owns the in-flight load. Cancel it promptly rather than
+      // leaving a large model loading after the caller has paused the job.
+      this.releaseGeneration++;
+      this.stopChild(new Error("ai_task_paused"));
+    }
   }
 
   private finishRequest(request: AsrWorkerRequest, error?: Error, output?: AsrWorkerResult): void {

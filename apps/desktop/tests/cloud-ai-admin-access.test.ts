@@ -1,48 +1,26 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import type { IncomingMessage } from "node:http";
-import type { AccountBackend } from "../../../packages/signaling/src/account-service";
 import { CloudAiAdminAccess } from "../../../packages/signaling/src/cloud-ai-admin-access";
 
-/* eslint-disable security/detect-possible-timing-attacks -- Fake test tokens, never production authentication. */
-const accounts = {
-  configured: true,
-  verifyAccessToken: async (token: string) => {
-    if (token === "admin") return { userId: "administrator-id" };
-    if (token === "user") return { userId: "ordinary-id" };
-    throw new Error("expired");
-  },
-} as unknown as AccountBackend;
-const request = (authorization?: string) => ({ headers: { authorization } }) as IncomingMessage;
-
-test("admin access requires secure transport, valid account and server allowlist on every call", async () => {
-  const access = new CloudAiAdminAccess(accounts, () => true, " administrator-id ");
-  assert.equal(await access.allows(request("Bearer admin")), true);
-  for (const header of [
-    undefined,
-    "Bearer user",
-    "Bearer expired",
-    "admin",
-    "Bearer admin extra",
-  ]) {
-    assert.equal(await access.allows(request(header)), false);
+test("admin access requires the configured key and secure transport, independent of account", async () => {
+  const old = process.env.CLOUD_AI_ADMIN_KEY_SHA256;
+  const key = "A".repeat(43);
+  const request = (supplied?: string) =>
+    ({
+      headers: { "x-shanghao-admin-key": supplied, authorization: "Bearer admin" },
+    }) as IncomingMessage;
+  try {
+    process.env.CLOUD_AI_ADMIN_KEY_SHA256 = createHash("sha256").update(key).digest("hex");
+    assert.equal(await new CloudAiAdminAccess(() => true).allows(request(key)), true);
+    assert.equal(await new CloudAiAdminAccess(() => true).allows(request("B".repeat(43))), false);
+    assert.equal(await new CloudAiAdminAccess(() => true).allows(request()), false);
+    assert.equal(await new CloudAiAdminAccess(() => false).allows(request(key)), false);
+    delete process.env.CLOUD_AI_ADMIN_KEY_SHA256;
+    assert.equal(await new CloudAiAdminAccess(() => true).allows(request(key)), false);
+  } finally {
+    if (old === undefined) delete process.env.CLOUD_AI_ADMIN_KEY_SHA256;
+    else process.env.CLOUD_AI_ADMIN_KEY_SHA256 = old;
   }
-  assert.equal(
-    await new CloudAiAdminAccess(accounts, () => false, "administrator-id").allows(
-      request("Bearer admin"),
-    ),
-    false,
-  );
-  assert.equal(
-    await new CloudAiAdminAccess(accounts, () => true, "").allows(request("Bearer admin")),
-    false,
-  );
-  assert.equal(
-    await new CloudAiAdminAccess(
-      { ...accounts, configured: false },
-      () => true,
-      "administrator-id",
-    ).allows(request("Bearer admin")),
-    false,
-  );
 });

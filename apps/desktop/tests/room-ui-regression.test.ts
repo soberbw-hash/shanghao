@@ -633,6 +633,8 @@ test("abusive, suggestive and family-title nickname variants are rejected", () =
   }
   assert.equal(getNicknameValidationError("摸鱼小猫"), undefined);
   assert.equal(getNicknameValidationError("Sober"), undefined);
+  assert.ok(getNicknameValidationError(`000mom${"0".repeat(50000)}`));
+  assert.equal(getNicknameValidationError(`ok${"0".repeat(50000)}z`), undefined);
   assert.equal(getNicknameValidationError("小习惯"), undefined);
   assert.equal(
     getNicknameValidationError("爸爸去哪儿"),

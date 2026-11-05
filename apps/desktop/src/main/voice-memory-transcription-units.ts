@@ -1,12 +1,11 @@
 import {
-  CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+  CURRENT_TRANSCRIPTION_PIPELINE_VERSION as TRANSCRIPTION_PIPELINE_VERSION,
   type AiAsrModelId,
   type VoiceMemoryTranscriptionStats,
   type VoiceMemoryTranscriptionUnit,
   type VoiceMemoryTranscriptSegment,
 } from "@private-voice/shared";
-
-const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
+import { savedUnexaminedCoverage } from "./voice-memory-coverage";
 
 export interface TranscriptionUnitDefinition {
   index: number;
@@ -159,7 +158,7 @@ export const statsFromTranscriptionUnits = (
   const speechRatioPercent =
     audioDurationMs > 0 ? Math.min(100, (scheduledSpeechMs / audioDurationMs) * 100) : 0;
   const speechCoveragePercent =
-    totalSpeechMs > 0 ? (coveredSpeechMs / totalSpeechMs) * 100 : speechUnits === 0 ? 100 : 0;
+    totalSpeechMs > 0 ? (coveredSpeechMs / totalSpeechMs) * 100 : undefined;
   const allCompleted =
     units.length > 0 && completedUnits === units.length && pendingUnits === 0 && runningUnits === 0;
   const last = [...units].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
@@ -227,6 +226,7 @@ export const statsFromTranscriptionUnits = (
     abnormalOutputCount,
     hallucinationSuspectedCount: 0,
     suspectedOmissionCount,
+    ...savedUnexaminedCoverage(fallback),
     taskProgressPercent,
     scheduledSpeechMs,
     processedSpeechPercent,

@@ -143,6 +143,118 @@ test("unknown transcript data is preserved and never overwritten", () =>
     assert.ok((await store.read(clip.id)).length > 44);
   }));
 
+test("structured replay transcripts preserve actual times and reject invalid output without replacing older text", () =>
+  fixture(async (store, root) => {
+    const clip = await store.save("原片段", wave());
+    await store.transcribeLocal(clip.id, async () => "旧版纯文字");
+    assert.equal((await store.readTranscriptDetail(clip.id))?.version, 1);
+    const result = {
+      text: "你好。",
+      sourceModel: "qwen3-asr-0.6b-force",
+      segments: [
+        { text: "你好。", startMs: 120, endMs: 900, timestampPrecision: "aligned" as const },
+      ],
+    };
+    await store.transcribeLocal(clip.id, async () => result);
+    const reopened = new VoiceReplayStore(root, async () => undefined);
+    const saved = await reopened.readTranscriptDetail(clip.id);
+    assert.equal(saved?.version, 2);
+    if (saved?.version !== 2) throw Error("structured result missing");
+    assert.deepEqual(saved.segments, result.segments);
+    const edited = await store.reviseTranscriptSegment(clip.id, saved.createdAt, 0, "你好呀。");
+    assert.equal(edited.version, 2);
+    if (edited.version !== 2) throw Error("structured revision missing");
+    assert.equal(edited.text, "你好呀。");
+    assert.deepEqual(edited.segments[0], {
+      ...result.segments[0],
+      text: "你好呀。",
+      reviewStatus: "edited",
+    });
+    await assert.rejects(
+      store.reviseTranscriptSegment(clip.id, saved.createdAt, 0, "迟到的修订"),
+      /voice_replay_transcript_changed/,
+    );
+    const before = await fs.readdir(path.join(root, clip.id));
+    await assert.rejects(
+      store.transcribeLocal(clip.id, async () => ({
+        ...result,
+        segments: [{ ...result.segments[0]!, endMs: 3000 }],
+      })),
+      /invalid_replay_transcript/,
+    );
+    assert.deepEqual(await fs.readdir(path.join(root, clip.id)), before);
+    assert.deepEqual(await reopened.readTranscriptDetail(clip.id), edited);
+    assert.equal((await store.read(clip.id)).length, clip.byteLength);
+  }));
+
+test("trim retains only complete timestamped sentences, with shifted times and edits", () =>
+  fixture(async (store, root) => {
+    const clip = await store.save("原片段", wave());
+    await store.transcribeLocal(clip.id, async () => ({
+      text: "前一句 完整一句 后一句",
+      sourceModel: "test-model",
+      segments: [
+        { text: "前一句", startMs: 100, endMs: 500, timestampPrecision: "aligned" as const },
+        { text: "完整一句", startMs: 600, endMs: 1000, timestampPrecision: "aligned" as const },
+        { text: "后一句", startMs: 1100, endMs: 1600, timestampPrecision: "chunk" as const },
+      ],
+    }));
+    const before = await store.readTranscriptDetail(clip.id);
+    if (!before || before.version !== 2) throw Error("structured result missing");
+    await store.reviseTranscriptSegment(clip.id, before.createdAt, 1, "修改后的一句");
+    const cropped = await store.trim(clip.id, 250, 1250);
+    const reopened = new VoiceReplayStore(root, async () => undefined);
+    const result = await reopened.readTranscriptDetail(cropped.id);
+    assert.equal(result?.version, 2);
+    if (!result || result.version !== 2) throw Error("trim transcript missing");
+    assert.equal(result.derivedFromTrim, true);
+    assert.equal(result.text, "修改后的一句");
+    assert.deepEqual(result.segments, [
+      {
+        text: "修改后的一句",
+        startMs: 350,
+        endMs: 750,
+        timestampPrecision: "aligned",
+        reviewStatus: "edited",
+      },
+    ]);
+    assert.equal(
+      (await reopened.readTranscriptDetail(clip.id))?.text,
+      "前一句 修改后的一句 后一句",
+    );
+    const noWholeSentence = await store.trim(clip.id, 250, 450);
+    assert.equal(await reopened.readTranscriptDetail(noWholeSentence.id), undefined);
+    const legacy = await store.save("旧片段", wave());
+    await store.transcribeLocal(legacy.id, async () => "没有时间戳的旧文字");
+    assert.equal(
+      await reopened.readTranscriptDetail((await store.trim(legacy.id, 250, 450)).id),
+      undefined,
+    );
+  }));
+
+test("trim clamps floating point timestamp boundaries to the sample-derived duration", () =>
+  fixture(async (store) => {
+    const clip = await store.save(
+      "48kHz 边界",
+      encodeVoiceReplayWave(new Float32Array(144_000), 48_000),
+    );
+    await store.transcribeLocal(clip.id, async () => ({
+      text: "边界句",
+      sourceModel: "test-model",
+      segments: [
+        { text: "边界句", startMs: 1001, endMs: 2001, timestampPrecision: "aligned" as const },
+      ],
+    }));
+
+    const trimmed = await store.trim(clip.id, 1001, 2001);
+    const detail = await store.readTranscriptDetail(trimmed.id);
+    assert.equal(detail?.version, 2);
+    if (!detail || detail.version !== 2) throw Error("trim transcript missing");
+    assert.deepEqual(detail.segments, [
+      { text: "边界句", startMs: 0, endMs: 1000, timestampPrecision: "aligned" },
+    ]);
+  }));
+
 test("concurrent replay saves have distinct IDs and complete audio/metadata pairs", () =>
   fixture(async (store) => {
     const clips = await Promise.all(

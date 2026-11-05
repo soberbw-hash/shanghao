@@ -73,7 +73,10 @@ export const evaluateVoiceMemoryTranscriptionValidity = (
     (stats?.hallucinationSuspectedCount ?? 0) > 0;
   const needsReview =
     !outputAnomaly &&
-    ((stats?.emptyOutputOnSpeechUnits ?? 0) > 0 || (stats?.suspectedOmissionCount ?? 0) > 0);
+    ((stats?.emptyOutputOnSpeechUnits ?? 0) > 0 ||
+      units?.some((unit) => unit.outputStatus === "quiet_audio_uncertain") ||
+      (stats?.suspectedOmissionCount ?? 0) > 0 ||
+      (stats?.unexaminedParticipantAudioMs ?? 0) > 0);
   const failedRuntimeUnits =
     units?.filter(
       (unit) => unit.status === "failed" && unit.errorCode !== "transcription_output_anomaly",
@@ -127,10 +130,14 @@ export const evaluateVoiceMemoryTranscriptionValidity = (
   if (!finalResultSaved) exclusionReasons.push("最终结果尚未确认持久化");
   if (outputAnomaly) exclusionReasons.push("存在重复循环或异常输出");
   const reviewReasons: string[] = [];
+  if (units?.some((unit) => unit.outputStatus === "quiet_audio_uncertain"))
+    reviewReasons.push("低音量区间识别为空，无法确认是否存在讲话，请回听原音频");
   if ((stats?.emptyOutputOnSpeechUnits ?? 0) > 0)
-    reviewReasons.push("语音检测单元存在空输出；不等于已确认遗漏有意义讲话");
+    reviewReasons.push("声音活动检测单元存在空输出；不等于已确认遗漏有意义讲话");
   if ((stats?.suspectedOmissionCount ?? 0) > 0)
     reviewReasons.push("存在疑似遗漏候选，需结合原音频人工确认");
+  if ((stats?.unexaminedParticipantAudioMs ?? 0) > 0)
+    reviewReasons.push("部分成员连续音轨未纳入识别，可能包含静音，需回听确认");
   const partialSpeedReference: VoiceMemoryBenchmarkRankingEligibility =
     processedAudioMs > 0 && !runtimeError ? "partial_reference" : false;
   return {

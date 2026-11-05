@@ -237,16 +237,94 @@ window.addEventListener("fixture-show-fused", () => {
     updatedAt: nextUpdate(),
     transcriptionFusion: {
       status: "completed",
+      verificationPolicy: "agreement-v1",
       sourceSignature: "a".repeat(64),
       completedBatches: 1,
       totalBatches: 1,
       speakers: record.speakers,
-      transcript: record.transcript.map((segment, i) => ({
+      transcript: record.transcript.map((segment) => ({
         ...segment,
         fusionUncertain: false,
-        text: `校对后的第${i + 1}句话。`,
       })),
     },
+  });
+});
+window.addEventListener("fixture-show-unexamined", () => {
+  if (!record) return;
+  emit({
+    ...record,
+    updatedAt: nextUpdate(),
+    transcriptionUnits: [
+      {
+        unitId: "fixture-quiet",
+        modelId: "qwen3-asr-0.6b-force",
+        index: 0,
+        startMs: 0,
+        endMs: 1000,
+        status: "completed",
+        attempts: 1,
+        retryCount: 0,
+        processedAudioMs: 1000,
+        coveredAudioMs: 0,
+        segmentCount: 0,
+        outputStatus: "quiet_audio_uncertain",
+        updatedAt: nextUpdate(),
+      },
+    ],
+    transcriptionStats: {
+      audioDurationMs: 10000,
+      processedAudioMs: 9000,
+      coveredAudioMs: 9000,
+      totalUnits: 1,
+      completedUnits: 1,
+      failedUnits: 0,
+      retryCount: 0,
+      segmentCount: 3,
+      speakerCount: 1,
+      unexaminedParticipantAudioMs: 2000,
+      unexaminedParticipantAudioRanges: [
+        { memberId: "member", displayName: "测试成员", startMs: 2100, endMs: 4100 },
+      ],
+    },
+  });
+});
+window.addEventListener("fixture-clear-unexamined", () => {
+  if (record)
+    emit({
+      ...record,
+      updatedAt: nextUpdate(),
+      transcriptionStats: undefined,
+      transcriptionUnits: undefined,
+    });
+});
+window.addEventListener("fixture-show-fusion-history", () => {
+  if (!record?.transcriptionFusion) return;
+  emit({
+    ...record,
+    updatedAt: nextUpdate(),
+    transcriptionFusionHistory: [
+      {
+        id: "history-test",
+        archivedAt: "2026-11-04T00:00:00.000Z",
+        fusion: {
+          ...record.transcriptionFusion,
+          transcript: record.transcriptionFusion.transcript.map((segment, index) =>
+            index === 0 ? { ...segment, text: "历史版本测试文字。" } : segment,
+          ),
+        },
+      },
+    ],
+    transcriptionOriginalHistory: [
+      {
+        id: "original-test",
+        archivedAt: "2026-11-04T00:00:00.000Z",
+        model: record.transcriptionModel,
+        transcript: record.transcript.map((segment, index) =>
+          index === 0 ? { ...segment, text: "重试前的原始文字。" } : segment,
+        ),
+        speakers: record.speakers,
+      },
+    ],
   });
 });
 window.addEventListener("fixture-show-summary", () => {

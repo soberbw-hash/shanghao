@@ -26,7 +26,18 @@ void app.whenReady().then(async () => {
       )
         throw Error("unexpected_replay_input");
       await new Promise((resolve) => setTimeout(resolve, 100));
-      return "合成本地文字";
+      return {
+        text: "合成本地文字",
+        sourceModel: "fixture-model",
+        segments: [
+          {
+            text: "合成本地文字",
+            startMs: 125,
+            endMs: 750,
+            timestampPrecision: "aligned" as const,
+          },
+        ],
+      };
     },
   );
   try {
@@ -43,8 +54,11 @@ void app.whenReady().then(async () => {
       const second=api.transcribeLocal(clip.id).then(()=>false,()=>true);
       const [text,rejected]=await Promise.all([first,second]); const after=await api.read(clip.id);
       const saved=await api.readTranscript(clip.id);
-      if(text!=='合成本地文字'||saved!==text||!rejected||before.length!==after.length||!before.every((x,i)=>x===after[i]))throw Error('replay transcription failed');
-      return { text, saved: true, secondRejected: rejected, unchanged: true };
+      const detail=await api.readTranscriptDetail(clip.id);
+      if(text!=='合成本地文字'||saved!==text||detail?.version!==2||detail.segments[0].startMs!==125||detail.segments[0].endMs!==750||!rejected||before.length!==after.length||!before.every((x,i)=>x===after[i]))throw Error('replay transcription failed');
+      const edited=await api.reviseTranscriptSegment(clip.id,detail.createdAt,0,'人工修订');
+      if(edited.text!=='人工修订'||edited.segments[0].reviewStatus!=='edited'||(await api.readTranscript(clip.id))!=='人工修订')throw Error('replay revision failed');
+      return { text, structured: true, revised: true, saved: true, secondRejected: rejected, unchanged: true };
     })()`);
     if (calls !== 1) throw Error("model_called_more_than_once");
     console.log(JSON.stringify(result));

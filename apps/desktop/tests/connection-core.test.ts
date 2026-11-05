@@ -234,6 +234,14 @@ test("main process guards ipc pushes after windows are destroyed", () => {
   assert.equal(safeSend.includes("destroyed"), true);
 });
 
+test("second instance can recreate a development window closed to tray", () => {
+  const main = read("apps/desktop/src/main/index.ts");
+  assert.match(
+    main,
+    /const showWindow = \(\) => \{\s*if \(!mainWindow\) \{[\s\S]{0,300}?app\.emit\("activate"\);/,
+  );
+});
+
 test("installer and updater quit paths clean background surfaces", () => {
   const main = read("apps/desktop/src/main/index.ts");
   const updates = read("apps/desktop/src/main/updates.ts");

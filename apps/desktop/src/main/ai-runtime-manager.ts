@@ -4,9 +4,15 @@ import {
 } from "./runtime-component-download";
 import { existsSync } from "node:fs";
 import { preparePortablePython, type PortablePythonOptions } from "./portable-python-runtime";
-import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { removeProviderTorchCopies } from "./asr-runtime-files";
 import path from "node:path";
-import { cleanAsrText, hasAsrBody, restoreAlignedPunctuation } from "./asr-text-postprocess";
+import {
+  cleanAsrText,
+  hasAsrBody,
+  validAsrSegments,
+  restoreAlignedPunctuation,
+} from "./asr-text-postprocess";
 import { asrTemporaryDirectory, createAsrTemporaryWavPath } from "./asr-temp-files";
 
 import {
@@ -22,7 +28,6 @@ import {
   type AiRuntimeStatus,
   type AiTaskKind,
   type VoiceMemoryProcessingStage,
-  type VoiceMemoryCommonVadResult,
   type VoiceMemoryTranscriptionOutputStatus,
   type VoiceMemoryTranscriptSegment,
   type RendererLogPayload,
@@ -50,6 +55,8 @@ import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
 import { sha256RuntimeArtifact } from "./runtime-artifact-download";
 import {
   analyzePcm16Wav,
+  summarizePcmActivity,
+  quietPcmDisposition,
   benchmarkEnvironmentSnapshot,
   gpuMemoryUsedMb,
   modelPrecision,
@@ -71,6 +78,8 @@ export interface TranscriptionChunkOptions {
   filePath: string;
   offsetMs: number;
   durationMs: number;
+  /** Bounded and local to this inference request. */
+  context?: string;
   benchmark?: boolean;
   signal?: AbortSignal;
   manual?: boolean;
@@ -929,26 +938,19 @@ export class AiRuntimeManager {
         const message = error instanceof Error ? error.message : String(error);
         throw new LocalModelRuntimeError("wav_invalid", "wav_invalid", message);
       }
-      const speechDurationMs = Math.min(
-        options.durationMs,
-        Math.max(0, Math.round(options.durationMs * activity.activeFrameRatio)),
-      );
-      const commonVad: VoiceMemoryCommonVadResult = {
-        hasSpeech: activity.audible,
-        speechDurationMs: activity.audible ? Math.max(1, speechDurationMs) : 0,
-        silenceDurationMs: activity.audible
-          ? Math.max(0, options.durationMs - Math.max(1, speechDurationMs))
-          : options.durationMs,
-        activeFrameRatio: activity.activeFrameRatio,
-        peak: activity.peak,
-      };
+      const commonVad = summarizePcmActivity(activity, options.durationMs);
       const vadTimeMs = performance.now() - vadStartedAt;
-      if (!activity.audible) {
+      const quietDisposition = quietPcmDisposition(
+        activity,
+        Boolean(options.manual || options.benchmark),
+      );
+      if (quietDisposition !== "transcribe") {
         return {
           segments: [],
           rawText: "",
           commonVad,
-          outputStatus: "vad_silence",
+          outputStatus:
+            quietDisposition === "digital_silence" ? "vad_silence" : "quiet_audio_uncertain",
           anomalyTypes: [],
           anomalyReasons: [],
           timing: {
@@ -994,6 +996,7 @@ export class AiRuntimeManager {
           launch: this.pythonAsrLaunch(modelId),
           wavPath,
           durationMs: options.durationMs,
+          context: isQwenForcedAlignerModel(modelId) ? options.context : undefined,
           resourceMode: options.resourceMode,
           signal: options.signal,
           timeoutMs: Math.max(240_000, options.durationMs * 8),
@@ -1058,7 +1061,9 @@ export class AiRuntimeManager {
           ? "abnormal_output"
           : segments.length > 0
             ? "normal"
-            : "empty_output_on_speech";
+            : activity.audible
+              ? "empty_output_on_speech"
+              : "quiet_audio_uncertain";
       return {
         segments,
         rawText: result.rawText ?? result.text,
@@ -1156,7 +1161,7 @@ export class AiRuntimeManager {
           { env: this.pipEnvironment(), signal, timeoutMs: 20 * 60_000 },
         );
         if (signal?.aborted) throw new Error("ai_task_paused");
-        await this.removeProviderTorchCopies(this.qwenOrganizerPythonPath);
+        await removeProviderTorchCopies(this.qwenOrganizerPythonPath);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(`Qwen 本地整理运行组件安装失败：${message}`, { cause: error });
@@ -1245,7 +1250,7 @@ export class AiRuntimeManager {
         await this.prepareArkAsrPortableCpuHelper(pythonPath, signal);
       }
       if (signal?.aborted) throw new Error("ai_task_paused");
-      await this.removeProviderTorchCopies(pythonPath);
+      await removeProviderTorchCopies(pythonPath);
       if (arkAsrModel) {
         await this.verifyArkAsrRuntime(pythonPath, signal);
       }
@@ -1671,18 +1676,6 @@ export class AiRuntimeManager {
     };
   }
 
-  private async removeProviderTorchCopies(providerPath: string): Promise<void> {
-    const entries = await readdir(providerPath, { withFileTypes: true }).catch(() => []);
-    const shadowing = entries.filter((entry) =>
-      /^(torch|torchaudio|functorch)(?:$|[-_.])/i.test(entry.name),
-    );
-    await Promise.all(
-      shadowing.map((entry) =>
-        rm(path.join(providerPath, entry.name), { recursive: true, force: true }),
-      ),
-    );
-  }
-
   private async log(
     level: RendererLogPayload["level"],
     message: string,
@@ -1700,15 +1693,19 @@ export class AiRuntimeManager {
     offsetMs: number,
     durationMs: number,
   ): VoiceMemoryTranscriptSegment[] {
+    const validSegments = validAsrSegments(
+      result.segments ?? [],
+      result.text,
+      durationMs,
+      isQwenForcedAlignerModel(modelId),
+    );
     const alignedSegments = isQwenForcedAlignerModel(modelId)
-      ? restoreAlignedPunctuation(result.text, result.segments ?? [])
-      : (result.segments ?? []);
+      ? restoreAlignedPunctuation(result.text, validSegments)
+      : validSegments;
     const structured = alignedSegments.flatMap((segment, index): VoiceMemoryTranscriptSegment[] => {
       const text = cleanAsrText(modelId, segment.text);
-      const startMs = offsetMs + Math.max(0, Math.min(durationMs, segment.startMs));
-      const endMs =
-        offsetMs +
-        Math.max(Math.min(durationMs, segment.endMs), Math.min(durationMs, segment.startMs + 100));
+      const startMs = offsetMs + segment.startMs;
+      const endMs = offsetMs + segment.endMs;
       if (!hasAsrBody(text)) {
         return [];
       }
@@ -1738,9 +1735,8 @@ export class AiRuntimeManager {
           )?.flatMap((word, wordIndex) => {
             const wordText = cleanAsrText(modelId, word.text);
             if (!wordText) return [];
-            const wordStartMs = offsetMs + Math.max(0, Math.min(durationMs, word.startMs));
-            const wordEndMs =
-              offsetMs + Math.max(wordStartMs - offsetMs + 20, Math.min(durationMs, word.endMs));
+            const wordStartMs = offsetMs + word.startMs;
+            const wordEndMs = offsetMs + word.endMs;
             return [
               {
                 id: `${recordingId}-${wordStartMs}-${index}-${wordIndex}`,
@@ -1780,6 +1776,7 @@ export class AiRuntimeManager {
         confidence: "pending",
         sourceModel: modelId,
         sourceChunkId: `${modelId}:${recordingId}:${offsetMs}`,
+        timestampPrecision: "chunk",
         rawSegmentId: `${recordingId}-${offsetMs}-raw-coarse`,
         rawSegments: [JSON.stringify({ text })],
       },

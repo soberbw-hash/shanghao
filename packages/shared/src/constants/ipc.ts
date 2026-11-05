@@ -14,6 +14,8 @@ export const IPC_CHANNELS = {
     remove: "voice-replay:remove",
     transcribeLocal: "voice-replay:transcribe-local",
     readTranscript: "voice-replay:read-transcript",
+    readTranscriptDetail: "voice-replay:read-transcript-detail",
+    reviseTranscriptSegment: "voice-replay:revise-transcript-segment",
     export: "voice-replay:export",
     shortcut: "voice-replay:shortcut",
     saveShortcut: "voice-replay:save-shortcut",
@@ -170,6 +172,7 @@ export const IPC_CHANNELS = {
   cloudAiAdmin: {
     get: "cloud-ai-admin:get",
     change: "cloud-ai-admin:change",
+    importKey: "cloud-ai-admin:import-key",
   },
   ai: {
     getSnapshot: "ai:get-snapshot",

@@ -13,6 +13,7 @@ export interface BuiltInAiStatus {
 /** Uses the authenticated app account; no vendor key exists in the desktop request. */
 export class BuiltInAiClient {
   private cache?: { origin: string; until: number; value: BuiltInAiStatus };
+  private adminCredential?: { origin: string; key: string };
   constructor(
     private readonly relayUrl: () => string | undefined,
     private readonly accessToken: (forceRefresh?: boolean) => Promise<string | undefined>,
@@ -124,6 +125,21 @@ export class BuiltInAiClient {
   async adminSnapshot(): Promise<CloudAiAdminSnapshot | undefined> {
     return this.adminRequest();
   }
+  async importAdminKey(origin: string, key: string): Promise<boolean> {
+    const endpoint = this.endpoint("/api/ai/admin/providers");
+    if (origin !== endpoint.origin || !/^[A-Za-z0-9_-]{43}$/.test(key))
+      throw Error("cloud_ai_admin_key_invalid");
+    const previous = this.adminCredential;
+    const next = { origin, key };
+    this.adminCredential = next;
+    try {
+      if (!(await this.adminRequest())) throw Error("cloud_ai_admin_key_rejected");
+      return true;
+    } catch (error) {
+      if (this.adminCredential === next) this.adminCredential = previous;
+      throw error;
+    }
+  }
   async adminChange(mutation: CloudAiAdminMutation): Promise<CloudAiAdminSnapshot> {
     const snapshot = await this.adminRequest(mutation);
     if (!snapshot) throw Error("cloud_ai_admin_forbidden");
@@ -133,6 +149,8 @@ export class BuiltInAiClient {
   private async adminRequest(
     mutation?: CloudAiAdminMutation,
   ): Promise<CloudAiAdminSnapshot | undefined> {
+    const credential = this.adminCredential;
+    if (credential) return this.keyAdminRequest(credential, mutation);
     const owner = this.accountIdentity?.();
     const url = this.endpoint("/api/ai/admin/providers");
     const token = await this.accessToken();
@@ -176,6 +194,61 @@ export class BuiltInAiClient {
       url.origin !== this.endpoint("/api/ai/admin/providers").origin
     )
       throw Error("account_session_expired");
+    if (!response.ok) {
+      const code = payload?.error?.code;
+      throw Error(
+        typeof code === "string" && /^cloud_ai_admin_[a-z_]{1,60}$/.test(code)
+          ? code
+          : "cloud_ai_admin_unavailable",
+      );
+    }
+    if (
+      !Number.isSafeInteger(payload?.revision) ||
+      !Array.isArray(payload.providers) ||
+      payload.providers.length > 16
+    )
+      throw Error("cloud_ai_admin_invalid_response");
+    return payload as CloudAiAdminSnapshot;
+  }
+  private async keyAdminRequest(
+    credential: { origin: string; key: string },
+    mutation?: CloudAiAdminMutation,
+  ): Promise<CloudAiAdminSnapshot | undefined> {
+    const url = this.endpoint("/api/ai/admin/providers");
+    if (url.origin !== credential.origin) throw Error("cloud_ai_admin_key_invalid");
+    const body = mutation ? JSON.stringify(mutation) : undefined;
+    if (body && body.length > 32_768) throw Error("cloud_ai_admin_invalid_input");
+    let response: Response;
+    try {
+      response = await this.fetcher(url.toString(), {
+        method: mutation ? "POST" : "GET",
+        redirect: "error",
+        signal: AbortSignal.timeout(12_000),
+        headers: { "x-shanghao-admin-key": credential.key, "content-type": "application/json" },
+        body,
+      });
+    } catch {
+      throw Error("cloud_ai_admin_unavailable");
+    }
+    if (
+      this.adminCredential !== credential ||
+      this.endpoint("/api/ai/admin/providers").origin !== credential.origin
+    ) {
+      await response.body?.cancel();
+      throw Error("cloud_ai_admin_key_invalid");
+    }
+    if (response.status === 401 || response.status === 403 || response.status === 404) {
+      await response.body?.cancel();
+      throw Error("cloud_ai_admin_key_rejected");
+    }
+    const payload = JSON.parse(
+      await readAiProviderResponse(response, 32_768, "cloud_ai_admin_invalid_response"),
+    );
+    if (
+      this.adminCredential !== credential ||
+      this.endpoint("/api/ai/admin/providers").origin !== credential.origin
+    )
+      throw Error("cloud_ai_admin_key_invalid");
     if (!response.ok) {
       const code = payload?.error?.code;
       throw Error(

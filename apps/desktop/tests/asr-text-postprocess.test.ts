@@ -1,10 +1,40 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AI_ASR_MODEL_GROUPS, AI_ASR_MODEL_NAMES } from "@private-voice/shared";
 import {
   cleanAsrText,
   hasAsrBody,
+  hasValidAsrAlignment,
   restoreAlignedPunctuation,
 } from "../src/main/asr-text-postprocess";
+
+test("model presentation groups retain each supported model exactly once", () => {
+  const ids = AI_ASR_MODEL_GROUPS.flatMap((group) => group.ids);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual([...ids].sort(), Object.keys(AI_ASR_MODEL_NAMES).sort());
+});
+
+test("alignment preserves short real intervals and rejects invalid boundaries", () => {
+  assert.equal(
+    hasValidAsrAlignment([{ startMs: 10, endMs: 15, words: [{ startMs: 10, endMs: 15 }] }], 100),
+    true,
+  );
+  assert.equal(hasValidAsrAlignment([{ startMs: 10, endMs: 10 }], 100), false);
+  assert.equal(
+    hasValidAsrAlignment(
+      [
+        { startMs: 10, endMs: 15 },
+        { startMs: 20, endMs: 101 },
+      ],
+      100,
+    ),
+    false,
+  );
+  assert.equal(
+    hasValidAsrAlignment([{ startMs: 10, endMs: 15, words: [{ startMs: 10, endMs: NaN }] }], 100),
+    false,
+  );
+});
 
 test("Qwen original punctuation survives exact alignment without timestamp changes", () => {
   const raw = "三彩菊，咱们家为什么有个人？";

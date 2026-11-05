@@ -15,6 +15,9 @@ app.whenReady().then(async () => {
       const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
       for(let i=0;i<100&&!document.querySelector('section>button');i++)await wait(40);
       document.querySelector('section>button').click(); await wait(30);
+      button('上传密钥文件').click(); await wait(80);
+      check(document.documentElement.dataset.imported==='true','key import not requested');
+      [...document.querySelectorAll('section button')].find(b=>b.textContent.includes('云端服务管理')).click(); await wait(30);
       button('添加服务').click(); await wait(30);
       const input=(label,value)=>{
         const field=[...document.querySelectorAll('label')].find(l=>l.textContent.includes(label))?.querySelector('input');
@@ -39,12 +42,20 @@ app.whenReady().then(async () => {
       button('取消').click(); await wait(30);
       button('停用').click(); await wait(30); button('确认').click(); await wait(150);
       check(document.querySelector('article').textContent.includes('已停用'),'disable not shown');
+      button('设为备用').click(); await wait(30); button('确认').click(); await wait(150);
+      check(document.querySelector('article').textContent.includes('备用服务'),'fallback selection not shown');
+      button('修改').click(); await wait(30); input('模型名称','updated-model');
+      document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})); await wait(30);
+      check(document.documentElement.dataset.mutations==='4','fallback edit skipped confirmation');
+      button('确认').click(); await wait(150);
+      button('取消备用').click(); await wait(30); button('确认').click(); await wait(150);
+      check(document.querySelector('article').textContent.includes('已停用'),'cleared fallback not shown');
       button('删除').click(); await wait(30); button('取消').click(); await wait(30);
       check(document.querySelectorAll('article').length===1,'cancel deleted provider');
       button('删除').click(); await wait(30); button('确认').click(); await wait(150);
       check(document.querySelectorAll('article').length===0,'delete not shown');
-      check(document.documentElement.dataset.mutations==='4','unexpected mutation count');
-      return { add:true, doubleSubmitBlocked:true, activationConfirmed:true, disable:true, deleteConfirmed:true, keyNotReturned:true };
+      check(document.documentElement.dataset.mutations==='7','unexpected mutation count');
+      return { add:true, doubleSubmitBlocked:true, activationConfirmed:true, disable:true, fallback:true, deleteConfirmed:true, keyNotReturned:true };
     })()`);
     console.log(JSON.stringify(result));
   } catch(error) { console.error(error); process.exitCode = 1; }

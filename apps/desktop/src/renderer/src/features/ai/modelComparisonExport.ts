@@ -136,7 +136,12 @@ const evaluateAgainstGroundTruth = (
 ) => {
   const reference = codePoints(groundTruthText);
   const hypothesis = codePoints(transcriptText);
-  const distance = levenshteinDistance(reference, hypothesis);
+  // Export runs in the renderer. Bound quadratic work to avoid monopolising the UI
+  // or competing with a live call; never substitute a partial text score.
+  const distance =
+    reference.length * hypothesis.length <= 2_000_000
+      ? levenshteinDistance(reference, hypothesis)
+      : undefined;
   const normalizedHypothesis = normalizedEvaluationText(transcriptText);
   const keywords = (expectedKeywords ?? []).map((keyword) => normalizedEvaluationText(keyword));
   const matchedKeywords = keywords.filter(
@@ -153,7 +158,8 @@ const evaluateAgainstGroundTruth = (
     referenceCharacterCount: reference.length,
     hypothesisCharacterCount: hypothesis.length,
     editDistance: distance,
-    cer: reference.length > 0 ? distance / reference.length : undefined,
+    cer: reference.length > 0 && distance !== undefined ? distance / reference.length : undefined,
+    cerUnavailableReason: distance === undefined ? "文本过长，未在界面线程计算 CER" : undefined,
     keywordAccuracy: keywords.length > 0 ? matchedKeywords.length / keywords.length : undefined,
     numberAccuracy:
       referenceNumbers.length > 0 ? matchedNumbers.length / referenceNumbers.length : undefined,
@@ -250,7 +256,7 @@ export const buildModelComparisonExport = ({
     environment: { ...record?.transcriptionBenchmark?.environment, ...environment },
     measurementNotes: [
       "模型按 runOrder 顺序逐个运行；只有全部计划单元可靠完成并持久化的模型才会标记 success。",
-      "taskProgressPercent 是任务完成度；processedSpeechPercent 是计划语音处理度；speechRatioPercent 是样本中的语音占比。",
+      "taskProgressPercent 是任务完成度；processedSpeechPercent 是计划音频处理比例；speechRatioPercent 是计划处理音轨时长与录音时长之比（上限 100%，重叠音轨可累计），不是实际讲话占比。",
       "processedAudioMs / coveredAudioMs / failedUnits 用于区分速度问题、模型问题和流水线缺口。",
       "rawRuntimeOutput 是各分块保存的运行快照；finalSegments 是当前持久化的最终分段。",
     ],
@@ -374,13 +380,14 @@ export const buildModelComparisonExport = ({
       heartbeatAt: unit.heartbeatAt,
       raw: parseRawRuntimeOutput(unit.rawRuntimeOutput),
     }));
-    const evaluation = groundTruthText?.trim()
-      ? evaluateAgainstGroundTruth(
-          transcript.map((segment) => segment.text).join("\n"),
-          groundTruthText,
-          expectedKeywords,
-        )
-      : undefined;
+    const evaluation =
+      groundTruthText?.trim() && validity.eligibleForQualityRanking && !failedBeforeDurableStart
+        ? evaluateAgainstGroundTruth(
+            transcript.map((segment) => segment.text).join("\n"),
+            groundTruthText,
+            expectedKeywords,
+          )
+        : undefined;
     return {
       modelId,
       modelName: modelDisplayName(modelId),

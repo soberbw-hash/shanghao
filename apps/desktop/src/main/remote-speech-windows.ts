@@ -30,7 +30,7 @@ function pcmData(wav: Buffer): PcmData {
   return { samples, rate };
 }
 
-/** Conservative energy windows, not diarization or forced alignment. Quiet audio is retained. */
+/** Nonzero audio windows, not speech classification, diarization or forced alignment. */
 export function cloudSpeechWindows(wav: Buffer): Array<{ startMs: number; endMs: number }> {
   const { samples, rate } = pcmData(wav),
     duration = (samples.length / 2 / rate) * 1000;
@@ -39,18 +39,17 @@ export function cloudSpeechWindows(wav: Buffer): Array<{ startMs: number; endMs:
     frameSamples = Math.max(1, Math.round(rate * 0.02));
   let peak = 0;
   for (let first = 0; first < samples.length / 2; first += frameSamples) {
-    let sum = 0;
+    let nonzero = false;
     const end = Math.min(samples.length / 2, first + frameSamples);
     for (let i = first; i < end; i++) {
       const value = Math.abs(samples.readInt16LE(i * 2)) / 32768;
       peak = Math.max(peak, value);
-      sum += value * value;
+      if (value !== 0) nonzero = true;
     }
-    frames.push(Math.sqrt(sum / (end - first)));
+    frames.push(nonzero ? 1 : 0);
   }
   if (!peak) return []; // Only exact digital silence is discarded without ASR.
-  const active = frames.flatMap((rms, index) => (rms >= 0.001 ? [index] : []));
-  if (!active.length) return [{ startMs: 0, endMs: duration }];
+  const active = frames.flatMap((value, index) => (value ? [index] : []));
   const groups: Array<{ startMs: number; endMs: number }> = [];
   for (const index of active) {
     const startMs = Math.max(0, index * 20 - 150),
@@ -61,7 +60,8 @@ export function cloudSpeechWindows(wav: Buffer): Array<{ startMs: number; endMs:
     else if (previous && startMs < previous.endMs) groups.push({ startMs: previous.endMs, endMs });
     else groups.push({ startMs, endMs });
   }
-  return groups;
+  // A noisy or damaged signal must not generate an unbounded number of provider calls.
+  return groups.length > 16 ? [{ startMs: 0, endMs: duration }] : groups;
 }
 
 function sliceWav(input: PcmData, startMs: number, endMs: number): Buffer {

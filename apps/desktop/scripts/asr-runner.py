@@ -175,18 +175,29 @@ class QwenAsr:
                 text = str(item.get("text", text)).strip()
                 start = item.get("start_time", item.get("start", start))
                 end = item.get("end_time", item.get("end", end))
-            if not text or start is None or end is None:
+            if not text:
                 continue
+            if start is None or end is None:
+                return []
+            try:
+                start_ms = round(float(start) * 1000)
+                end_ms = round(float(end) * 1000)
+            except (TypeError, ValueError, OverflowError):
+                return []
+            # Do not invent a minimum duration. Invalid alignment falls back to the
+            # complete ASR text and its real processing window in the caller.
+            if start_ms < 0 or end_ms <= start_ms:
+                return []
             output.append(
                 {
-                    "startMs": max(0, round(float(start) * 1000)),
-                    "endMs": max(round(float(start) * 1000) + 100, round(float(end) * 1000)),
+                    "startMs": start_ms,
+                    "endMs": end_ms,
                     "text": text,
                 }
             )
         return output
 
-    def transcribe(self, wav_path: str, resource_mode: str) -> dict[str, Any]:
+    def transcribe(self, wav_path: str, resource_mode: str, context: str = "") -> dict[str, Any]:
         configure_threads(resource_mode)
         alignment_ms = 0.0
         aligner = getattr(self.model, "forced_aligner", None)
@@ -206,6 +217,7 @@ class QwenAsr:
         try:
             results = self.model.transcribe(
                 audio=wav_path,
+                context=context,
                 language="Chinese",
                 return_time_stamps=not self.staged,
             )
@@ -225,6 +237,7 @@ class QwenAsr:
         return {
             "text": text,
             "segments": segments,
+            "contextApplied": bool(context),
             "metrics": {
                 "inferenceTimeMs": inference_ms,
                 "alignmentTimeMs": alignment_ms,
@@ -688,6 +701,7 @@ def run_worker(args: argparse.Namespace) -> int:
     }})
     for raw_line in sys.stdin.buffer:
         request_id = ""
+        context = ""
         try:
             request = json.loads(raw_line.decode("utf-8", errors="strict"))
             request_id = str(request.get("id", ""))
@@ -695,10 +709,15 @@ def run_worker(args: argparse.Namespace) -> int:
                 raise RuntimeError("missing_request_id")
             request_started = time.perf_counter()
             cpu_started = time.process_time()
-            output = runtime.transcribe(
-                str(request.get("wavPath", "")),
-                str(request.get("resourceMode", "normal")),
-            )
+            context = request.get("context", "")
+            if not isinstance(context, str) or len(context) > 512:
+                raise RuntimeError("invalid_asr_context")
+            if isinstance(runtime, QwenAsr):
+                output = runtime.transcribe(str(request.get("wavPath", "")),
+                    str(request.get("resourceMode", "normal")), context)
+            else:
+                output = runtime.transcribe(str(request.get("wavPath", "")),
+                    str(request.get("resourceMode", "normal")))
             output.setdefault("metrics", {}).update({
                 "ramPeakMb": worker_peak_ram_mb(),
                 "ramMeasurementScope": "python_worker_peak_working_set",
@@ -707,8 +726,12 @@ def run_worker(args: argparse.Namespace) -> int:
             })
             emit({"type": "result", "id": request_id, "output": output})
         except Exception as exc:
-            traceback.print_exc(file=sys.stderr)
-            emit({"type": "error", "id": request_id, "error": str(exc)})
+            # Provider exceptions may echo prompt text; never put private context in logs.
+            if context:
+                emit({"type": "error", "id": request_id, "error": "asr_context_inference_failed"})
+            else:
+                traceback.print_exc(file=sys.stderr)
+                emit({"type": "error", "id": request_id, "error": str(exc)})
     close = getattr(runtime, "close", None)
     if callable(close):
         close()

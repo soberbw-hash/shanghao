@@ -1,4 +1,6 @@
 import { validatePasswordResetRequest } from "./password-reset-validation";
+import { writeClipboardImage } from "./clipboard-image";
+import * as electronRuntime from "electron";
 import { registerScreenShareViewerIpc } from "./screen-share-viewer-ipc";
 import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
 import { registerAiTextProviderIpc } from "./ai-model-configuration-ipc";
@@ -456,7 +458,7 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(IPC_CHANNELS.clipboard.writeText, async (_event, text: string): Promise<void> => {
     requireString(text, 4_096, "clipboard_text");
-    clipboard.writeText(text);
+    await clipboard.writeText(text);
     await diagnostics.writeLog({
       category: "app",
       level: "info",
@@ -473,7 +475,7 @@ export const registerIpcHandlers = ({
       }
       const image = nativeImage.createFromDataURL(dataUrl);
       if (image.isEmpty()) throw new Error("invalid_clipboard_image");
-      clipboard.writeImage(image);
+      await writeClipboardImage(electronRuntime, image);
     },
   );
 

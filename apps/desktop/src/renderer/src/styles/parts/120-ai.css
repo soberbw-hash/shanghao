@@ -1,3 +1,5 @@
+@import "./121-recording-game-context.css";
+
 /* Room AI keeps one focused flow for prompting, progress, answers and history. */
 .room-ask-popover {
   position: absolute;

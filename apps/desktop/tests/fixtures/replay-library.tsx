@@ -17,7 +17,11 @@ const count = (key: string) => {
   );
 };
 let releaseRename: (() => void) | undefined;
+let nextTranscript = "合成本地文字";
 const transcripts = new Map<string, string>();
+document.addEventListener("fixture-next-transcript", (event) => {
+  nextTranscript = (event as CustomEvent<string>).detail;
+});
 Object.defineProperty(window, "desktopApi", {
   configurable: true,
   value: {
@@ -30,10 +34,50 @@ Object.defineProperty(window, "desktopApi", {
       transcribeLocal: async (id: string) => {
         count("transcribes");
         await new Promise((resolve) => setTimeout(resolve, 80));
-        transcripts.set(id, "合成本地文字");
-        return "合成本地文字";
+        const text = nextTranscript;
+        nextTranscript = "合成本地文字";
+        transcripts.set(id, text);
+        return text;
       },
       readTranscript: async (id: string) => transcripts.get(id),
+      readTranscriptDetail: async (id: string) => {
+        const text = transcripts.get(id);
+        return text === undefined
+          ? undefined
+          : {
+              version: 2 as const,
+              createdAt: Date.UTC(2026, 10, 1),
+              text,
+              sourceModel: "fixture-model",
+              segments: [
+                { text, startMs: 125, endMs: 750, timestampPrecision: "aligned" as const },
+              ],
+            };
+      },
+      reviseTranscriptSegment: async (
+        id: string,
+        _version: number,
+        index: number,
+        text: string,
+      ) => {
+        if (index !== 0) throw Error("unexpected_index");
+        transcripts.set(id, text);
+        return {
+          version: 2 as const,
+          createdAt: Date.UTC(2026, 10, 1) + 1,
+          text,
+          sourceModel: "fixture-model",
+          segments: [
+            {
+              text,
+              startMs: 125,
+              endMs: 750,
+              timestampPrecision: "aligned" as const,
+              reviewStatus: "edited" as const,
+            },
+          ],
+        };
+      },
       rename: async (id: string, title: string) => {
         count("renames");
         await new Promise<void>((resolve) => {

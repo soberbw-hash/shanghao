@@ -20,7 +20,9 @@ import type {
   RecordingParticipantTrackPayload,
   RecordingParticipantTrackResponse,
   RecordingParticipantTracksFinalizePayload,
+  RecordingGameTimeline,
 } from "@private-voice/shared";
+import { isRecordingGameTimeline } from "./recording-game-context";
 
 export interface PersistedParticipantTrack {
   filePath: string;
@@ -41,6 +43,7 @@ interface ParticipantTrackManifest {
   recordingId?: string;
   recordingFilePath?: string;
   tracks: PersistedParticipantTrack[];
+  gameTimeline?: unknown;
 }
 
 const safeId = (value: string): string => {
@@ -233,8 +236,35 @@ export const finalizeRecordingParticipantTracks = async (
     recordingId: payload.recordingId,
     recordingFilePath: path.resolve(payload.recordingFilePath),
     tracks: copiedTracks,
+    ...(manifest.gameTimeline === undefined &&
+    isRecordingGameTimeline(payload.gameTimeline) &&
+    copiedTracks.every((track) => !track.roomId || track.roomId === payload.gameTimeline!.roomId)
+      ? { gameTimeline: payload.gameTimeline }
+      : {}),
   });
   await rm(sourceDirectory, { recursive: true, force: true });
+};
+
+/** Missing or invalid snapshots mean unknown context, never the current room's game. */
+export const loadRecordingGameTimeline = async (
+  recordingId: string,
+): Promise<RecordingGameTimeline | undefined> => {
+  for (const directory of completedDirectories(recordingId)) {
+    let canonicalDirectory: string;
+    try {
+      const canonicalRoot = await realpath(path.dirname(path.dirname(directory)));
+      canonicalDirectory = path.join(canonicalRoot, "recordings", path.basename(directory));
+      if ((await realpath(directory)).toLowerCase() !== canonicalDirectory.toLowerCase())
+        throw new Error("participant_track_path_invalid");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    const manifest = await readManifest(canonicalDirectory, "completed");
+    if (manifest.recordingId !== recordingId) continue;
+    return isRecordingGameTimeline(manifest.gameTimeline) ? manifest.gameTimeline : undefined;
+  }
+  return undefined;
 };
 
 export const loadRecordingParticipantTracks = async (
@@ -247,16 +277,19 @@ export const loadRecordingParticipantTracks = async (
     // The catalog recording id is stable when the user renames the audio file. Keep identity
     // tracks attached to that id instead of rejecting them because the visible path changed.
     if (manifest.recordingId !== recordingId || manifest.tracks.length === 0) continue;
-    const existingNames = new Set(await readdir(directory));
+    const entries = new Map(
+      (await readdir(directory, { withFileTypes: true })).map((entry) => [entry.name, entry]),
+    );
     const tracks = manifest.tracks.filter((track) => {
       if (
         path.resolve(track.filePath).toLowerCase() !==
         path.resolve(directory, path.basename(track.filePath)).toLowerCase()
       )
         throw new Error("participant_track_path_invalid");
-      const exists = existingNames.has(path.basename(track.filePath));
-      if (!exists && requireComplete) throw new Error("participant_track_audio_missing");
-      return exists;
+      const entry = entries.get(path.basename(track.filePath));
+      if (entry && !entry.isFile()) throw new Error("participant_track_path_invalid");
+      if (!entry && requireComplete) throw new Error("participant_track_audio_missing");
+      return Boolean(entry);
     });
     if (tracks.length) {
       // Windows AppData virtualization may alias the trusted root. Resolve that root only:

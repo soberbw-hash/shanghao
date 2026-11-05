@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AI_ASR_MODEL_NAMES,
+  AI_ASR_MODEL_GROUPS,
   DEFAULT_AI_ASR_MODEL_ID,
   type AiAsrModelId,
   type AiModelStatus,
@@ -23,6 +24,29 @@ export function RecordingTranscriptionModelSelect({
   const [models, setModels] = useState<AiModelStatus[]>([]);
   const [saving, setSaving] = useState(false);
   const [modelInUse, setModelInUse] = useState(true);
+  const panelRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const dismissOutside = (event: PointerEvent) => {
+      const panel = panelRef.current;
+      if (panel?.open && event.target instanceof Node && !panel.contains(event.target)) {
+        panel.open = false;
+      }
+    };
+    const dismissEscape = (event: KeyboardEvent) => {
+      const panel = panelRef.current;
+      if (event.key === "Escape" && panel?.open && panel.contains(document.activeElement)) {
+        panel.open = false;
+        panel.querySelector("summary")?.focus();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener("pointerdown", dismissOutside, true);
+    document.addEventListener("keydown", dismissEscape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside, true);
+      document.removeEventListener("keydown", dismissEscape);
+    };
+  }, []);
   useEffect(() => {
     let active = true;
     let observedStatus = false;
@@ -68,7 +92,7 @@ export function RecordingTranscriptionModelSelect({
     }
   };
   return (
-    <details className="recording-processing-settings">
+    <details ref={panelRef} className="recording-processing-settings">
       <summary>
         <SlidersHorizontal aria-hidden="true" />
         <span>转录设置</span>
@@ -94,9 +118,10 @@ export function RecordingTranscriptionModelSelect({
           >
             <option value="cloud">内置云端转录</option>
             <option value="custom">自定义 API</option>
-            <optgroup label="本地模型">
-              {(Object.entries(AI_ASR_MODEL_NAMES) as Array<[AiAsrModelId, string]>).map(
-                ([id, name]) => {
+            {AI_ASR_MODEL_GROUPS.map(({ label, ids }) => (
+              <optgroup label={`本地 · ${label}`} key={label}>
+                {ids.map((id) => {
+                  const name = AI_ASR_MODEL_NAMES[id];
                   const model = models.find((candidate) => candidate.id === id);
                   const ready = Boolean(model?.activeRevision && model.runtimeReady);
                   return (
@@ -105,9 +130,9 @@ export function RecordingTranscriptionModelSelect({
                       {ready ? "" : "（请先在 AI 功能中准备）"}
                     </option>
                   );
-                },
-              )}
-            </optgroup>
+                })}
+              </optgroup>
+            ))}
           </select>
         </label>
         <CloudLocalAssistControl

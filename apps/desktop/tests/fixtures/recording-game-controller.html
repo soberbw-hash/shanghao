@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>synthetic recording game timeline</title>
+    <script type="module">
+      import { injectIntoGlobalHook } from "/@react-refresh";
+      injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+    </script>
+    <script type="module" src="/@vite/client"></script>
+    <script>
+      window.fixtureTimeline = null;
+      window.fixtureTracks = [];
+      window.desktopApi = {
+        app: { writeLog: async () => {} },
+        recording: {
+          startSession: async () => ({ ok: true, sessionId: "fixture-session" }),
+          appendChunk: async () => {},
+          finalizeSession: async () => ({
+            ok: true,
+            recordingId: "fixture-recording",
+            filePath: "fixture.m4a",
+            fileSize: 10,
+            mimeType: "audio/mp4",
+          }),
+          sealSession: async () => {},
+          abortSession: async () => {},
+          export: async () => ({
+            ok: true,
+            recordingId: "fixture-recording",
+            filePath: "fixture.m4a",
+            fileSize: 10,
+            mimeType: "audio/mp4",
+          }),
+          saveSpeakerSegment: async () => ({ ok: true }),
+          saveParticipantTrack: async (track) => {
+            window.fixtureTracks.push({ startMs: track.startMs, endMs: track.endMs });
+            return { ok: true };
+          },
+          finalizeSpeakerSegments: async () => {},
+          finalizeParticipantTracks: async (payload) => {
+            window.fixtureTimeline = payload.gameTimeline;
+          },
+        },
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./recording-game-controller.tsx"></script>
+  </body>
+</html>

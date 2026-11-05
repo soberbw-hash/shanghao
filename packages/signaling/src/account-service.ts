@@ -12,7 +12,13 @@ import { AccountAvatarPresetStore } from "./account-avatar-preset-store";
 import { isInvalidCloudBaseTokenResponse } from "./cloudbase-token-failure";
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_-]{2,19}$/;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isValidEmail = (email: string): boolean => {
+  if (email.length > 254 || /\s/u.test(email)) return false;
+  const at = email.indexOf("@");
+  if (at < 1 || at !== email.lastIndexOf("@")) return false;
+  const dot = email.indexOf(".", at + 2);
+  return dot >= 0 && dot < email.length - 1;
+};
 const RESERVED_USERNAMES = new Set([
   "admin",
   "administrator",
@@ -337,7 +343,7 @@ export class SupabaseAccountService implements AccountBackend {
   async requestPasswordReset(emailInput: string): Promise<void> {
     const client = this.requirePublicClient();
     const email = emailInput.trim().toLowerCase();
-    if (!EMAIL_PATTERN.test(email) || email.length > 254) {
+    if (!isValidEmail(email)) {
       throw new AccountServerError("account_email_invalid");
     }
     const { error } = await client.auth.resetPasswordForEmail(email, {
@@ -427,7 +433,7 @@ export class SupabaseAccountService implements AccountBackend {
     if (RESERVED_USERNAMES.has(username)) {
       throw new AccountServerError("account_username_reserved");
     }
-    if (!EMAIL_PATTERN.test(email) || email.length > 254) {
+    if (!isValidEmail(email)) {
       throw new AccountServerError("account_email_invalid");
     }
     if (password.length < 8 || password.length > 128) {

@@ -1,0 +1,24 @@
+.model-comparison-reference {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid #c7daf1;
+  border-radius: 12px;
+  color: #526b87;
+}
+.model-comparison-reference summary {
+  cursor: pointer;
+}
+.model-comparison-reference label {
+  display: block;
+  margin-top: 8px;
+}
+.model-comparison-reference textarea {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px;
+  border: 1px solid #c7daf1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  resize: vertical;
+}

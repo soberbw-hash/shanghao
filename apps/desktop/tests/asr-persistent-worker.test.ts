@@ -20,12 +20,39 @@ process.stdin.on("data", (chunk) => {
     const request = JSON.parse(line);
     const delay = request.durationMs > 1_000 ? 180 : 10;
     setTimeout(() => process.stdout.write(JSON.stringify({
-      type:"result", id:request.id, output:{text:String(request.durationMs)}
+      type:"result", id:request.id, output:{text:String(request.durationMs),rawText:request.context}
     }) + "\\n"), delay);
     end = buffer.indexOf("\\n");
   }
 });
 `;
+
+test("successive requests on the same worker never inherit another request's context", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-asr-context-"));
+  const runner = path.join(directory, "worker.cjs");
+  await writeFile(runner, fakeWorkerSource, "utf8");
+  const worker = new AsrPersistentWorker(process.execPath, runner);
+  const run = (context?: string) =>
+    worker.run({
+      launch: { modelId: "qwen3-asr-0.6b-force", modelPath: directory },
+      wavPath: "synthetic.wav",
+      durationMs: 100,
+      resourceMode: "low",
+      timeoutMs: 2000,
+      context,
+    });
+  try {
+    assert.equal((await run("游戏甲")).rawText, "游戏甲");
+    const pid = worker.health().processId;
+    assert.equal((await run("游戏乙")).rawText, "游戏乙");
+    assert.equal((await run()).rawText, "");
+    assert.equal(worker.health().processId, pid);
+    await assert.rejects(run("x".repeat(513)), /invalid_asr_context/);
+  } finally {
+    await worker.releaseAndWait("test_complete");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("ASR abort before/during/after request and timeout race leave worker reusable", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-asr-abort-"));
@@ -100,6 +127,150 @@ test("ASR idle cleanup never terminates the next model comparison job", async ()
     assert.equal(second.text, "2000");
   } finally {
     worker.release("test_complete");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("same model with a different Python environment replaces the old worker", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-asr-env-"));
+  const runner = path.join(directory, "worker.cjs");
+  await writeFile(runner, fakeWorkerSource, "utf8");
+  const worker = new AsrPersistentWorker(process.execPath, runner);
+  const run = (pythonPath: string) =>
+    worker.run({
+      launch: { modelId: "fun-asr-nano-2512", modelPath: directory, pythonPath },
+      wavPath: "test.wav",
+      resourceMode: "low",
+      durationMs: 100,
+      timeoutMs: 2000,
+    });
+  try {
+    await run(path.join(directory, "env-a"));
+    const firstPid = worker.health().processId;
+    await run(path.join(directory, "env-a"));
+    assert.equal(worker.health().processId, firstPid);
+    await run(path.join(directory, "env-b"));
+    assert.notEqual(worker.health().processId, firstPid);
+  } finally {
+    await worker.releaseAndWait("test_complete");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cancelling the loading request does not drop the next queued model", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-asr-load-cancel-"));
+  const runner = path.join(directory, "worker.cjs");
+  await writeFile(
+    runner,
+    fakeWorkerSource.replace('"ready"}) + "\\n"), 10)', '"ready"}) + "\\n"), 200)'),
+    "utf8",
+  );
+  const worker = new AsrPersistentWorker(process.execPath, runner);
+  const controller = new AbortController();
+  const run = (modelId: "fun-asr-nano-2512" | "glm-asr-nano-2512", signal?: AbortSignal) =>
+    worker.run({
+      launch: { modelId, modelPath: directory },
+      wavPath: "test.wav",
+      resourceMode: "low",
+      durationMs: 100,
+      timeoutMs: 3000,
+      signal,
+    });
+  try {
+    const first = run("fun-asr-nano-2512", controller.signal);
+    const rejected = assert.rejects(first, /paused/);
+    const second = run("glm-asr-nano-2512");
+    setTimeout(() => controller.abort(), 50);
+    await rejected;
+    assert.equal((await second).text, "100");
+    assert.equal(worker.health().modelId, "glm-asr-nano-2512");
+    assert.equal(worker.health().queuedJobs, 0);
+  } finally {
+    await worker.releaseAndWait("test_complete");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("release before worker spawn cannot leave a late child behind", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-asr-release-"));
+  const runner = path.join(directory, "worker.cjs");
+  await writeFile(runner, fakeWorkerSource, "utf8");
+  const worker = new AsrPersistentWorker(process.execPath, runner);
+  try {
+    const pending = worker.run({
+      launch: { modelId: "fun-asr-nano-2512", modelPath: directory },
+      wavPath: "test.wav",
+      resourceMode: "low",
+      durationMs: 100,
+      timeoutMs: 2000,
+    });
+    const rejected = assert.rejects(pending, /paused/);
+    await worker.releaseAndWait("test_complete");
+    await rejected;
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    assert.equal(worker.health().processId, undefined);
+    assert.equal(worker.health().queuedJobs, 0);
+  } finally {
+    await worker.releaseAndWait("test_complete");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("concurrent requests for different models keep their own worker identity", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-asr-queue-"));
+  const runner = path.join(directory, "worker.cjs");
+  const source = fakeWorkerSource.replace(
+    "text:String(request.durationMs)",
+    'text:process.argv[process.argv.indexOf("--provider")+1]',
+  );
+  await writeFile(runner, source, "utf8");
+  const worker = new AsrPersistentWorker(process.execPath, runner);
+  const run = (modelId: "fun-asr-nano-2512" | "glm-asr-nano-2512") =>
+    worker.run({
+      launch: { modelId, modelPath: directory },
+      wavPath: "test.wav",
+      resourceMode: "low",
+      durationMs: 100,
+      timeoutMs: 3000,
+    });
+  try {
+    const [first, second] = await Promise.all([run("fun-asr-nano-2512"), run("glm-asr-nano-2512")]);
+    assert.equal(first.text, "fun-asr-nano-2512");
+    assert.equal(second.text, "glm-asr-nano-2512");
+  } finally {
+    await worker.releaseAndWait("test_complete");
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cancelling a loading model stops its child without waiting for readiness", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-asr-load-stop-"));
+  const runner = path.join(directory, "worker.cjs");
+  await writeFile(
+    runner,
+    fakeWorkerSource.replace('"ready"}) + "\\n"), 10)', '"ready"}) + "\\n"), 5000)'),
+    "utf8",
+  );
+  const worker = new AsrPersistentWorker(process.execPath, runner);
+  const controller = new AbortController();
+  try {
+    const pending = worker.run({
+      launch: { modelId: "fun-asr-nano-2512", modelPath: directory },
+      wavPath: "test.wav",
+      resourceMode: "low",
+      durationMs: 100,
+      timeoutMs: 7000,
+      signal: controller.signal,
+    });
+    const rejected = assert.rejects(pending, /paused/);
+    for (let i = 0; i < 100 && !worker.health().processId; i++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.ok(worker.health().processId);
+    controller.abort();
+    await rejected;
+    assert.equal(worker.health().processId, undefined);
+  } finally {
+    await worker.releaseAndWait("test_complete");
     await rm(directory, { recursive: true, force: true });
   }
 });

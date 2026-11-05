@@ -112,6 +112,8 @@ export const ModelTestPanel = ({
   const [isClearingResults, setIsClearingResults] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isSelectionOpen, setIsSelectionOpen] = useState(false);
+  const [groundTruthText, setGroundTruthText] = useState("");
+  const [expectedKeywords, setExpectedKeywords] = useState("");
   const [benchmarkMode, setBenchmarkMode] = useState<VoiceMemoryBenchmarkMode>(
     () => job?.benchmarkMode ?? DEFAULT_MODEL_COMPARISON_BENCHMARK_MODE,
   );
@@ -125,6 +127,8 @@ export const ModelTestPanel = ({
     setJob(restoredJob);
     setBenchmarkMode(restoredJob?.benchmarkMode ?? DEFAULT_MODEL_COMPARISON_BENCHMARK_MODE);
     setError(undefined);
+    setGroundTruthText("");
+    setExpectedKeywords("");
     setViewingModelId(undefined);
     selectionHydratedRef.current = false;
 
@@ -456,6 +460,11 @@ export const ModelTestPanel = ({
         modelIds: comparisonModelIds,
         results,
         models,
+        groundTruthText: groundTruthText.trim() || undefined,
+        expectedKeywords: expectedKeywords
+          .split(/[\n,，]/u)
+          .map((item) => item.trim())
+          .filter(Boolean),
         environment: {
           appVersion: runtimeInfo.version,
           gitCommit: import.meta.env.VITE_GIT_COMMIT ?? "unknown",
@@ -536,6 +545,70 @@ export const ModelTestPanel = ({
             ) : null}
           </div>
         </div>
+        <details className="model-comparison-reference">
+          <summary>人工参考文本（可选）</summary>
+          <p>
+            仅在本机比较；导出的完整测试数据会包含参考文本。长文本可能超过界面计算上限，不生成 CER。
+          </p>
+          <label>
+            导入 UTF-8 文本
+            <input
+              type="file"
+              accept=".txt,text/plain"
+              onChange={async (event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (!file) return;
+                if (file.size > 40_000) {
+                  setError("参考文本文件过大，请选择不超过 40 KB 的 UTF-8 文本。");
+                  return;
+                }
+                const recordingId = recording.recordingId;
+                try {
+                  const value = new TextDecoder("utf-8", { fatal: true }).decode(
+                    await file.arrayBuffer(),
+                  );
+                  if (recordingRef.current.recordingId !== recordingId) return;
+                  if (value.length > 10_000) {
+                    setError("参考文本过长，请使用不超过 10000 字符的参考稿。");
+                    return;
+                  }
+                  setGroundTruthText(value);
+                  setError(undefined);
+                } catch {
+                  setError("无法读取参考文本文件，请重试。");
+                }
+              }}
+            />
+          </label>
+          <label>
+            参考文本
+            <textarea
+              aria-label="人工参考文本"
+              maxLength={10000}
+              value={groundTruthText}
+              onChange={(event) => setGroundTruthText(event.target.value)}
+            />
+          </label>
+          <label>
+            关键词（每行一个）
+            <textarea
+              aria-label="参考关键词"
+              maxLength={4000}
+              value={expectedKeywords}
+              onChange={(event) => setExpectedKeywords(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setGroundTruthText("");
+              setExpectedKeywords("");
+            }}
+          >
+            清空参考文本和关键词
+          </button>
+        </details>
         <div className="model-comparison-actions model-comparison-toolbar">
           {phase === "running" ? (
             <>
@@ -688,18 +761,20 @@ export const ModelTestPanel = ({
               const detailTitle = detailStats
                 ? [
                     `任务完成 ${(detailTaskPercent ?? 0).toFixed(1)}%`,
-                    `有效语音处理 ${(
+                    `计划音频处理 ${(
                       detailStats.processedSpeechPercent ??
                       (detailTaskPercent === 100 && detailStats.failedUnits === 0
                         ? 100
                         : (detailStats.processedPercent ?? 0))
                     ).toFixed(1)}%`,
-                    `音频语音占比 ${(
+                    `计划音轨时长比例 ${(
                       detailStats.speechRatioPercent ??
                       detailStats.processedPercent ??
                       0
                     ).toFixed(1)}%`,
-                    `识别覆盖率 ${(detailStats.speechCoveragePercent ?? 0).toFixed(1)}%`,
+                    detailStats.speechCoveragePercent === undefined
+                      ? "有声分块输出比例未测量"
+                      : `有声分块输出比例（估算） ${detailStats.speechCoveragePercent.toFixed(1)}%`,
                   ].join("；")
                 : (batchResult?.message ??
                   (!available ? "该模型尚未产生可查看的转录结果；重新测试后可查看。" : undefined));

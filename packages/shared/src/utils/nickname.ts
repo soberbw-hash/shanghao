@@ -308,8 +308,12 @@ const isBlockedShortLatinToken = (token: string): boolean => {
 
   // Numeric prefixes and suffixes are commonly appended to a blocked short
   // title (for example dad123 or 520mom) to bypass exact-token checks.
+  let start = 0;
+  let end = token.length;
+  while (start < end && token.charCodeAt(start) >= 48 && token.charCodeAt(start) <= 57) start++;
+  while (end > start && token.charCodeAt(end - 1) >= 48 && token.charCodeAt(end - 1) <= 57) end--;
   const core = token
-    .replace(/^\d+|\d+$/g, "")
+    .slice(start, end)
     .replace(/4/g, "a")
     .replace(/0/g, "o")
     .replace(/[5$]/g, "s")
