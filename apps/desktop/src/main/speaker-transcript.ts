@@ -15,9 +15,31 @@ export interface KnownParticipantAudioTrack extends KnownSpeakerAudioSegment {
 
 export interface KnownSpeakerTranscriptionSource extends KnownSpeakerAudioSegment {
   filePath: string;
+  /** Stable account/guest identity only when recorded in the source manifest. */
+  accountIdentity?: string;
   /** Offset inside this participant's independent audio file. */
   audioOffsetMs: number;
 }
+
+/** Include continuous tracks only for participants with no speech clips at all.
+ * Existing clips remain first, so their historical unit indexes do not move.
+ */
+export const includeParticipantsMissingSpeechClips = (
+  speech: readonly KnownSpeakerTranscriptionSource[],
+  participants: readonly KnownSpeakerTranscriptionSource[],
+): KnownSpeakerTranscriptionSource[] => {
+  if (!speech.length) return [...participants];
+  // An old clip without an account identity may belong to any track after a reconnect.
+  // In that case no safe disjointness proof exists: keep the original plan.
+  if (speech.some((source) => !source.accountIdentity)) return [...speech];
+  const represented = new Set(speech.map((source) => source.accountIdentity));
+  return [
+    ...speech,
+    ...participants.filter(
+      (source) => source.accountIdentity && !represented.has(source.accountIdentity),
+    ),
+  ];
+};
 
 /**
  * Splits durable per-participant tracks into the same bounded units used by the
@@ -49,6 +71,7 @@ export const splitParticipantTracksIntoSpeakerSources = (
         sources.push({
           filePath: track.filePath,
           speakerId,
+          accountIdentity: track.userId?.trim() || undefined,
           displayNameSnapshot: track.displayNameSnapshot,
           startMs,
           endMs: Math.min(trackEndMs, startMs + chunkDurationMs),
@@ -108,3 +131,20 @@ export const mergeSpeakerTranscript = (
   [...retained, ...incoming].sort(
     (left, right) => left.startMs - right.startMs || left.endMs - right.endMs,
   );
+
+export const speakersFromKnownSources = (
+  transcript: readonly VoiceMemoryTranscriptSegment[],
+  sources: readonly KnownSpeakerTranscriptionSource[],
+) => {
+  const sourceBySpeaker = new Map(sources.map((source) => [source.speakerId, source]));
+  return Array.from(new Set(transcript.map((segment) => segment.speakerId))).map((speakerId) => {
+    const identity = sourceBySpeaker.get(speakerId);
+    return {
+      speakerId,
+      memberId: speakerId,
+      nickname: identity?.displayNameSnapshot,
+      displayNameSnapshot: identity?.displayNameSnapshot,
+      confidence: "high" as const,
+    };
+  });
+};

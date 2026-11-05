@@ -22,6 +22,11 @@ import {
   temporaryRecordingName,
   torchAudioInstallPlan,
 } from "../src/main/ai-runtime-manager";
+import {
+  isDefinitelySilentPcm,
+  quietPcmDisposition,
+  summarizePcmActivity,
+} from "../src/main/asr-benchmark-runtime";
 import { buildVibeVoiceArguments } from "../src/main/vibevoice-runtime";
 import {
   AiVoiceMemoryService,
@@ -595,6 +600,21 @@ test("silent PCM chunks are skipped while sustained voice-level audio is accepte
   const activity = analyzePcm16Wav(pcm16Wav(voiced));
   assert.equal(activity.audible, true);
   assert.ok(activity.peak > 0.05);
+});
+
+test("quiet or very short audio is not mistaken for proven digital silence", () => {
+  const digitalSilence = analyzePcm16Wav(pcm16Wav(new Int16Array(24_000)));
+  assert.equal(isDefinitelySilentPcm(digitalSilence), true);
+  const quiet = new Int16Array(24_000);
+  for (let i = 5_000; i < 5_480; i++) quiet[i] = Math.round(Math.sin(i / 8) * 80);
+  const activity = analyzePcm16Wav(pcm16Wav(quiet));
+  assert.equal(activity.audible, false);
+  assert.equal(isDefinitelySilentPcm(activity), false);
+  assert.equal(quietPcmDisposition(digitalSilence, true), "digital_silence");
+  assert.equal(quietPcmDisposition(activity, false), "uncertain");
+  assert.equal(quietPcmDisposition(activity, true), "transcribe");
+  assert.equal(summarizePcmActivity(activity, 1000).silenceDurationMs, 0);
+  assert.equal(summarizePcmActivity(digitalSilence, 1000).silenceDurationMs, 1000);
 });
 
 test("Windows recording paths become safe temporary audio names", () => {

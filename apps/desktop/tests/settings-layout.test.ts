@@ -131,7 +131,7 @@ test("settings keep short lists visible and model actions above neighboring card
   assert.equal(aiSource.includes('aria-label="筛选模型"'), true);
   assert.match(
     aiSource,
-    /<div className="ai-model-group-heading">\s*<h3 id="model-management-title">模型<\/h3>\s*\{transcriptionProvider === "local" \? \(\s*<div className="ai-model-filter-bar" role="group" aria-label="筛选模型">/,
+    /\{transcriptionProvider === "local" \? \(\s*<div className="ai-model-group-heading">\s*<div className="ai-model-filter-bar" role="group" aria-label="筛选模型">/,
   );
   assert.match(styles, /\.ai-model-filter-bar\s*\{[^}]*margin-left:\s*auto;/s);
   assert.equal(settingsSource.includes('<details className="settings-advanced-operation">'), false);
@@ -779,9 +779,9 @@ test("AI voice memory exposes provider readiness and recovers interrupted compar
   const modelComparisonQueueSource = readFileSync(modelComparisonQueuePath, "utf8");
   const styles = readRendererCss();
   assert.equal(source.includes("当前使用"), true);
-  assert.equal(source.includes('id="model-management-title">模型'), true);
-  assert.equal(source.includes("高精度转录"), true);
-  assert.equal(source.includes("极速转录"), true);
+  assert.equal(source.includes('id="model-management-title">模型'), false);
+  assert.equal(source.includes("精细识别"), true);
+  assert.equal(source.includes("极速识别"), true);
   assert.equal(source.includes("<strong>共享组件</strong>"), true);
   assert.equal(source.includes('ariaLabel="自动整理"'), false);
   assert.equal(source.includes('ariaLabel="整理后自动上传"'), false);

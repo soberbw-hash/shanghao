@@ -238,7 +238,11 @@ test("partial cloud failures resume from saved parts instead of being skipped as
 
 test("empty terminal results do not get automatically uploaded again on every queue refresh", async () => {
   let starts = 0;
-  for (const errorMessage of ["no_reliable_speech", "cloud_asr_unusable_transcript"])
+  for (const errorMessage of [
+    "no_reliable_speech",
+    "quiet_audio_uncertain",
+    "cloud_asr_unusable_transcript",
+  ])
     await queueUntranscribedRecordings(
       [{ recordingId: "empty", filePath: "synthetic.wav" }],
       true,

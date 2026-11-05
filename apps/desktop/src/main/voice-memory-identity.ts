@@ -4,15 +4,15 @@ import type {
   VoiceMemoryTranscriptSegment,
 } from "@private-voice/shared";
 import { transcriptFusionSignature } from "./transcript-fusion";
+import { archiveFusion } from "./voice-memory-fusion-history";
 
 function refreshFusion(record: VoiceMemoryRecord): VoiceMemoryRecord {
   if (!record.transcriptionFusion) return record;
   const signature = transcriptFusionSignature(record);
+  if (!signature) return archiveFusion(record);
   return {
     ...record,
-    transcriptionFusion: signature
-      ? { ...record.transcriptionFusion, sourceSignature: signature }
-      : undefined,
+    transcriptionFusion: { ...record.transcriptionFusion, sourceSignature: signature },
   };
 }
 
@@ -99,5 +99,13 @@ export function migrateVoiceMemoryIdentity(
           transcript: record.transcriptionFusion.transcript.map(migrate),
         }
       : undefined,
+    transcriptionFusionHistory: record.transcriptionFusionHistory?.map((entry) => ({
+      ...entry,
+      fusion: { ...entry.fusion, transcript: entry.fusion.transcript.map(migrate) },
+    })),
+    transcriptionOriginalHistory: record.transcriptionOriginalHistory?.map((entry) => ({
+      ...entry,
+      transcript: entry.transcript.map(migrate),
+    })),
   });
 }

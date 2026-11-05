@@ -3,13 +3,209 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import type { VoiceMemoryTranscriptSegment } from "@private-voice/shared";
+import {
+  CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+  type VoiceMemoryTranscriptSegment,
+} from "@private-voice/shared";
+import { selectSpeakerSourcesForResume } from "../src/main/voice-memory-transcription-preparation";
 
 import {
   bindTranscriptToKnownSpeaker,
   mergeSpeakerTranscript,
+  includeParticipantsMissingSpeechClips,
   splitParticipantTracksIntoSpeakerSources,
 } from "../src/main/speaker-transcript";
+
+test("participants without speech clips still get their own continuous tracks", () => {
+  const speech = [
+    {
+      speakerId: "a",
+      accountIdentity: "a",
+      displayNameSnapshot: "A",
+      startMs: 2000,
+      endMs: 3000,
+      audioOffsetMs: 0,
+      filePath: "a-clip",
+    },
+  ];
+  const tracks = [
+    {
+      speakerId: "a",
+      accountIdentity: "a",
+      displayNameSnapshot: "A",
+      startMs: 0,
+      endMs: 30000,
+      audioOffsetMs: 0,
+      filePath: "a-track",
+    },
+    {
+      speakerId: "b",
+      accountIdentity: "b",
+      displayNameSnapshot: "B",
+      startMs: 0,
+      endMs: 30000,
+      audioOffsetMs: 0,
+      filePath: "b-track",
+    },
+    {
+      speakerId: "b",
+      accountIdentity: "b",
+      displayNameSnapshot: "B",
+      startMs: 30000,
+      endMs: 60000,
+      audioOffsetMs: 30000,
+      filePath: "b-track",
+    },
+  ];
+  const sources = includeParticipantsMissingSpeechClips(speech, tracks);
+  assert.deepEqual(
+    sources.map((source) => source.filePath),
+    ["a-clip", "b-track", "b-track"],
+  );
+  assert.deepEqual(
+    sources.map((source) => source.speakerId),
+    ["a", "b", "b"],
+  );
+  assert.deepEqual(
+    sources.map((source) => source.audioOffsetMs),
+    [0, 0, 30000],
+  );
+  assert.deepEqual(
+    includeParticipantsMissingSpeechClips(
+      [{ ...speech[0]!, accountIdentity: undefined }],
+      tracks,
+    ).map((source) => source.filePath),
+    ["a-clip"],
+  );
+  assert.deepEqual(
+    includeParticipantsMissingSpeechClips(speech, [
+      { ...tracks[1]!, accountIdentity: undefined },
+    ]).map((source) => source.filePath),
+    ["a-clip"],
+  );
+});
+
+test("new coverage never changes the source indexes of prior speech or track checkpoints", () => {
+  const speech = [
+    {
+      speakerId: "a",
+      accountIdentity: "a",
+      displayNameSnapshot: "A",
+      startMs: 2000,
+      endMs: 3000,
+      audioOffsetMs: 0,
+      filePath: "clip",
+    },
+  ];
+  const tracks = [
+    {
+      speakerId: "a",
+      accountIdentity: "a",
+      displayNameSnapshot: "A",
+      startMs: 0,
+      endMs: 30000,
+      audioOffsetMs: 0,
+      filePath: "track-a",
+    },
+    {
+      speakerId: "b",
+      accountIdentity: "b",
+      displayNameSnapshot: "B",
+      startMs: 0,
+      endMs: 30000,
+      audioOffsetMs: 0,
+      filePath: "track-b",
+    },
+  ];
+  const model = "qwen3-asr-0.6b-force";
+  const checkpoint = (totalUnits: number) => ({
+    asrModelId: model,
+    pipelineVersion: CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+    totalUnits,
+  });
+  assert.deepEqual(
+    selectSpeakerSourcesForResume(speech, tracks, [], undefined, model).knownSpeakerSegments.map(
+      (s) => s.filePath,
+    ),
+    ["clip", "track-b"],
+  );
+  assert.deepEqual(
+    selectSpeakerSourcesForResume(
+      speech,
+      tracks,
+      speech,
+      checkpoint(1),
+      model,
+    ).knownSpeakerSegments.map((s) => s.filePath),
+    ["clip"],
+  );
+  assert.deepEqual(
+    selectSpeakerSourcesForResume(
+      speech,
+      tracks,
+      [],
+      checkpoint(1),
+      model,
+    ).knownSpeakerSegments.map((s) => s.filePath),
+    ["clip"],
+  );
+  assert.deepEqual(
+    selectSpeakerSourcesForResume(
+      speech,
+      tracks,
+      tracks,
+      checkpoint(2),
+      model,
+    ).knownSpeakerSegments.map((s) => s.filePath),
+    ["track-a", "track-b"],
+  );
+});
+
+test("equal-sized legacy source plans with different files are never treated as proof of the old plan", () => {
+  const base = {
+    speakerId: "a",
+    accountIdentity: "a",
+    displayNameSnapshot: "A",
+    startMs: 0,
+    endMs: 1000,
+    audioOffsetMs: 0,
+    filePath: "speech.wav",
+  };
+  const track = { ...base, filePath: "continuous.wav" };
+  const model = "qwen3-asr-0.6b-force";
+  const checkpoint = {
+    asrModelId: model,
+    pipelineVersion: CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+    totalUnits: 1,
+  };
+  assert.equal(
+    selectSpeakerSourcesForResume([base], [track], [], checkpoint, model).ambiguousLegacyPlan,
+    true,
+  );
+  assert.equal(
+    selectSpeakerSourcesForResume([base], [{ ...base }], [], checkpoint, model).ambiguousLegacyPlan,
+    false,
+  );
+  assert.equal(
+    selectSpeakerSourcesForResume([base], [track], [base], checkpoint, model).ambiguousLegacyPlan,
+    true,
+  );
+  assert.equal(
+    selectSpeakerSourcesForResume([base], [{ ...base }], [base], checkpoint, model)
+      .ambiguousLegacyPlan,
+    false,
+  );
+  assert.equal(
+    selectSpeakerSourcesForResume(
+      [base],
+      [{ ...base, audioOffsetMs: 10 }],
+      [base],
+      checkpoint,
+      model,
+    ).ambiguousLegacyPlan,
+    true,
+  );
+});
 
 const recognized = (
   text: string,

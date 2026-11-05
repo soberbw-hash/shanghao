@@ -107,6 +107,26 @@ test("FreeToken release parser selects the newest matching Windows wheel pair", 
   assert.equal(pair.runtime.sha256, newDigest);
 });
 
+test("release parser rejects alternate hosts, repositories and nested encoded paths", () => {
+  const digest = "a".repeat(64);
+  const names = [
+    "freetoken-0.1.2+g111111111-cp312-cp312-win_amd64.whl",
+    "freetoken_kernel_cache-0.1.2+cu130.g111111111-py3-none-win_amd64.whl",
+  ];
+  const html = names.map((name) => row(name, digest, "2026-08-31T00:00:00Z")).join("\n");
+  for (const replacement of [
+    "https://evil.example/FlashML-org/FreeToken-Web/releases/download/beta/",
+    "/other-owner/FreeToken-Web/releases/download/beta/",
+    "/FlashML-org/FreeToken-Web/releases/download/beta/%2f",
+  ]) {
+    const hostile = html.replaceAll(
+      "/FlashML-org/FreeToken-Web/releases/download/beta/",
+      replacement,
+    );
+    assert.throws(() => parseFreeTokenWindowsAssetPair(hostile), /windows_release_pair_missing/);
+  }
+});
+
 test(
   "FreeToken runtime reuses an existing CLI without downloading Desktop or another runtime",
   {

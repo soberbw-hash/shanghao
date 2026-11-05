@@ -233,15 +233,19 @@ test("completed fusion is the summary source while every persisted main transcri
   initial.transcript = initial.transcript.slice(0, 1);
   const original = JSON.stringify(initial.transcript);
   const fused = [
-    { ...initial.transcript[0]!, text: "融合更正后的合成原句。", words: undefined },
     {
       ...initial.transcript[0]!,
-      id: "fusion-cloud:extra",
-      text: "仅云端存在的合成内容。",
+      text: "双方一致的合成原句。",
+      words: undefined,
+      fusionUncertain: false,
+    },
+    {
+      ...initial.transcript[0]!,
+      id: "agreed-extra",
+      text: "双方一致的合成内容。",
       startMs: 100000,
       endMs: 105000,
-      fusionEstimated: true,
-      fusionUncertain: true,
+      fusionUncertain: false,
     },
   ];
   initial.transcriptionAssist = {
@@ -251,6 +255,7 @@ test("completed fusion is the summary source while every persisted main transcri
   };
   initial.transcriptionFusion = {
     status: "completed",
+    verificationPolicy: "agreement-v1",
     sourceSignature: "a".repeat(64),
     completedBatches: 1,
     totalBatches: 1,
@@ -263,15 +268,15 @@ test("completed fusion is the summary source while every persisted main transcri
       usesLocalOrganizer: () => false,
       generateJsonWithMetrics: async (request: GenerateJsonRequest) => {
         calls++;
-        assert.ok(request.prompt.includes("sourceSegmentIds=fusion-cloud:extra"));
+        assert.ok(request.prompt.includes("sourceSegmentIds=agreed-extra"));
         return {
           value: {
             description: "实际融合来源摘要",
             summary: [
               {
-                text: "云端独有的内容。",
+                text: "双方一致的合成内容。",
                 sourceStartMs: 100000,
-                sourceSegmentIds: ["fusion-cloud:extra"],
+                sourceSegmentIds: ["agreed-extra"],
               },
             ],
           },
@@ -286,8 +291,48 @@ test("completed fusion is the summary source while every persisted main transcri
   const result = await organizer.organize(initial, true, new AbortController().signal);
   assert.equal(calls, 1);
   assert.equal(JSON.stringify(result.transcript), original);
-  assert.deepEqual(result.summary[0]?.sourceSegmentIds, ["fusion-cloud:extra"]);
+  assert.deepEqual(result.summary[0]?.sourceSegmentIds, ["agreed-extra"]);
   assert.equal(result.updatedAt, "2026-10-23T12:00:00.000Z");
+});
+
+test("legacy or uncertain fusion is not used as authoritative summary input", async () => {
+  for (const policy of [undefined, "agreement-v1"] as const) {
+    const initial = longRecord();
+    initial.transcript = initial.transcript.slice(0, 1);
+    const original = JSON.stringify(initial.transcript);
+    initial.transcriptionAssist = {
+      status: "completed",
+      cloudModelId: "siliconflow-sensevoice-small",
+      localModelId: "qwen3-asr-0.6b-force",
+    };
+    initial.transcriptionFusion = {
+      status: "completed",
+      verificationPolicy: policy,
+      sourceSignature: "old",
+      completedBatches: 1,
+      totalBatches: 1,
+      speakers: [],
+      transcript: [
+        { ...initial.transcript[0]!, text: "不应当成事实的猜测", fusionUncertain: true },
+      ],
+    };
+    const organizer = new VoiceMemoryOrganizer(
+      {
+        usesLocalOrganizer: () => false,
+        generateJsonWithMetrics: async (request: GenerateJsonRequest) => {
+          assert.ok(request.prompt.includes(initial.transcript[0]!.text));
+          assert.ok(!request.prompt.includes("不应当成事实的猜测"));
+          return { value: { description: "朋友谈到了这一段内容。" } };
+        },
+      } as never,
+      async (value) => {
+        assert.equal(JSON.stringify(value.transcript), original);
+        return value;
+      },
+    );
+    const result = await organizer.organize(initial, true, new AbortController().signal);
+    assert.equal(JSON.stringify(result.transcript), original);
+  }
 });
 
 test("source signatures survive serialization and property ordering without repeating completed chunks", async () => {

@@ -4,7 +4,6 @@ import type {
   CloudAiAdminProvider,
   CloudAiAdminSnapshot,
 } from "@private-voice/shared";
-import { useAccountStore } from "../../store/accountStore";
 import { useSettingsStore } from "../../store/settingsStore";
 import { Button } from "../base/Button";
 
@@ -15,6 +14,8 @@ const messages: Record<string, string> = {
   cloud_ai_admin_key_required: "请填写此服务的密钥。",
   cloud_ai_admin_storage_not_configured: "服务器尚未配置可写的管理存储路径。",
   cloud_ai_admin_forbidden: "管理员授权已失效，请重新登录。",
+  cloud_ai_admin_key_invalid: "密钥文件无效，或与当前云端服务器不匹配。",
+  cloud_ai_admin_key_rejected: "服务器未接受该密钥，请检查服务器是否已启用此密钥。",
 };
 const errorText = (error: unknown) => {
   const code = String(error instanceof Error ? error.message : error).match(
@@ -25,8 +26,8 @@ const errorText = (error: unknown) => {
 const initial = {
   kind: "text" as "text" | "speech",
   name: "",
-  baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-  model: "",
+  baseUrl: "https://api.deepseek.com",
+  model: "deepseek-flash",
   apiKey: "",
 };
 
@@ -130,7 +131,7 @@ function AuthorizedPanel() {
       {open ? (
         <div className="mt-4 space-y-3">
           <p className="text-xs text-[#718399]">
-            密钥仅保存在服务器。修改已启用服务会对后续请求生效，进行中的任务保留原配置。
+            密钥仅保存在服务器。修改当前或备用服务会对后续请求生效，进行中的任务保留原配置。
           </p>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" disabled={busy} onClick={() => void refresh()}>
@@ -145,7 +146,7 @@ function AuthorizedPanel() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <strong className="text-sm">{provider.name}</strong>
                 <small className={provider.active ? "text-[#228268]" : "text-[#7a899c]"}>
-                  {provider.active ? "当前启用" : "已停用"} ·{" "}
+                  {provider.active ? "当前启用" : provider.fallback ? "备用服务" : "已停用"} ·{" "}
                   {provider.kind === "text" ? "文字" : "语音"}
                 </small>
               </div>
@@ -156,6 +157,21 @@ function AuthorizedPanel() {
                 <Button variant="secondary" disabled={busy} onClick={() => edit(provider)}>
                   修改
                 </Button>
+                {provider.kind === "text" && !provider.active ? (
+                  <Button
+                    variant="secondary"
+                    disabled={busy || !provider.hasKey}
+                    onClick={() =>
+                      setConfirmation({
+                        revision: snapshot.revision,
+                        action: provider.fallback ? "clear-fallback" : "set-fallback",
+                        id: provider.id,
+                      })
+                    }
+                  >
+                    {provider.fallback ? "取消备用" : "设为备用"}
+                  </Button>
+                ) : null}
                 <Button
                   variant="secondary"
                   disabled={busy || (!provider.active && !provider.hasKey)}
@@ -196,7 +212,9 @@ function AuthorizedPanel() {
                   provider: form,
                 };
                 if (
-                  snapshot.providers.some((provider) => provider.id === form.id && provider.active)
+                  snapshot.providers.some(
+                    (provider) => provider.id === form.id && (provider.active || provider.fallback),
+                  )
                 )
                   setConfirmation(mutation);
                 else void change(mutation);
@@ -216,6 +234,10 @@ function AuthorizedPanel() {
                         event.target.value === "speech"
                           ? "https://api.siliconflow.cn/v1"
                           : initial.baseUrl,
+                      model:
+                        event.target.value === "speech"
+                          ? "FunAudioLLM/SenseVoiceSmall"
+                          : initial.model,
                     })
                   }
                 >
@@ -306,10 +328,73 @@ function AuthorizedPanel() {
   );
 }
 
-export function CloudAiAdminPanel() {
-  const userId = useAccountStore((state) =>
-    state.snapshot.status === "signed_in" ? state.snapshot.profile?.userId : undefined,
+function AdminGate() {
+  const [open, setOpen] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const importing = useRef(false);
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  return (
+    <section className="mb-4 rounded-2xl border border-[#cfdff4] bg-[#f5f9ff] p-4">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between text-left font-semibold text-[#344d6c]"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span>管理员功能</span>
+        <span aria-hidden="true">{open ? "−" : "+"}</span>
+      </button>
+      {open &&
+        (unlocked ? (
+          <AuthorizedPanel />
+        ) : (
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-[#718399]">
+              选择管理员密钥文件以管理云端 AI 服务。密钥只在本次运行中使用。
+            </p>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                if (importing.current) return;
+                importing.current = true;
+                setBusy(true);
+                setError("");
+                void window.desktopApi.cloudAiAdmin
+                  .importKey()
+                  .then((ok) => {
+                    if (ok && active.current) setUnlocked(true);
+                  })
+                  .catch((cause) => {
+                    if (active.current) setError(errorText(cause));
+                  })
+                  .finally(() => {
+                    importing.current = false;
+                    if (active.current) setBusy(false);
+                  });
+              }}
+            >
+              上传密钥文件
+            </Button>
+            {error && (
+              <p role="alert" className="text-sm text-[#bd4651]">
+                {error}
+              </p>
+            )}
+          </div>
+        ))}
+    </section>
   );
+}
+
+export function CloudAiAdminPanel() {
   const relay = useSettingsStore((state) => state.settings?.relayServerUrl);
-  return userId ? <AuthorizedPanel key={`${userId}:${relay}`} /> : null;
+  return <AdminGate key={relay} />;
 }

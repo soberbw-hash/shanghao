@@ -1,3 +1,5 @@
+@import "./275-voice-replay-transcript.css";
+
 .voice-replay-dialog header {
   display: flex;
   justify-content: space-between;

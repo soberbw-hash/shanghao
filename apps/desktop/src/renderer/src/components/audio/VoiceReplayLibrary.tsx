@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { VoiceReplayClip } from "@private-voice/shared";
+import type { VoiceReplayClip, VoiceReplayTranscript } from "@private-voice/shared";
 import { Button } from "../base/Button";
 
 export function VoiceReplayLibrary({ revision }: { revision: string | number }) {
@@ -11,7 +11,16 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [textMatches, setTextMatches] = useState<Set<string>>(new Set());
+  const [searching, setSearching] = useState(false);
+  const [searchIncomplete, setSearchIncomplete] = useState(false);
   const [transcript, setTranscript] = useState<string>();
+  const [transcriptDetail, setTranscriptDetail] = useState<VoiceReplayTranscript>();
+  const [editing, setEditing] = useState<{ index: number; text: string }>();
+  const audio = useRef<HTMLAudioElement>(null);
+  const previewEnd = useRef<number | undefined>(undefined);
+  const previewGeneration = useRef(0);
   const request = useRef(0);
   const transcriptRequest = useRef(0);
   const listRequest = useRef(0);
@@ -46,6 +55,39 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
       active = false;
     };
   }, [api, revision]);
+  useEffect(() => {
+    const term = query.trim().toLocaleLowerCase();
+    let active = true;
+    setTextMatches(new Set());
+    setSearchIncomplete(false);
+    if (!term || !api?.readTranscript) {
+      setSearching(false);
+      return () => {
+        active = false;
+      };
+    }
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const found = new Set<string>();
+        for (const clip of clips) {
+          if (!active) return;
+          try {
+            const text = await api.readTranscript(clip.id);
+            if (text?.toLocaleLowerCase().includes(term)) found.add(clip.id);
+          } catch {
+            if (active) setSearchIncomplete(true);
+          }
+          if (active) setTextMatches(new Set(found));
+        }
+        if (active) setSearching(false);
+      })();
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [api, clips, query]);
   useEffect(
     () => () => {
       if (url) URL.revokeObjectURL(url);
@@ -58,7 +100,11 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
     const transcriptVersion = ++transcriptRequest.current;
     const owner = lifecycle.current;
     setSelected(clip);
+    previewGeneration.current += 1;
+    previewEnd.current = undefined;
     setTranscript(undefined);
+    setTranscriptDetail(undefined);
+    setEditing(undefined);
     setError("");
     setTitle(clip.title);
     // Never round the default past the actual end: the store rejects out-of-range cuts.
@@ -66,16 +112,27 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
     setTo(String(Math.floor(clip.durationMs * 1000) / 1_000_000));
     setUrl("");
     if (api?.readTranscript)
-      void api
-        .readTranscript(clip.id)
-        .then((text) => {
+      void (
+        api.readTranscriptDetail
+          ? api.readTranscriptDetail(clip.id)
+          : api
+              .readTranscript(clip.id)
+              .then((text) =>
+                text === undefined
+                  ? undefined
+                  : { version: 1 as const, createdAt: clip.createdAt, text },
+              )
+      )
+        .then((detail) => {
           if (
             owner.active &&
             current === request.current &&
             transcriptVersion === transcriptRequest.current &&
-            text !== undefined
-          )
-            setTranscript(text || "没有识别到语音。");
+            detail !== undefined
+          ) {
+            setTranscriptDetail(detail);
+            setTranscript(detail.text || "没有识别到语音。");
+          }
         })
         .catch(() => {
           if (
@@ -116,25 +173,55 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
         精彩片段 <span>{clips.length}</span>
       </h3>
       {!clips.length && <p>保存的回溯会出现在这里，仅存本机。</p>}
+      {clips.length > 0 && (
+        <label>
+          搜索片段名称或本地转录
+          <input value={query} maxLength={100} onChange={(event) => setQuery(event.target.value)} />
+          {searching && <small>正在搜索本地文字…</small>}
+          {searchIncomplete && <small>部分文字无法读取，搜索结果可能不完整。</small>}
+        </label>
+      )}
       <div className="voice-replay-clips">
-        {clips.map((clip) => (
-          <button
-            key={clip.id}
-            className={selected?.id === clip.id ? "is-selected" : ""}
-            disabled={busy}
-            onClick={() => void select(clip)}
-          >
-            <strong>{clip.title}</strong>
-            <small>
-              {new Date(clip.createdAt).toLocaleDateString("zh-CN")} ·{" "}
-              {(clip.durationMs / 1000).toFixed(1)} 秒
-            </small>
-          </button>
-        ))}
+        {clips
+          .filter(
+            (clip) =>
+              !query.trim() ||
+              clip.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) ||
+              textMatches.has(clip.id),
+          )
+          .map((clip) => (
+            <button
+              key={clip.id}
+              className={selected?.id === clip.id ? "is-selected" : ""}
+              disabled={busy}
+              onClick={() => void select(clip)}
+            >
+              <strong>{clip.title}</strong>
+              <small>
+                {new Date(clip.createdAt).toLocaleDateString("zh-CN")} ·{" "}
+                {(clip.durationMs / 1000).toFixed(1)} 秒
+              </small>
+            </button>
+          ))}
       </div>
       {selected && (
         <div className="voice-replay-editor">
-          {url && <audio controls src={url} aria-label={selected.title} />}
+          {url && (
+            <audio
+              ref={audio}
+              controls
+              src={url}
+              aria-label={selected.title}
+              onTimeUpdate={(event) => {
+                const end = previewEnd.current;
+                if (end !== undefined && event.currentTarget.currentTime >= end) {
+                  previewEnd.current = undefined;
+                  event.currentTarget.pause();
+                  event.currentTarget.currentTime = end;
+                }
+              }}
+            />
+          )}
           <label>
             名称
             <input
@@ -157,7 +244,13 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
                   }
                   try {
                     const text = await api.transcribeLocal(selected.id);
-                    if (active()) setTranscript(text || "没有识别到语音。");
+                    const detail = api.readTranscriptDetail
+                      ? await api.readTranscriptDetail(selected.id)
+                      : undefined;
+                    if (active()) {
+                      setTranscriptDetail(detail);
+                      setTranscript(text || "没有识别到语音。");
+                    }
                   } catch {
                     if (active())
                       setError("本地转录未完成，请检查模型或本机存储后重试；原片段已保留。");
@@ -206,7 +299,69 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
           {transcript !== undefined && (
             <div aria-label="本地转录文字">
               <strong>转录文字</strong>
-              <p>{transcript}</p>
+              {transcriptDetail?.version === 2 && transcriptDetail.derivedFromTrim && (
+                <p>仅保留裁剪范围内完整的文字片段，边界处可能有未显示的语音。</p>
+              )}
+              {transcriptDetail?.version === 2 && transcriptDetail.segments.length ? (
+                <div
+                  className="voice-replay-transcript-segments"
+                  aria-label="转录片段，点击定位并设置裁剪范围"
+                >
+                  {transcriptDetail.segments.map((segment, index) => (
+                    <button
+                      type="button"
+                      key={`${index}:${segment.startMs}`}
+                      disabled={busy}
+                      onClick={() => {
+                        setEditing({ index, text: segment.text });
+                        setFrom(String(segment.startMs / 1000));
+                        setTo(String(segment.endMs / 1000));
+                        if (audio.current) audio.current.currentTime = segment.startMs / 1000;
+                      }}
+                    >
+                      {(segment.startMs / 1000).toFixed(1)} 秒 · {segment.text}
+                      {segment.timestampPrecision === "chunk" ? "（大致位置）" : ""}
+                      {segment.reviewStatus === "edited" ? "（已修订）" : ""}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p>{transcript}</p>
+              )}
+              {editing && transcriptDetail?.version === 2 && api?.reviseTranscriptSegment ? (
+                <div className="voice-replay-transcript-edit">
+                  <label>
+                    修订这句文字
+                    <textarea
+                      value={editing.text}
+                      maxLength={20000}
+                      disabled={busy}
+                      onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+                    />
+                  </label>
+                  <Button
+                    className="text-xs"
+                    disabled={busy || !editing.text.trim()}
+                    onClick={() =>
+                      void action(async (active) => {
+                        const saved = await api.reviseTranscriptSegment(
+                          selected.id,
+                          transcriptDetail.createdAt,
+                          editing.index,
+                          editing.text,
+                        );
+                        if (active()) {
+                          setTranscriptDetail(saved);
+                          setTranscript(saved.text);
+                          setEditing(undefined);
+                        }
+                      })
+                    }
+                  >
+                    保存修订
+                  </Button>
+                </div>
+              ) : null}
               <small>文字和原片段均保存在本机。</small>
             </div>
           )}
@@ -231,6 +386,44 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
                 onChange={(e) => setTo(e.target.value)}
               />
             </label>
+            <Button
+              className="text-xs"
+              disabled={busy || !url}
+              onClick={() => {
+                const start = Number(from),
+                  end = Number(to),
+                  player = audio.current;
+                if (
+                  !player ||
+                  !Number.isFinite(start) ||
+                  !Number.isFinite(end) ||
+                  start < 0 ||
+                  end <= start ||
+                  end * 1000 > selected.durationMs
+                ) {
+                  setError("请选择有效的试听范围。");
+                  return;
+                }
+                setError("");
+                const previewRequest = request.current;
+                const generation = ++previewGeneration.current;
+                player.pause();
+                player.currentTime = start;
+                previewEnd.current = end;
+                void player.play().catch(() => {
+                  if (
+                    previewRequest !== request.current ||
+                    generation !== previewGeneration.current ||
+                    !lifecycle.current.active
+                  )
+                    return;
+                  previewEnd.current = undefined;
+                  setError("无法试听，请检查音频输出设备。");
+                });
+              }}
+            >
+              试听范围
+            </Button>
             <Button
               className="text-xs"
               disabled={busy}

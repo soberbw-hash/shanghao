@@ -103,6 +103,8 @@ export interface MixedCallOptions {
 
 export interface MixedCallStream {
   stream: MediaStream;
+  /** Monotonic time used by the persisted participant tracks. */
+  elapsedMs: () => number;
   sync: (
     localStream: MediaStream | undefined,
     remoteStreams: Record<string, MediaStream>,
@@ -547,6 +549,8 @@ export const createMixedCallStream = (
 
   return {
     stream: destination.stream,
+    /** Shared monotonic origin for participant audio and recording metadata. */
+    elapsedMs,
     sync,
     setLoudnessBalanceEnabled: (enabled) => {
       loudnessBalanceEnabled = enabled;

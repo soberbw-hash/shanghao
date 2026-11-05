@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { readRendererCss } from "./helpers/read-renderer-css";
 
 const desktopRoot = path.resolve(process.cwd());
 const workspaceRoot = path.resolve(desktopRoot, "../..");
@@ -24,6 +25,7 @@ test("renderer style entry remains an ordered composition instead of a God file"
 
   const partDirectory = path.join(workspaceRoot, "apps/desktop/src/renderer/src/styles/parts");
   const parts = readdirSync(partDirectory).filter((name) => name.endsWith(".css"));
+  const reachableStyles = readRendererCss();
   assert.ok(parts.length >= 10, "the renderer stylesheet must stay split by responsibility");
   // Frozen at the reviewed baseline. New CSS responsibilities need a named part;
   // existing parts should only shrink as duplicated rules are retired.
@@ -39,10 +41,7 @@ test("renderer style entry remains an ordered composition instead of a God file"
       lineCount(relativePath) <= partCeilings[part]!,
       `${part} grew beyond its reviewed ceiling`,
     );
-    assert.match(
-      entry + interactions + liveRoom,
-      new RegExp(part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-    );
+    assert.match(reachableStyles, new RegExp(part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 });
 

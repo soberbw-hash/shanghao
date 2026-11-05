@@ -130,6 +130,7 @@ test("unreviewed retained fusion requires explicit selection while partial revie
     },
     transcriptionFusion: {
       status: "failed",
+      verificationPolicy: "agreement-v1",
       errorCode: "fusion_unreviewed",
       sourceSignature: "fixture",
       completedBatches: 1,

@@ -95,6 +95,7 @@ export async function queueUntranscribedRecordings(
       }
       if (
         record?.errorMessage === "no_reliable_speech" ||
+        record?.errorMessage === "quiet_audio_uncertain" ||
         record?.errorMessage === "cloud_asr_unusable_transcript" ||
         (record?.phase === "paused" && !record.errorMessage?.startsWith("deferred:"))
       )

@@ -59,7 +59,9 @@ const fixture = async (
     () => true,
     {
       status: async () => ({ cloudConfigured: configured, customConfigured: configured }),
-      transcribe: async (file: string, duration: number, selected: string) => {
+      transcribe: async (...args: [string, number, string, AbortSignal]) => {
+        assert.equal(args.length, 4, "local game context must not be sent to the cloud provider");
+        const [file, duration, selected] = args;
         if (provider !== "cloud" && audioDurationMs <= 300000) assert.equal(file, audio);
         else assert.notEqual(file, audio);
         if (provider === "cloud") assert.ok(duration > 0 && duration <= 30000);
@@ -87,6 +89,20 @@ const fixture = async (
   };
   return { directory, store, service, request, calls: () => calls };
 };
+
+test("manual local context is persisted for this recording but not sent to the cloud transcription provider", async () => {
+  const f = await fixture("cloud");
+  try {
+    const localAsrContext = { gameName: "英雄联盟", terms: ["嘉文", "EZ"] };
+    const result = await f.service.process({ ...f.request, localAsrContext });
+    assert.deepEqual(result.localAsrContext, localAsrContext);
+    assert.deepEqual((await f.store.get(f.request.recordingId))?.localAsrContext, localAsrContext);
+    assert.equal(f.calls(), 1);
+  } finally {
+    f.service.stop();
+    await rm(f.directory, { recursive: true, force: true });
+  }
+});
 
 test("manual fusion processes saved originals through the service without another audio upload", async () => {
   const f = await fixture("cloud", false, true, undefined, undefined, 1000, {
@@ -267,8 +283,15 @@ test("a completed API reply can be reparsed and resumed without uploading it aga
       }),
       false,
     );
-    await f.service.process(f.request);
+    const restarted = await f.service.process(f.request);
     assert.equal(f.calls(), 2, "an explicit clean restart must request a fresh response");
+    assert.ok(
+      restarted.transcriptionOriginalHistory?.some((entry) =>
+        entry.transcript.some((segment) => segment.text === first.transcript[0]?.text),
+      ),
+    );
+    const reloaded = await f.store.get(f.request.recordingId);
+    assert.ok(reloaded?.transcriptionOriginalHistory?.length);
     await f.service.clearTranscriptionResults(f.request.recordingId);
     assert.equal((await f.store.get(f.request.recordingId))?.remoteTranscription, undefined);
   } finally {

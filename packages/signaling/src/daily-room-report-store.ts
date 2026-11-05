@@ -695,7 +695,13 @@ export class DailyRoomReportStore {
   ): void {
     const roomParticipants = (this.reports.participants[roomId] ??= {});
     const dayParticipants = (roomParticipants[date] ??= {});
-    for (const [identityId, nickname] of participants) dayParticipants[identityId] = nickname;
+    for (const [identityId, nickname] of participants)
+      Object.defineProperty(dayParticipants, identityId, {
+        value: nickname,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     const report = this.getMutableReport(roomId, Date.parse(`${date}T12:00:00+08:00`));
     report.participantNicknames = uniqueNicknames(Object.values(dayParticipants));
     report.participantCount = report.participantNicknames.length;

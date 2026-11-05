@@ -1,7 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { removeOwnedRecordingArtifacts } from "./recording-artifact-retention";
 import { constants } from "node:fs";
-import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -232,15 +241,35 @@ export const finalizeRecordingSpeakerSegments = async (
 export const loadRecordingSpeakerSegments = async (
   recordingId: string,
   _recordingFilePath: string,
+  requireComplete = false,
 ): Promise<PersistedRecordingSpeakerSegment[] | undefined> => {
   for (const directory of completedDirectories(recordingId)) {
     const manifest = await readManifest(directory, "completed");
     if (manifest.recordingId !== recordingId || manifest.segments.length === 0) continue;
-    const existingNames = new Set(await readdir(directory));
-    const segments = manifest.segments.filter((segment) =>
-      existingNames.has(path.basename(segment.filePath)),
+    const entries = new Map(
+      (await readdir(directory, { withFileTypes: true })).map((entry) => [entry.name, entry]),
     );
-    if (segments.length) return segments;
+    const segments = manifest.segments.filter((segment) => {
+      const name = path.basename(segment.filePath);
+      if (
+        path.resolve(segment.filePath).toLowerCase() !== path.resolve(directory, name).toLowerCase()
+      )
+        throw new Error("speaker_segment_path_invalid");
+      const entry = entries.get(name);
+      if (entry && !entry.isFile()) throw new Error("speaker_segment_path_invalid");
+      if (!entry && requireComplete) throw new Error("speaker_segment_audio_missing");
+      return Boolean(entry);
+    });
+    if (segments.length) {
+      const canonicalRoot = await realpath(path.dirname(path.dirname(directory)));
+      const canonicalDirectory = path.join(canonicalRoot, "recordings", path.basename(directory));
+      if ((await realpath(directory)).toLowerCase() !== canonicalDirectory.toLowerCase())
+        throw new Error("speaker_segment_path_invalid");
+      return segments.map((segment) => ({
+        ...segment,
+        filePath: path.join(canonicalDirectory, path.basename(segment.filePath)),
+      }));
+    }
   }
   return undefined;
 };

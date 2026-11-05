@@ -47,6 +47,40 @@ export interface PcmAudioActivity {
   totalFrames: number;
 }
 
+/** An energy threshold is not a speech detector; only exact PCM zero proves digital silence. */
+export const isDefinitelySilentPcm = (activity: PcmAudioActivity): boolean => activity.peak === 0;
+
+export const summarizePcmActivity = (
+  activity: PcmAudioActivity,
+  durationMs: number,
+): VoiceMemoryCommonVadResult => {
+  const speechDurationMs = Math.min(
+    durationMs,
+    Math.max(0, Math.round(durationMs * activity.activeFrameRatio)),
+  );
+  return {
+    hasSpeech: activity.audible,
+    speechDurationMs: activity.audible ? Math.max(1, speechDurationMs) : 0,
+    silenceDurationMs: activity.audible
+      ? Math.max(0, durationMs - Math.max(1, speechDurationMs))
+      : isDefinitelySilentPcm(activity)
+        ? durationMs
+        : 0,
+    activeFrameRatio: activity.activeFrameRatio,
+    peak: activity.peak,
+  };
+};
+
+export const quietPcmDisposition = (
+  activity: PcmAudioActivity,
+  explicitAnalysis: boolean,
+): "digital_silence" | "uncertain" | "transcribe" =>
+  isDefinitelySilentPcm(activity)
+    ? "digital_silence"
+    : !activity.audible && !explicitAnalysis
+      ? "uncertain"
+      : "transcribe";
+
 export interface TranscriptionChunkRuntimeResult {
   segments: VoiceMemoryTranscriptSegment[];
   rawText: string;

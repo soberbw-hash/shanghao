@@ -8,7 +8,11 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.17.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看更新记录](./docs/release-notes/v3.4.18.md) · [看技术结构](#声音到底经过了什么)
+
+## 3.4.18 新功能一览
+
+加强长录音转录的时间轴回退、原文保留与分成员回溯；增加游戏语境辅助、录音文字回听和模型对比参考稿。新安装默认开启自动转录，设置页保留输入框中的文字选择。云端服务代码支持 DeepSeek V4.1 Flash 主模型与 GLM 备用，但需要在服务器配置密钥后才能启用。
 
 ## 3.4.17 新功能一览
 
@@ -249,7 +253,7 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 ## 下载与使用
 
-当前仓库版本为 **3.4.17**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.17 更新公告](./docs/release-notes/v3.4.17.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.18**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.18 更新公告](./docs/release-notes/v3.4.18.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 

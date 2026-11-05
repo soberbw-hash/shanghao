@@ -225,6 +225,7 @@ const desktopApi: DesktopApi = {
   cloudAiAdmin: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.cloudAiAdmin.get),
     change: (mutation) => ipcRenderer.invoke(IPC_CHANNELS.cloudAiAdmin.change, mutation),
+    importKey: () => ipcRenderer.invoke(IPC_CHANNELS.cloudAiAdmin.importKey),
   },
   ai: {
     getSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.ai.getSnapshot),

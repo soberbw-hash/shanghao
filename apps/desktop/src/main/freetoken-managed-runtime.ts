@@ -59,27 +59,43 @@ interface FreeTokenManagedRuntimeOptions {
 }
 
 const decodeHtml = (value: string): string =>
-  value
-    .replaceAll("&amp;", "&")
-    .replaceAll("&#x2F;", "/")
-    .replaceAll("&#43;", "+")
-    .replaceAll("&#x2B;", "+");
+  value.replace(/&(?:amp;|#x2F;|#43;|#x2B;)/g, (entity) =>
+    entity === "&amp;" ? "&" : entity === "&#x2F;" ? "/" : "+",
+  );
 
 const buildCommitFromName = (name: string): string | undefined =>
   name.match(/[+.]g([0-9a-f]{7,40})[-.]/i)?.[1]?.toLowerCase();
 
 const releaseAssetFromRow = (row: string): FreeTokenWindowsAsset | undefined => {
   const href = decodeHtml(row.match(/href="([^"]*\/releases\/download\/beta\/[^"]+)"/i)?.[1] ?? "");
-  const name = href.split("/").at(-1);
   const sha256 = row.match(/sha256:([0-9a-f]{64})/i)?.[1]?.toLowerCase();
   const updatedAt = row.match(/<relative-time[^>]*datetime="([^"]+)"/i)?.[1] ?? "";
-  if (!href || !name || !sha256) return undefined;
-  const decodedName = decodeURIComponent(name);
+  if (!href || !sha256) return undefined;
+  let url: URL;
+  let decodedName: string;
+  try {
+    url = new URL(href, "https://github.com");
+    const prefix = "/FlashML-org/FreeToken-Web/releases/download/beta/";
+    if (
+      url.origin !== "https://github.com" ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !url.pathname.startsWith(prefix)
+    )
+      return undefined;
+    const fileName = url.pathname.slice(prefix.length);
+    decodedName = decodeURIComponent(fileName);
+    if (!decodedName || /[\\/]/u.test(decodedName)) return undefined;
+  } catch {
+    return undefined;
+  }
   const buildCommit = buildCommitFromName(decodedName);
   if (!buildCommit) return undefined;
   return {
     name: decodedName,
-    url: new URL(href, "https://github.com").toString(),
+    url: url.toString(),
     sha256,
     buildCommit,
     updatedAt,

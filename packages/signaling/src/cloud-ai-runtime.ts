@@ -25,10 +25,7 @@ export class CloudAiRuntime {
   readonly textService: Pick<CloudAiService, "isConfigured" | "execute">;
   readonly speechService: Pick<CloudAsrService, "isConfigured" | "transcribe">;
   configureHttp(accounts: AccountBackend, secure: (request: IncomingMessage) => boolean): void {
-    this.adminHttp = new CloudAiAdminHttp(
-      new CloudAiAdminAccess(accounts, secure),
-      this.configuration,
-    );
+    this.adminHttp = new CloudAiAdminHttp(new CloudAiAdminAccess(secure), this.configuration);
     this.http = new CloudAsrHttpController(accounts, secure, this.speechService, this.textService);
   }
   async handleHttp(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
@@ -51,17 +48,27 @@ export class CloudAiRuntime {
     void this.configuration.catch(() =>
       logger?.("Cloud AI configuration unavailable", { code: "cloud_ai_admin_storage_invalid" }),
     );
+    let cachedRevision = -1;
+    let cachedTextService: CloudAiService | undefined;
     const service: Pick<CloudAiService, "isConfigured" | "execute"> = {
       isConfigured: () => Boolean(this.store?.provider("text")),
       execute: async (request, signal) => {
-        const provider = (await this.configuration).provider("text");
+        const store = await this.configuration;
+        const provider = store.provider("text");
         if (!provider) throw Error("cloud_ai_not_configured");
-        return new CloudAiService({
-          apiKey: provider.apiKey,
-          baseUrl: provider.baseUrl,
-          model: provider.model,
-          memoryContext,
-        }).execute(request, signal);
+        const revision = store.snapshot().revision;
+        if (!cachedTextService || cachedRevision !== revision) {
+          const fallback = store.fallbackTextProvider();
+          cachedTextService = new CloudAiService({
+            apiKey: provider.apiKey,
+            baseUrl: provider.baseUrl,
+            model: provider.model,
+            ...(fallback ? { fallback } : {}),
+            memoryContext,
+          });
+          cachedRevision = revision;
+        }
+        return cachedTextService.execute(request, signal);
       },
     };
     this.textService = service;

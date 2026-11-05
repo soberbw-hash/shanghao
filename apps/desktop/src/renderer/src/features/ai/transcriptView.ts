@@ -4,9 +4,16 @@ import type {
   VoiceMemoryTranscriptSegment,
   VoiceMemorySpeaker,
 } from "@private-voice/shared";
-export type TranscriptViewChoice = "auto" | "fusion" | "cloud" | "local" | "unknown";
+export type TranscriptViewChoice =
+  | "auto"
+  | "fusion"
+  | "cloud"
+  | "local"
+  | "unknown"
+  | `history:${string}`
+  | `history-original:${string}`;
 export interface TranscriptView {
-  kind: "fusion" | "cloud" | "local" | "unknown";
+  kind: Exclude<TranscriptViewChoice, "auto">;
   label: string;
   model?: VoiceMemoryTranscriptionModel;
   transcript: VoiceMemoryTranscriptSegment[];
@@ -76,15 +83,21 @@ export function transcriptViewOptions(record?: VoiceMemoryRecord): TranscriptVie
     fusion?.transcript.filter((segment) => segment.fusionUncertain !== false).length ?? 0;
   const localOriginal = assist && record.transcriptionVariants?.[assist.localModelId];
   const comparable = localOriginal?.model.id === assist?.localModelId && localOriginal?.transcript;
-  const confirmed = fusion?.status === "completed" && reviewedCount > 0;
+  const confirmed =
+    fusion?.verificationPolicy === "agreement-v1" &&
+    fusion.status === "completed" &&
+    reviewedCount > 0;
   if (fusion?.completedBatches && fusion.transcript.length)
     result.set("fusion", {
       kind: "fusion",
-      label: !reviewedCount
-        ? "未校对的保留稿"
-        : fusion.status === "completed"
-          ? `融合稿${uncertainCount ? ` · ${uncertainCount}句待核对` : ""}`
-          : `校对中的保留稿 · ${fusion.completedBatches}/${fusion.totalBatches}`,
+      label:
+        fusion.verificationPolicy !== "agreement-v1"
+          ? "历史融合稿 · 建议回听核对"
+          : !reviewedCount
+            ? "未校对的保留稿"
+            : fusion.status === "completed"
+              ? `融合稿${uncertainCount ? ` · ${uncertainCount}句待核对` : ""}`
+              : `校对中的保留稿 · ${fusion.completedBatches}/${fusion.totalBatches}`,
       transcript: fusion.transcript,
       speakers: fusion.speakers,
       estimated: fusion.transcript.some((segment) => segment.fusionEstimated),
@@ -98,6 +111,29 @@ export function transcriptViewOptions(record?: VoiceMemoryRecord): TranscriptVie
             )
           : undefined,
     });
+  for (const entry of record.transcriptionFusionHistory ?? []) {
+    if (!entry.fusion.transcript.length) continue;
+    const kind = `history:${entry.id}` as const;
+    result.set(kind, {
+      kind,
+      label: `历史融合稿 · ${entry.archivedAt.slice(0, 10)}`,
+      transcript: entry.fusion.transcript,
+      speakers: entry.fusion.speakers,
+      estimated: entry.fusion.transcript.some((segment) => segment.fusionEstimated),
+    });
+  }
+  for (const entry of record.transcriptionOriginalHistory ?? []) {
+    if (!entry.transcript.length) continue;
+    const kind = `history-original:${entry.id}` as const;
+    result.set(kind, {
+      kind,
+      label: `历史原稿 · ${entry.model?.name ?? "来源未知"} · ${entry.archivedAt.slice(0, 10)}`,
+      model: entry.model,
+      transcript: entry.transcript,
+      speakers: entry.speakers,
+      estimated: entry.model ? isCloud(entry.model.id) : true,
+    });
+  }
   if (!result.has("cloud") && !result.has("local") && record.transcript.length)
     result.set("unknown", {
       kind: "unknown",
@@ -114,7 +150,8 @@ export function resolveTranscriptView(
 ): TranscriptView | undefined {
   const options = transcriptViewOptions(record);
   const preferFusion =
-    record?.transcriptionFusion?.status === "completed" &&
+    record?.transcriptionFusion?.verificationPolicy === "agreement-v1" &&
+    record.transcriptionFusion.status === "completed" &&
     record.transcriptionFusion.transcript.some(
       (segment) => segment.fusionUncertain === false && !segment.fusionEstimated,
     );

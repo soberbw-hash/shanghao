@@ -22,7 +22,7 @@ import type {
   AiVoiceMemorySnapshot,
   AppSettings,
 } from "@private-voice/shared";
-import { AI_ASR_PRODUCT_CLASSES, DEFAULT_AI_ASR_MODEL_ID } from "@private-voice/shared";
+import { AI_ASR_MODEL_GROUPS, DEFAULT_AI_ASR_MODEL_ID } from "@private-voice/shared";
 
 import { modelPhaseLabel, modelProgressPercent } from "../../features/ai/modelDownloadPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
@@ -81,6 +81,22 @@ const MODEL_TAGS: Partial<Record<AiModelId, readonly string[]>> = {
   "qwen3-forced-aligner-0.6b": ["共享组件", "精确对齐"],
   "qwen35-4b": ["本地整理", "总结", "章节"],
   "qwen36-35b-a3b-nvfp4": ["本地整理", "MoE", "3B Active", "NVFP4"],
+};
+
+const ASR_PROFILES: Partial<Record<AiAsrModelId, { label: string; description: string }>> = {
+  "qwen3-asr-0.6b-force": {
+    label: "均衡识别",
+    description: "适合日常聊天与语音记忆，质量与速度均衡。",
+  },
+  "paraformer-zh": {
+    label: "极速识别",
+    description: "优先转录速度；识别质量仍需结合实际录音评估。",
+  },
+  "qwen3-asr-1.7b-force": {
+    label: "精细识别",
+    description: "适合游戏结束后的离线转录，实际质量取决于录音。",
+  },
+  "ark-asr-3b-q8_0": { label: "高级实验", description: "实验性 CUDA 后端，可能遇到显存不足。" },
 };
 
 const localRuntimePhaseLabel = (
@@ -729,7 +745,9 @@ export const AiVoiceMemorySettingsCard = ({
               </span>
               <div className="ai-model-primary">
                 <div className="ai-model-name-line">
-                  <h3 className="text-balance">{model.name}</h3>
+                  <h3 className="text-balance">
+                    {ASR_PROFILES[model.id as AiAsrModelId]?.label ?? model.name}
+                  </h3>
                   {recommended ? (
                     <span
                       className="ai-model-recommendation"
@@ -740,7 +758,9 @@ export const AiVoiceMemorySettingsCard = ({
                   ) : null}
                 </div>
                 <p className="ai-model-summary text-pretty">
-                  {model.purpose} · 约 {formatBytes(model.approximateBytes)}
+                  {ASR_PROFILES[model.id as AiAsrModelId]?.description ?? model.purpose} · 约{" "}
+                  {formatBytes(model.approximateBytes)}
+                  {ASR_PROFILES[model.id as AiAsrModelId] ? ` · ${model.name}` : ""}
                 </p>
               </div>
               <strong className={`ai-model-phase is-${selected ? "selected" : model.phase}`}>
@@ -912,15 +932,11 @@ export const AiVoiceMemorySettingsCard = ({
         className="ai-model-group ai-advanced-settings mt-3 scroll-mt-4"
       >
         <summary className="ai-advanced-summary" aria-label="模型与 API 配置">
-          <span>
-            <strong>模型与 API 配置</strong>
-            <small>按需更改 API、下载或管理本地模型</small>
-          </span>
+          <strong>模型与 API 配置</strong>
           <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
         </summary>
-        <div className="ai-model-group-heading">
-          <h3 id="model-management-title">模型</h3>
-          {transcriptionProvider === "local" ? (
+        {transcriptionProvider === "local" ? (
+          <div className="ai-model-group-heading">
             <div className="ai-model-filter-bar" role="group" aria-label="筛选模型">
               {(
                 [
@@ -939,8 +955,8 @@ export const AiVoiceMemorySettingsCard = ({
                 </button>
               ))}
             </div>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
         <div className="ai-model-provider-grid mt-3">
           <fieldset
             className="ai-model-provider-panel disabled:opacity-50"
@@ -1177,26 +1193,29 @@ export const AiVoiceMemorySettingsCard = ({
         </div>
         {transcriptionProvider === "local" ? (
           <>
-            {(["high_accuracy", "high_speed"] as const).map((category) => (
-              <div className="ai-model-subgroup" key={category}>
-                <div className="ai-model-subgroup-heading">
-                  <strong>{category === "high_accuracy" ? "高精度转录" : "极速转录"}</strong>
-                </div>
+            <div className="ai-model-subgroup">
+              <div className="ai-model-subgroup-heading">
+                <strong>本地识别</strong>
+              </div>
+              <div className="ai-model-management-grid">
+                {AI_ASR_MODEL_GROUPS[0]!.ids
+                  .map((id) => asrModels.find((model) => model.id === id))
+                  .filter((model): model is AiModelStatus => Boolean(model && visibleModel(model)))
+                  .map(renderModel)}
+              </div>
+            </div>
+            {AI_ASR_MODEL_GROUPS.slice(1).map(({ label, ids }) => (
+              <details className="ai-model-subgroup" key={label}>
+                <summary>{label}</summary>
                 <div className="ai-model-management-grid">
                   {asrModels
                     .filter(
                       (model) =>
-                        AI_ASR_PRODUCT_CLASSES[model.id as AiAsrModelId] === category &&
-                        visibleModel(model),
-                    )
-                    .sort(
-                      (left, right) =>
-                        Number(right.id === DEFAULT_AI_ASR_MODEL_ID) -
-                        Number(left.id === DEFAULT_AI_ASR_MODEL_ID),
+                        (ids as readonly string[]).includes(model.id) && visibleModel(model),
                     )
                     .map(renderModel)}
                 </div>
-              </div>
+              </details>
             ))}
             <div className="ai-model-subgroup is-compact">
               <div className="ai-model-subgroup-heading">

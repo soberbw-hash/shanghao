@@ -6,12 +6,69 @@ import { APP_BUILD_NUMBER, APP_PROTOCOL_VERSION, type AccountProfile } from "@pr
 import {
   SignalingServer,
   CloudBaseAccountService,
+  SupabaseAccountService,
   type AccountAuthResult,
   type AccountBackend,
   type VerifiedAccountIdentity,
   resolveSupabaseEnvironmentKey,
 } from "@private-voice/signaling";
 import { WebSocket } from "ws";
+
+test("oversized malformed emails are rejected before account network calls", async () => {
+  const service = new SupabaseAccountService({
+    supabaseUrl: "https://example.invalid",
+    publishableKey: "fixture-public-key",
+    secretKey: "fixture-secret-key",
+  });
+  const email = `x@${"a.".repeat(100000)}!`;
+  await assert.rejects(service.requestPasswordReset(email), { code: "account_email_invalid" });
+  await assert.rejects(
+    service.register({ username: "valid_user", email, password: "password123" }),
+    { code: "account_email_invalid" },
+  );
+});
+
+test("linear email validation preserves existing accepted address syntax", async () => {
+  const service = new SupabaseAccountService({
+    supabaseUrl: "https://example.invalid",
+    publishableKey: "fixture-public",
+    secretKey: "fixture-secret",
+  });
+  const accepted: string[] = [];
+  (service as unknown as { publicClient: unknown }).publicClient = {
+    auth: {
+      resetPasswordForEmail: async (email: string) => {
+        accepted.push(email);
+        return { error: null };
+      },
+    },
+  };
+  const samples = [
+    "a@b.c",
+    "name+tag@example.org",
+    "a@b..",
+    "a@.b.c",
+    "a@b",
+    "@b.c",
+    "a@@b.c",
+    "a@.b",
+    "a@b.c ",
+    "a@b. c",
+  ];
+  for (const sample of samples) {
+    const normalized = sample.trim().toLowerCase();
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
+    if (valid) await service.requestPasswordReset(sample);
+    else
+      await assert.rejects(service.requestPasswordReset(sample), { code: "account_email_invalid" });
+  }
+  assert.deepEqual(
+    accepted,
+    samples
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)),
+  );
+});
 
 const profile: AccountProfile = {
   userId: "926f761a-fbbf-4967-99b0-cea040a56f30",

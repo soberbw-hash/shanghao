@@ -20,6 +20,7 @@ import { TranscriptionTimingNotice } from "./TranscriptionTimingNotice";
 import { transcriptionProviderError } from "../../features/ai/transcriptionProviderError";
 import { useSettingsStore } from "../../store/settingsStore";
 import { RecordingTranscriptionModelSelect } from "./RecordingTranscriptionModelSelect";
+import { RecordingGameContext, parseRecordingGameContext } from "./RecordingGameContext";
 import { TranscriptSourceControl } from "./TranscriptSourceControl";
 import { RecordingOverview } from "./RecordingOverview";
 import {
@@ -51,6 +52,18 @@ const isKnownAsrModelId = (value: string): value is AiAsrModelId =>
   Object.prototype.hasOwnProperty.call(AI_ASR_MODEL_NAMES, value);
 
 const describeError = (message: string, transcriptionFinished: boolean): string => {
+  if (/speaker_segment_audio_missing|participant_track_audio_missing/.test(message))
+    return "部分成员音轨文件缺失，无法确认转录完整性；原录音已保留。请恢复缺失文件后重试。";
+  if (/speaker_segment_path_invalid|participant_track_path_invalid/.test(message))
+    return "成员音轨路径无法验证；原录音已保留，请检查录音资料后重试。";
+  if (/speaker_segment_room_mismatch|participant_track_room_mismatch/.test(message))
+    return "成员音轨与此录音的房间不一致，已停止转录并保留原文件。";
+  if (/transcription_source_(?:missing|invalid|changed)/.test(message))
+    return "成员音轨缺失或已更改，无法安全继续旧任务；原录音和文字稿已保留。";
+  if (message.includes("invalid_asr_context"))
+    return "游戏名称或词汇格式不支持，请检查词数与字符。";
+  if (message.includes("transcription_checkpoint_incompatible"))
+    return "无法确认旧断点对应的音轨，原稿已保留。可重新转录以完整检查。";
   if (message.includes("voice_memory_shared_result_changed"))
     return "另一个版本已更新这条录音，旧任务没有覆盖新结果。请重新打开查看。";
   const providerError = transcriptionProviderError(message);
@@ -60,6 +73,8 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   if (message.includes("no_reliable_speech")) {
     return "没有检测到可靠的中文语音；模型返回的其他语言结果已被拦截，请重新转录。";
   }
+  if (message.includes("quiet_audio_uncertain"))
+    return "低音量区间无法确认是否有讲话，请回听原录音。";
   if (message.includes("_not_installed")) return "当前选择的转录模型还没有下载。";
   if (
     message.includes("qwen3_asr_cuda_required") ||
@@ -148,7 +163,7 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   if (message.includes("ai_task_paused")) return "任务已暂停，需要时可以继续处理。";
   if (message.includes("voice_memory_transcript_required")) return "请先完成转录，再整理内容。";
   if (message.includes("fusion_unreviewed"))
-    return "本次未得到有效校对结果，两份原稿与保留稿均已保留，可重试融合校对。";
+    return "两份原稿存在差异或校对未完成，原稿与保留稿均已保留，请回听核对。";
   if (message.includes("fusion_")) return "融合校对未完成，两份原稿已保留，可以继续重试。";
   if (message.includes("recording_recap_join_matching_room"))
     return "请先进入这条录音对应的房间，再上传整理结果。";
@@ -195,6 +210,11 @@ export const VoiceMemoryDetail = ({
     (state) => state.settings?.isAiAutoTranscribeEnabled ?? false,
   );
   const [record, setRecordState] = useState<VoiceMemoryRecord>();
+  const [contextGame, setContextGame] = useState("");
+  const [contextTerms, setContextTerms] = useState("");
+  const [contextAutomatic, setContextAutomatic] = useState(false);
+  const contextDirty = useRef(false);
+  const contextHydratedFor = useRef<string | undefined>(undefined);
   const [viewChoice, setViewChoice] = useState<{ id: string; choice: TranscriptViewChoice }>();
   const activeViewChoice = viewChoice?.id === recording.recordingId ? viewChoice.choice : "auto";
   const textView = useMemo(
@@ -214,6 +234,11 @@ export const VoiceMemoryDetail = ({
 
   useEffect(() => {
     let active = true;
+    contextDirty.current = false;
+    contextHydratedFor.current = undefined;
+    setContextGame("");
+    setContextTerms("");
+    setContextAutomatic(false);
     setRecord(undefined);
     setQueuedAction(undefined);
     previousPhaseRef.current = undefined;
@@ -256,6 +281,21 @@ export const VoiceMemoryDetail = ({
     };
   }, [recording.filePath, recording.recordingId, setRecord]);
 
+  useEffect(() => {
+    if (
+      !record ||
+      record.recordingId !== recording.recordingId ||
+      contextHydratedFor.current === recording.recordingId
+    )
+      return;
+    contextHydratedFor.current = recording.recordingId;
+    if (!contextDirty.current) {
+      setContextGame(record.localAsrContext?.gameName ?? "");
+      setContextTerms(record.localAsrContext?.terms.join("，") ?? "");
+      setContextAutomatic(record.localAsrAutoGameContext === true);
+    }
+  }, [record, recording.recordingId]);
+
   const effectiveSelectedAsrModel = isKnownAsrModelId(selectedAsrModel)
     ? selectedAsrModel
     : DEFAULT_ASR_MODEL_ID;
@@ -275,6 +315,11 @@ export const VoiceMemoryDetail = ({
         organize: true,
         fuse: action === "fuse",
         restartTranscription: action === "transcribe",
+        localAsrContext:
+          action === "transcribe"
+            ? parseRecordingGameContext(contextGame, contextTerms)
+            : undefined,
+        localAsrAutoGameContext: action === "transcribe" ? contextAutomatic : undefined,
         asrModelId:
           action === "transcribe" && transcriptionProvider === "local"
             ? effectiveSelectedAsrModel
@@ -390,6 +435,24 @@ export const VoiceMemoryDetail = ({
           disabled={busy || Boolean(queuedAction)}
           onError={setError}
         />
+        <RecordingGameContext
+          game={contextGame}
+          terms={contextTerms}
+          automatic={contextAutomatic}
+          disabled={busy || Boolean(queuedAction)}
+          onGame={(value) => {
+            contextDirty.current = true;
+            setContextGame(value);
+          }}
+          onTerms={(value) => {
+            contextDirty.current = true;
+            setContextTerms(value);
+          }}
+          onAutomatic={(value) => {
+            contextDirty.current = true;
+            setContextAutomatic(value);
+          }}
+        />
         {error ? <p role="alert">{describeError(error, false)}</p> : null}
       </section>
     );
@@ -421,6 +484,55 @@ export const VoiceMemoryDetail = ({
       : record.progress;
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
+      {record.transcriptionUnits?.some((unit) => unit.outputStatus === "quiet_audio_uncertain") && (
+        <div className="text-sm text-[#718096]">
+          <p role="status">部分低音量区间无法确认是否有讲话，请回听原录音。</p>
+          <details>
+            <summary>查看低音量区间</summary>
+            {record.transcriptionUnits
+              .filter((unit) => unit.outputStatus === "quiet_audio_uncertain")
+              .slice(0, 128)
+              .map((unit) => (
+                <button type="button" key={unit.unitId} onClick={() => onSeek(unit.startMs)}>
+                  {clock(unit.startMs)}–{clock(unit.endMs)}（回听混音）
+                </button>
+              ))}
+            {record.transcriptionUnits.filter(
+              (unit) => unit.outputStatus === "quiet_audio_uncertain",
+            ).length > 128 && <p>区间较多，仅显示前 128 条。</p>}
+          </details>
+        </div>
+      )}
+      {(record.transcriptionStats?.unexaminedParticipantAudioMs ?? 0) > 0 && (
+        <div className="text-sm text-[#718096]">
+          <p role="status">部分成员连续音轨未纳入识别，可能包含静音；如需确认，请回听原录音。</p>
+          {Array.isArray(record.transcriptionStats?.unexaminedParticipantAudioRanges) && (
+            <details>
+              <summary>查看未检查区间</summary>
+              {record.transcriptionStats.unexaminedParticipantAudioRanges
+                .slice(0, 128)
+                .map((range, index) =>
+                  range &&
+                  typeof range.displayName === "string" &&
+                  Number.isFinite(range.startMs) &&
+                  Number.isFinite(range.endMs) &&
+                  range.endMs > range.startMs ? (
+                    <button
+                      type="button"
+                      key={`${index}:${range.startMs}`}
+                      onClick={() => onSeek(range.startMs)}
+                    >
+                      {range.displayName} · {clock(range.startMs)}–{clock(range.endMs)}（回听混音）
+                    </button>
+                  ) : null,
+                )}
+              {record.transcriptionStats.unexaminedRangesTruncated && (
+                <p>区间较多，仅显示前 128 条。</p>
+              )}
+            </details>
+          )}
+        </div>
+      )}
       {record.errorMessage?.startsWith("deferred:") &&
       /(?:_key_required|_not_configured|_not_installed|_runtime_not_ready)$/.test(
         record.errorMessage,
@@ -489,6 +601,7 @@ export const VoiceMemoryDetail = ({
             />
             {record.transcriptionAssist?.status === "completed" &&
             (record.transcriptionFusion?.status !== "completed" ||
+              record.transcriptionFusion.verificationPolicy !== "agreement-v1" ||
               record.transcriptionFusion.transcript.some((s) => s.fusionUncertain)) ? (
               <button
                 type="button"
@@ -503,6 +616,35 @@ export const VoiceMemoryDetail = ({
           </div>
         )}
       </header>
+      <RecordingGameContext
+        game={contextGame}
+        terms={contextTerms}
+        automatic={contextAutomatic}
+        disabled={busy || Boolean(queuedAction) || processing || comparisonOwnsTask}
+        onGame={(value) => {
+          contextDirty.current = true;
+          setContextGame(value);
+        }}
+        onTerms={(value) => {
+          contextDirty.current = true;
+          setContextTerms(value);
+        }}
+        onAutomatic={(value) => {
+          contextDirty.current = true;
+          setContextAutomatic(value);
+        }}
+      />
+      {record.localAsrContext || record.localAsrAutoGameContext ? (
+        <p role="status" className="text-xs text-[#718096]">
+          {record.transcriptionUnits?.some((unit) => unit.contextApplied === true)
+            ? "模型记录显示部分音频曾接收语境信息；实际效果尚待对比。"
+            : "这条录音已设置本地语境；当前没有模型使用记录。"}
+        </p>
+      ) : null}
+      {record.transcriptionFusion &&
+      record.transcriptionFusion.verificationPolicy !== "agreement-v1" ? (
+        <p role="status">历史融合稿已保留，建议与两份原稿及录音核对。重新校对时会保留旧稿。</p>
+      ) : null}
       <RecordingOverview
         record={record}
         busy={busy || Boolean(queuedAction) || working}
@@ -538,7 +680,8 @@ export const VoiceMemoryDetail = ({
           {record.errorMessage === "voice_memory_shared_result_changed"
             ? describeError(record.errorMessage, transcriptionFinished)
             : invalidTranscript
-              ? record.errorMessage === "no_reliable_speech"
+              ? record.errorMessage === "no_reliable_speech" ||
+                record.errorMessage === "quiet_audio_uncertain"
                 ? describeError(record.errorMessage, transcriptionFinished)
                 : record.errorMessage === "partial_transcription"
                   ? "部分音频片段尚未完成，已保留当前文字。可以继续转录。"
@@ -556,16 +699,16 @@ export const VoiceMemoryDetail = ({
           )}
         </p>
       ) : null}
+      {textView && (!invalidTranscript || transcriptViewOptions(record).length > 1) ? (
+        <TranscriptSourceControl
+          view={textView}
+          options={transcriptViewOptions(record)}
+          choice={activeViewChoice}
+          onChange={(choice) => setViewChoice({ id: recording.recordingId, choice })}
+        />
+      ) : null}
       {!invalidTranscript && displayParagraphs.length ? (
         <>
-          {textView ? (
-            <TranscriptSourceControl
-              view={textView}
-              options={transcriptViewOptions(record)}
-              choice={activeViewChoice}
-              onChange={(choice) => setViewChoice({ id: recording.recordingId, choice })}
-            />
-          ) : null}
           {record.transcriptionFusion?.status === "failed" &&
           !(
             autoTranscribe &&

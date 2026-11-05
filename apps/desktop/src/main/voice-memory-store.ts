@@ -3,6 +3,7 @@ import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "nod
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { VoiceMemoryRecycleState, pauseRecycledVoiceMemory } from "./voice-memory-recycle-state";
+import { isLocalAsrContext } from "./local-asr-context";
 
 import {
   evaluateVoiceMemoryTranscriptionValidity,
@@ -105,6 +106,52 @@ const isTranscriptSegment = (value: unknown): boolean =>
       )));
 
 const isRemoteState = (record: Partial<VoiceMemoryRecord>): boolean => {
+  if (record.localAsrContext !== undefined && !isLocalAsrContext(record.localAsrContext))
+    return false;
+  if (
+    record.localAsrAutoGameContext !== undefined &&
+    typeof record.localAsrAutoGameContext !== "boolean"
+  )
+    return false;
+  const validHistoryEntry = (entry: unknown): entry is Record<string, unknown> =>
+    isObject(entry) &&
+    typeof entry.id === "string" &&
+    entry.id.length > 0 &&
+    typeof entry.archivedAt === "string" &&
+    entry.archivedAt.length > 0;
+  if (
+    record.transcriptionOriginalHistory !== undefined &&
+    (!Array.isArray(record.transcriptionOriginalHistory) ||
+      !record.transcriptionOriginalHistory.every(
+        (entry) =>
+          validHistoryEntry(entry) &&
+          (entry.model === undefined ||
+            (isObject(entry.model) &&
+              typeof entry.model.id === "string" &&
+              typeof entry.model.name === "string")) &&
+          Array.isArray(entry.transcript) &&
+          entry.transcript.every(isTranscriptSegment) &&
+          Array.isArray(entry.speakers),
+      ))
+  )
+    return false;
+  if (
+    record.transcriptionFusionHistory !== undefined &&
+    (!Array.isArray(record.transcriptionFusionHistory) ||
+      !record.transcriptionFusionHistory.every(
+        (entry) =>
+          validHistoryEntry(entry) &&
+          isObject(entry.fusion) &&
+          Array.isArray(entry.fusion.transcript) &&
+          entry.fusion.transcript.every(isTranscriptSegment) &&
+          Array.isArray(entry.fusion.speakers) &&
+          typeof entry.fusion.sourceSignature === "string" &&
+          ["running", "completed", "failed"].includes(String(entry.fusion.status)) &&
+          Number.isSafeInteger(entry.fusion.completedBatches) &&
+          Number.isSafeInteger(entry.fusion.totalBatches),
+      ))
+  )
+    return false;
   if (
     record.remoteTranscription?.partMs !== undefined &&
     ![30000, 300000].includes(record.remoteTranscription.partMs)

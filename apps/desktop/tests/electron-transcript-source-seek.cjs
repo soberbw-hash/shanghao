@@ -39,8 +39,16 @@ app.whenReady().then(async () => {
       window.dispatchEvent(new Event('fixture-show-fused'));await pause(200);
       check(document.querySelector('.transcript-source-control').textContent.includes('融合稿'),'automatic view did not switch to finished fusion');
       for(let i=0;i<100&&!document.querySelector('[data-transcript-start-ms="5000"]');i++)await pause(40);
-      check(document.body.textContent.includes('校对后的第3句话'),'fused text missing: '+document.querySelector('.voice-memory-transcript')?.textContent);
+      check(document.body.textContent.includes('本地第3句话'),'fused text missing: '+document.querySelector('.voice-memory-transcript')?.textContent);
       check([...selector().options].some(o=>o.value==='fusion'),'fused original selector missing');
+      window.dispatchEvent(new Event('fixture-show-fusion-history'));await pause(150);
+      check([...selector().options].some(o=>o.value==='history:history-test'),'history selector missing');
+      selector().value='history:history-test';selector().dispatchEvent(new Event('change',{bubbles:true}));await pause(150);
+      check(document.body.textContent.includes('历史版本测试文字'),'saved history text missing');
+      selector().value='history-original:original-test';selector().dispatchEvent(new Event('change',{bubbles:true}));await pause(150);
+      check(document.body.textContent.includes('重试前的原始文字'),'saved original before retry missing');
+      selector().value='fusion';selector().dispatchEvent(new Event('change',{bubbles:true}));await pause(150);
+      check(!document.documentElement.dataset.lastProcessRequest,'viewing history restarted transcription');
       document.querySelector('[data-transcript-start-ms="5000"]').click();await pause(50);
       check(document.documentElement.dataset.transcriptSeekMs==='5000','fusion lost local acoustic timing');
       const panel=document.querySelector('.voice-memory-detail');

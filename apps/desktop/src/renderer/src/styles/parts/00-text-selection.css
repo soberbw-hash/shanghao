@@ -1,0 +1,11 @@
+body {
+  user-select: none;
+}
+
+/* Text entry remains selectable for editing, copying and keyboard operations. */
+input,
+textarea,
+[contenteditable]:not([contenteditable="false"]),
+[contenteditable]:not([contenteditable="false"]) * {
+  user-select: text;
+}

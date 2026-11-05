@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   AI_ASR_MODEL_NAMES,
+  AI_ASR_MODEL_GROUPS,
   DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
   type AppSettings,
   type AiAsrModelId,
@@ -76,20 +77,23 @@ export function CloudLocalAssistControl({
                 onChange({ aiCloudLocalAsrModel: event.target.value as AiAsrModelId });
               }}
             >
-              {(Object.entries(AI_ASR_MODEL_NAMES) as Array<[AiAsrModelId, string]>).map(
-                ([id, name]) => {
-                  const installed = models.some(
-                    (item) => item.id === id && item.activeRevision && item.runtimeReady,
-                  );
-                  return (
-                    <option key={id} value={id}>
-                      {compact ? asrModelLabel(id, name) : name}
-                      {id === DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID ? " · 默认" : ""}
-                      {installed ? "" : " · 需准备"}
-                    </option>
-                  );
-                },
-              )}
+              {AI_ASR_MODEL_GROUPS.map(({ label, ids }) => (
+                <optgroup label={label} key={label}>
+                  {ids.map((id) => {
+                    const name = AI_ASR_MODEL_NAMES[id];
+                    const installed = models.some(
+                      (item) => item.id === id && item.activeRevision && item.runtimeReady,
+                    );
+                    return (
+                      <option key={id} value={id}>
+                        {compact ? asrModelLabel(id, name) : name}
+                        {id === DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID ? " · 默认" : ""}
+                        {installed ? "" : " · 需准备"}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              ))}
             </select>
           </label>
           {!ready ? (

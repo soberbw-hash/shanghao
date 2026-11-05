@@ -1,0 +1,39 @@
+.recording-game-context {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid #d4e4f5;
+  border-radius: 10px;
+  color: #526b87;
+}
+.recording-game-context summary {
+  cursor: pointer;
+}
+.recording-game-context p {
+  margin: 8px 0;
+}
+.recording-game-context label {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+}
+.recording-game-context .recording-game-context-auto {
+  display: flex;
+  align-items: center;
+}
+.recording-game-context-auto input[type="checkbox"] {
+  width: auto;
+}
+.recording-game-context input,
+.recording-game-context textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #c7daf1;
+  border-radius: 8px;
+  background: #fff;
+  user-select: text;
+}
+.recording-game-context textarea {
+  min-height: 55px;
+  resize: vertical;
+}

@@ -1,4 +1,5 @@
 import { AI_ASR_MODEL_NAMES, type VoiceMemoryProcessRequest } from "@private-voice/shared";
+import { isLocalAsrContext } from "./local-asr-context";
 
 const validText = (value: unknown, maximum: number): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= maximum;
@@ -105,6 +106,8 @@ export const requireVoiceMemoryProcessRequest = (value: unknown): VoiceMemoryPro
     !validOptionalBoolean(request.transcribe) ||
     !validOptionalBoolean(request.fuse) ||
     !validOptionalBoolean(request.restartTranscription) ||
+    !validOptionalBoolean(request.localAsrAutoGameContext) ||
+    (request.localAsrContext !== undefined && !isLocalAsrContext(request.localAsrContext)) ||
     (request.markers !== undefined &&
       (!Array.isArray(request.markers) ||
         request.markers.length > 2_000 ||

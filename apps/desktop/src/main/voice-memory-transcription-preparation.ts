@@ -13,10 +13,14 @@ import { TRANSCRIPTION_CHUNK_MS } from "./asr-chunk-policy";
 import { probeRecordingMedia } from "./recording-media-probe";
 import { loadRecordingSpeakerSegments } from "./recording-speaker-segments";
 import { loadRecordingParticipantTracks } from "./recording-participant-tracks";
+import { splitParticipantTracksIntoSpeakerSources } from "./speaker-transcript";
 import {
-  splitParticipantTracksIntoSpeakerSources,
-  type KnownSpeakerTranscriptionSource,
-} from "./speaker-transcript";
+  assertRecordingSourceRooms,
+  clippedSpeechSources,
+  selectSpeakerSourcesForResume,
+} from "./voice-memory-source-plan";
+import { unexaminedParticipantAudio } from "./voice-memory-coverage";
+export { selectSpeakerSourcesForResume } from "./voice-memory-source-plan";
 export const AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS = 30 * 60_000;
 export const benchmarkDurationForMode = (
   mode: "smoke" | "standard" | "long" | undefined,
@@ -164,23 +168,15 @@ export async function prepareKnownSpeakerSources(
   const loadedSpeakerSegments = await loadRecordingSpeakerSegments(
     record.recordingId,
     record.filePath,
+    true,
   );
-  const speechSources: KnownSpeakerTranscriptionSource[] = (loadedSpeakerSegments ?? [])
-    .filter((segment) => segment.startMs < sourceEndMs && segment.endMs > sourceStartMs)
-    .map((segment) => {
-      const clippedStartMs = Math.max(segment.startMs, sourceStartMs);
-      return {
-        ...segment,
-        speakerId: segment.userId?.trim() || segment.speakerId,
-        startMs: clippedStartMs,
-        endMs: Math.min(segment.endMs, sourceEndMs),
-        audioOffsetMs: Math.max(0, clippedStartMs - segment.startMs),
-      };
-    });
+  const speechSources = clippedSpeechSources(loadedSpeakerSegments, sourceStartMs, sourceEndMs);
   const participantTracks = await loadRecordingParticipantTracks(
     record.recordingId,
     record.filePath,
+    true,
   );
+  assertRecordingSourceRooms(record.roomId, loadedSpeakerSegments, participantTracks);
   const participantSources = participantTracks?.length
     ? splitParticipantTracksIntoSpeakerSources(
         participantTracks,
@@ -194,36 +190,30 @@ export async function prepareKnownSpeakerSources(
       unit.modelId === asrModelId &&
       unit.pipelineVersion === CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
   );
-  const durableUnitsMatch = (sources: KnownSpeakerTranscriptionSource[]): boolean =>
-    durableSourceUnits.length === sources.length &&
-    durableSourceUnits.every((unit, index) => {
-      const source = sources[index];
-      return (
-        source !== undefined &&
-        unit.startMs === source.startMs &&
-        unit.endMs === source.endMs &&
-        unit.speakerId === source.speakerId
-      );
-    });
-  // An interrupted recording created by an older build may already have checkpoints against
-  // the continuous participant tracks. Finish those exact saved units instead of silently
-  // changing the unit timeline mid-run; all fresh work uses the smaller speech-only source.
-  const resumeParticipantSources =
-    participantSources.length > 0 &&
-    ((durableSourceUnits.length > 0 &&
-      durableUnitsMatch(participantSources) &&
-      !durableUnitsMatch(speechSources)) ||
-      (durableSourceUnits.length === 0 &&
-        checkpoint?.pipelineVersion === CURRENT_TRANSCRIPTION_PIPELINE_VERSION &&
-        checkpoint.asrModelId === asrModelId &&
-        checkpoint.totalUnits === participantSources.length &&
-        checkpoint.totalUnits !== speechSources.length));
-  const knownSpeakerSegments: KnownSpeakerTranscriptionSource[] = resumeParticipantSources
-    ? participantSources
-    : speechSources.length
-      ? speechSources
-      : participantSources;
+  const { knownSpeakerSegments, resumeParticipantSources, ambiguousLegacyPlan } =
+    selectSpeakerSourcesForResume(
+      speechSources,
+      participantSources,
+      durableSourceUnits,
+      checkpoint,
+      asrModelId,
+    );
+  if (
+    ambiguousLegacyPlan &&
+    ((checkpoint?.completedUnits ?? 0) > 0 ||
+      durableSourceUnits.some((unit) => unit.status === "completed"))
+  )
+    throw new Error("transcription_checkpoint_incompatible");
 
   if (signal.aborted) throw new Error("ai_task_paused");
-  return { knownSpeakerSegments, resumeParticipantSources, speechSources };
+  return {
+    knownSpeakerSegments,
+    resumeParticipantSources,
+    speechSources,
+    unexamined: unexaminedParticipantAudio(participantSources, knownSpeakerSegments) ?? {
+      unexaminedParticipantAudioMs: undefined,
+      unexaminedParticipantAudioRanges: undefined,
+      unexaminedRangesTruncated: undefined,
+    },
+  };
 }

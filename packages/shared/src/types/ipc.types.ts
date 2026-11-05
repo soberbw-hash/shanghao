@@ -416,6 +416,7 @@ export interface DesktopApi {
   cloudAiAdmin: {
     get: () => Promise<CloudAiAdminSnapshot | undefined>;
     change: (mutation: CloudAiAdminMutation) => Promise<CloudAiAdminSnapshot>;
+    importKey: () => Promise<boolean>;
   };
   ai: {
     getSnapshot: () => Promise<AiVoiceMemorySnapshot>;

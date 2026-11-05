@@ -164,17 +164,20 @@ export class VoiceMemoryOrganizer {
   ): Promise<VoiceMemoryRecord> {
     const fused =
       record.transcriptionAssist?.status === "completed" &&
-      record.transcriptionFusion?.status === "completed"
+      record.transcriptionFusion?.status === "completed" &&
+      record.transcriptionFusion.verificationPolicy === "agreement-v1" &&
+      record.transcriptionFusion.transcript.every(
+        (segment) => segment.fusionUncertain === false && !segment.fusionEstimated,
+      )
         ? record.transcriptionFusion.transcript
         : undefined;
-    if (!fused?.length) return this.organizeSource(record, manual, signal);
     const original = record.transcript;
     const sourceOrganizer = new VoiceMemoryOrganizer(this.textGateway, async (next) => {
       const committed = await this.persist({ ...next, transcript: original });
       return { ...committed, transcript: next.transcript };
     });
     const result = await sourceOrganizer.organizeSource(
-      { ...record, transcript: fused },
+      { ...record, transcript: fused?.length ? fused : original },
       manual,
       signal,
     );

@@ -1,4 +1,10 @@
 import { createDiagnostic, createTaskId } from "./voice-memory-diagnostic-factory";
+import { describeEmptyTranscription } from "./voice-memory-empty-result";
+import { archiveFusion } from "./voice-memory-fusion-history";
+import { archiveTranscriptionOriginals } from "./voice-memory-original-history";
+import { assertLocalAsrContext } from "./local-asr-context";
+import { prepareGameAsrContext } from "./voice-memory-game-asr";
+import { verifyCompletedSources, verifySource } from "./voice-memory-source-integrity";
 import { settleVoiceMemoryJob } from "./voice-memory-job-settlement";
 import { withTranscriptionModelLabel } from "./voice-memory-model-label";
 import {
@@ -45,6 +51,7 @@ import {
   createTranscriptionUnits,
   statsFromTranscriptionUnits,
 } from "./voice-memory-transcription-units";
+import { durableUnitsMatchDefinitions } from "./voice-memory-source-plan";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { AiTextGateway } from "./ai-text-gateway";
 import { ASSISTANT_ANSWER_STYLE, assistantAnswerText } from "./voice-memory-question-prompt";
@@ -60,7 +67,11 @@ import {
   deferredVoiceMemoryRequest,
 } from "./automatic-voice-memory-request";
 export { transcriptForPrompt } from "./voice-memory-organizer";
-import { bindTranscriptToKnownSpeaker, mergeSpeakerTranscript } from "./speaker-transcript";
+import {
+  bindTranscriptToKnownSpeaker,
+  mergeSpeakerTranscript,
+  speakersFromKnownSources,
+} from "./speaker-transcript";
 import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
 import { voiceMemoryResumeRequest } from "./voice-memory-resume";
 import { processTranscriptFusion } from "./transcript-fusion";
@@ -337,6 +348,8 @@ export class AiVoiceMemoryService {
         remoteTranscription: undefined,
         transcriptionAssist: undefined,
         transcriptionFusion: undefined,
+        transcriptionFusionHistory: undefined,
+        transcriptionOriginalHistory: undefined,
         transcriptionBenchmark: undefined,
         errorMessage: undefined,
         speakers: [],
@@ -474,7 +487,7 @@ export class AiVoiceMemoryService {
     const variant = record.transcriptionVariants?.[modelId];
     if (!variant) throw new Error("voice_memory_transcription_variant_not_found");
     return this.save({
-      ...record,
+      ...archiveFusion(record),
       transcript: variant.transcript,
       speakers: variant.speakers,
       transcriptionModel: variant.model,
@@ -483,7 +496,6 @@ export class AiVoiceMemoryService {
       transcriptionStats: variant.transcriptionStats,
       transcriptionUnits: variant.transcriptionUnits,
       transcriptionBenchmark: variant.benchmark,
-      transcriptionFusion: undefined,
       phase: "ready",
       progress: 100,
       errorMessage: undefined,
@@ -532,6 +544,7 @@ export class AiVoiceMemoryService {
       }
     }
     const previousRecord = await this.store.get(request.recordingId);
+    assertLocalAsrContext(request.localAsrContext);
     if (
       historical &&
       request.transcribe !== false &&
@@ -769,6 +782,7 @@ export class AiVoiceMemoryService {
     });
     const previous = await this.store.get(request.recordingId);
     let record = previous ?? emptyRecord(request);
+    assertLocalAsrContext(request.localAsrContext);
     if (request.manual && request.transcribe !== false)
       record = { ...record, remoteTranscriptionRetry: undefined };
     record = { ...record, autoOrganizeRequested: automaticOrganizationConsent(previous, request) };
@@ -800,11 +814,12 @@ export class AiVoiceMemoryService {
     this.controllers.set(request.recordingId, controller);
     try {
       if (shouldTranscribe) {
-        record = { ...record, transcriptionFusion: undefined };
+        record = archiveFusion(record);
         currentStage = "audio_file";
         await this.runtime.validateInputFile(request.filePath);
         record = await this.updateDiagnostic(record, request, taskId, currentStage, "processing");
         if (request.restartTranscription) {
+          record = await this.save(archiveTranscriptionOriginals(record));
           const restartModelId =
             request.asrModelId ?? record.transcriptionModel?.id ?? this.models.getActiveAsrModel();
           await Promise.all([
@@ -815,6 +830,8 @@ export class AiVoiceMemoryService {
           ]);
           record = await this.save({
             ...record,
+            localAsrContext: request.localAsrContext,
+            localAsrAutoGameContext: request.localAsrAutoGameContext === true,
             phase: "idle",
             progress: 0,
             speakers: [],
@@ -864,7 +881,7 @@ export class AiVoiceMemoryService {
           record.transcriptionUnits,
         );
         const partial = !validity.complete;
-        const missedSpeech = (record.transcriptionStats?.emptyOutputOnSpeechUnits ?? 0) > 0;
+        const emptyResult = describeEmptyTranscription(record, validity.complete);
         return this.save({
           ...record,
           phase: "ready",
@@ -873,23 +890,11 @@ export class AiVoiceMemoryService {
           taskStatus: partial ? "failed" : "success",
           processingStage: "transcript",
           diagnostic: createDiagnostic(request, partial ? "failed" : "success", "transcript", {
-            errorCode: partial
-              ? "partial_transcription"
-              : missedSpeech
-                ? "empty_output_on_speech"
-                : "no_reliable_speech",
-            errorMessage: partial
-              ? "部分音频分块处理失败，未得到完整转录。"
-              : missedSpeech
-                ? "公共语音检测发现人声，但模型没有产生有效文字。"
-                : "没有检测到可识别的人声。",
+            errorCode: emptyResult.code,
+            errorMessage: emptyResult.message,
           }),
           transcriptionPipelineVersion: TRANSCRIPTION_PIPELINE_VERSION,
-          errorMessage: partial
-            ? "partial_transcription"
-            : missedSpeech
-              ? "empty_output_on_speech"
-              : "no_reliable_speech",
+          errorMessage: emptyResult.code,
         });
       }
       record = await this.save({
@@ -1299,7 +1304,7 @@ export class AiVoiceMemoryService {
     if (!manual && !forceLocal && !canAutomaticallyTranscribeDuration(totalDuration)) {
       throw new Error("automatic_long_recording_requires_manual");
     }
-    const { knownSpeakerSegments, resumeParticipantSources, speechSources } =
+    const { knownSpeakerSegments, resumeParticipantSources, speechSources, unexamined } =
       await prepareKnownSpeakerSources(
         record,
         asrModelId,
@@ -1308,6 +1313,7 @@ export class AiVoiceMemoryService {
         sourceEndMs,
         signal,
       );
+    const contextForSource = await prepareGameAsrContext(record, Boolean(activeBenchmark), signal);
     if (knownSpeakerSegments?.length) {
       const totalUnits = knownSpeakerSegments.length;
       const checkpointCompatible =
@@ -1322,12 +1328,11 @@ export class AiVoiceMemoryService {
       }));
       const durableUnits = record.transcriptionUnits?.filter(
         (unit) =>
-          unit.modelId === asrModelId &&
-          unit.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
-          unit.index >= 0 &&
-          unit.index < totalUnits,
+          unit.modelId === asrModelId && unit.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION,
       );
-      const canResumeDurably = durableUnits?.length === totalUnits;
+      const canResumeDurably = durableUnitsMatchDefinitions(definitions, durableUnits);
+      if (durableUnits?.length && !canResumeDurably)
+        throw new Error("transcription_checkpoint_incompatible");
       if (!checkpointCompatible && !canResumeDurably && record.transcript.length > 0) {
         throw new Error(
           checkpoint ? "transcription_checkpoint_incompatible" : "transcription_checkpoint_missing",
@@ -1347,6 +1352,7 @@ export class AiVoiceMemoryService {
         record.transcript,
         record.transcriptionStats,
       );
+      Object.assign(stats, unexamined);
       const completedUnits = stats.completedUnits;
       record = await this.save({
         ...record,
@@ -1362,7 +1368,10 @@ export class AiVoiceMemoryService {
         const source = knownSpeakerSegments[unit];
         if (!source) continue;
         const durableUnit = units[unit];
-        if (!durableUnit || durableUnit.status === "completed") continue;
+        if (!durableUnit) continue;
+        const sourceFingerprint = await verifySource(source, durableUnit.sourceFingerprint);
+        if (durableUnit.status === "completed") continue;
+        durableUnit.sourceFingerprint = sourceFingerprint;
         const startedAt = new Date().toISOString();
         Object.assign(durableUnit, {
           status: "running" as const,
@@ -1383,6 +1392,7 @@ export class AiVoiceMemoryService {
               filePath: source.filePath,
               offsetMs: source.audioOffsetMs,
               durationMs: duration,
+              context: contextForSource(source),
               benchmark: Boolean(activeBenchmark),
               signal,
               manual,
@@ -1408,6 +1418,7 @@ export class AiVoiceMemoryService {
           },
           this.log.bind(this),
         );
+        await verifySource(source, sourceFingerprint);
         const recognized = chunk.segments;
         const chunkResult = chunk.result;
         const finishedAt = new Date().toISOString();
@@ -1419,6 +1430,7 @@ export class AiVoiceMemoryService {
           processedAudioMs: chunk.failed ? 0 : duration,
           coveredAudioMs: trustworthyCoverage ? duration : 0,
           segmentCount: recognized.length,
+          contextApplied: chunkResult?.rawOutput?.contextApplied === true ? true : undefined,
           commonVad: chunkResult?.commonVad,
           outputStatus,
           anomalyTypes: chunkResult?.anomalyTypes,
@@ -1493,26 +1505,12 @@ export class AiVoiceMemoryService {
           (segment) => !segment.id.startsWith(`${record.recordingId}-speaker-${unit}-`),
         );
         const transcript = mergeSpeakerTranscript(retained, speakerTranscript);
-        const sourceBySpeaker = new Map(
-          knownSpeakerSegments.map((segment) => [segment.speakerId, segment]),
-        );
         record = await this.save({
           ...record,
           processingStage: "storage",
           transcriptionElapsedMs,
           transcript,
-          speakers: Array.from(new Set(transcript.map((segment) => segment.speakerId))).map(
-            (speakerId) => {
-              const identity = sourceBySpeaker.get(speakerId);
-              return {
-                speakerId,
-                memberId: speakerId,
-                nickname: identity?.displayNameSnapshot,
-                displayNameSnapshot: identity?.displayNameSnapshot,
-                confidence: "high" as const,
-              };
-            },
-          ),
+          speakers: speakersFromKnownSources(transcript, knownSpeakerSegments),
           progress: Math.round(((unit + 1) / totalUnits) * 70),
           transcriptionStats: {
             ...stats,
@@ -1542,13 +1540,16 @@ export class AiVoiceMemoryService {
           updatedAt: new Date().toISOString(),
         });
       }
+      await verifyCompletedSources(knownSpeakerSegments, units, signal);
       this.log("info", "Speaker-aware transcription completed", {
         recordingId: record.recordingId,
         identitySource: resumeParticipantSources
           ? "participant_tracks_resume"
-          : speechSources.length
-            ? "speech_segments"
-            : "participant_tracks",
+          : speechSources.length && knownSpeakerSegments.length > speechSources.length
+            ? "speech_segments_with_missing_participant_tracks"
+            : speechSources.length
+              ? "speech_segments"
+              : "participant_tracks",
         segmentCount: totalUnits,
         speakerCount: record.speakers.length,
         overlappingSegmentsSupported: true,
@@ -1607,17 +1608,11 @@ export class AiVoiceMemoryService {
     }));
     const durableUnits = record.transcriptionUnits?.filter(
       (unit) =>
-        unit.modelId === asrModelId &&
-        unit.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION &&
-        unit.index >= 0 &&
-        unit.index < totalUnits,
+        unit.modelId === asrModelId && unit.pipelineVersion === TRANSCRIPTION_PIPELINE_VERSION,
     );
-    const canResumeDurably =
-      durableUnits?.length === totalUnits &&
-      durableUnits.every(
-        (unit, index) =>
-          unit.startMs === definitions[index]?.startMs && unit.endMs === definitions[index]?.endMs,
-      );
+    const canResumeDurably = durableUnitsMatchDefinitions(definitions, durableUnits);
+    if (durableUnits?.length && !canResumeDurably)
+      throw new Error("transcription_checkpoint_incompatible");
     if (!checkpointCompatible && !canResumeDurably && record.transcript.length > 0) {
       // A non-restart request must never silently destroy a saved partial transcript. Explicit
       // "重新转录" clears both the checkpoint and transcript before entering this method.
@@ -1692,6 +1687,7 @@ export class AiVoiceMemoryService {
             filePath: record.filePath,
             offsetMs,
             durationMs: duration,
+            context: contextForSource(),
             benchmark: Boolean(activeBenchmark),
             signal,
             manual,
@@ -1727,6 +1723,7 @@ export class AiVoiceMemoryService {
         processedAudioMs: chunk.failed ? 0 : duration,
         coveredAudioMs: trustworthyCoverage ? duration : 0,
         segmentCount: segments.length,
+        contextApplied: chunkResult?.rawOutput?.contextApplied === true ? true : undefined,
         commonVad: chunkResult?.commonVad,
         outputStatus,
         anomalyTypes: chunkResult?.anomalyTypes,

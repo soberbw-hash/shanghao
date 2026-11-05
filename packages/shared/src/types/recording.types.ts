@@ -118,6 +118,16 @@ export interface RecordingParticipantTracksFinalizePayload {
   sessionId: string;
   recordingId: string;
   recordingFilePath: string;
+  gameTimeline?: RecordingGameTimeline;
+}
+
+/** Local snapshots observed during this recording, never reconstructed from the current room. */
+export interface RecordingGameTimeline {
+  schemaVersion: 1;
+  roomId: string;
+  durationMs: number;
+  complete: boolean;
+  events: Array<{ offsetMs: number; memberId: string; present: boolean; gameName?: string }>;
 }
 
 export interface RecordingSpeakerSegmentResponse {

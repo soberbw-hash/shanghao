@@ -9,12 +9,17 @@ import {
 } from "electron";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { IPC_CHANNELS } from "@private-voice/shared";
+import { IPC_CHANNELS, type VoiceReplayTranscript } from "@private-voice/shared";
 import { VoiceReplayStore } from "./voice-replay-store";
 
 export function registerVoiceReplayIpc(
   window: () => BrowserWindow | null,
-  transcribeLocal: (filePath: string, durationMs: number) => Promise<string>,
+  transcribeLocal: (
+    filePath: string,
+    durationMs: number,
+  ) => Promise<
+    string | Omit<Extract<VoiceReplayTranscript, { version: 2 }>, "version" | "createdAt">
+  >,
 ): void {
   const store = new VoiceReplayStore(path.join(app.getPath("userData"), "voice-replay"), (target) =>
     shell.trashItem(target),
@@ -42,6 +47,12 @@ export function registerVoiceReplayIpc(
   bind(channels.save, (title: string, bytes: Uint8Array) => store.save(title, bytes));
   bind(channels.read, (id: string) => store.read(id));
   bind(channels.readTranscript, (id: string) => store.readTranscript(id));
+  bind(channels.readTranscriptDetail, (id: string) => store.readTranscriptDetail(id));
+  bind(
+    channels.reviseTranscriptSegment,
+    (id: string, expectedCreatedAt: number, index: number, text: string) =>
+      store.reviseTranscriptSegment(id, expectedCreatedAt, index, text),
+  );
   bind(channels.rename, (id: string, title: string) => store.rename(id, title));
   bind(channels.trim, (id: string, from: number, to: number) => store.trim(id, from, to));
   bind(channels.transcribeLocal, async (id: string) => {

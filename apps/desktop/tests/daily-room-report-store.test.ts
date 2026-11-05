@@ -8,6 +8,26 @@ import { DailyRoomReportStore } from "../../../packages/signaling/src/daily-room
 
 const at = (value: string): number => Date.parse(`${value}+08:00`);
 
+test("special participant IDs remain ordinary data across a save and reload", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-daily-identities-"));
+  const filePath = path.join(directory, "daily.json");
+  try {
+    const store = await DailyRoomReportStore.create(filePath);
+    const now = at("2026-08-10T20:00:00");
+    store.recordJoin("main", "__proto__", "甲", 1, now);
+    store.recordJoin("main", "constructor", "乙", 2, now + 1000);
+    store.recordLeave("main", "__proto__", "甲", 1, now + 2000);
+    store.recordLeave("main", "constructor", "乙", 0, now + 3000);
+    await store.flush();
+    const reloaded = await DailyRoomReportStore.create(filePath);
+    const report = reloaded.getHistory("main", at("2026-08-11T12:00:00"))[0];
+    assert.deepEqual(new Set(report?.participantNicknames), new Set(["甲", "乙"]));
+    assert.equal(Object.hasOwn(Object.prototype, "甲"), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("daily room reports retain activity from the last 14 complete days without fake empty days", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-daily-room-"));
   const filePath = path.join(directory, "daily-room.json");

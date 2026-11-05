@@ -24,6 +24,21 @@ export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
   "ark-asr-3b-q8_0": "ARK-ASR-3B Q8_0",
 };
 
+/** Presentation only: never removes an installed model or changes a saved model ID. */
+export const AI_ASR_MODEL_GROUPS: ReadonlyArray<{ label: string; ids: readonly AiAsrModelId[] }> = [
+  { label: "主力模型", ids: ["qwen3-asr-0.6b-force", "paraformer-zh", "qwen3-asr-1.7b-force"] },
+  { label: "高级实验", ids: ["ark-asr-3b-q8_0"] },
+  {
+    label: "历史与兼容模型",
+    ids: [
+      "moss-transcribe-diarize-0.9b-q8_0",
+      "glm-asr-nano-2512",
+      "fun-asr-nano-2512",
+      "fireredasr2-aed",
+    ],
+  },
+];
+
 export type AiAsrProductClass = "high_accuracy" | "high_speed";
 
 /** Product grouping only. Benchmark validity and ranking remain model-independent. */
@@ -247,6 +262,8 @@ export interface VoiceMemoryTranscriptSegment {
   /** Identifies the provider and exact inference chunk that produced this segment. */
   sourceModel?: AiAsrModelId;
   sourceChunkId?: string;
+  /** A chunk boundary is not a sentence or word alignment. Missing on legacy records. */
+  timestampPrecision?: "chunk";
   /** Stable raw-provider segment id retained for comparison/debug exports. */
   rawSegmentId?: string;
   /** Serialized provider segments retained alongside normalized text. */
@@ -442,10 +459,21 @@ export interface VoiceMemoryTranscriptionVariant {
   updatedAt: string;
 }
 
+/** Explicit, local-only context for this recording; no historical game state is inferred. */
+export interface VoiceMemoryLocalAsrContext {
+  gameName?: string;
+  terms: string[];
+}
+
 export type VoiceMemoryTranscriptionUnitStatus = "pending" | "running" | "completed" | "failed";
 
 export type VoiceMemoryTranscriptionOutputStatus =
-  "normal" | "vad_silence" | "empty_output_on_speech" | "abnormal_output" | "repetition_loop";
+  | "normal"
+  | "vad_silence"
+  | "quiet_audio_uncertain"
+  | "empty_output_on_speech"
+  | "abnormal_output"
+  | "repetition_loop";
 
 export interface VoiceMemoryCommonVadResult {
   hasSpeech: boolean;
@@ -516,6 +544,8 @@ export interface VoiceMemoryTranscriptionAttempt {
 export interface VoiceMemoryTranscriptionUnit {
   /** Stable within one recording/model/pipeline, so a restart can safely upsert the same unit. */
   unitId: string;
+  /** Hash of source identity and file metadata, not a cryptographic content digest. */
+  sourceFingerprint?: string;
   modelId: AiAsrModelId;
   pipelineVersion?: number;
   index: number;
@@ -529,6 +559,8 @@ export interface VoiceMemoryTranscriptionUnit {
   processedAudioMs: number;
   coveredAudioMs: number;
   segmentCount: number;
+  /** True only when the local runtime reported receiving context for this unit. */
+  contextApplied?: boolean;
   /** Common, model-independent speech detector result for this exact time range. */
   commonVad?: VoiceMemoryCommonVadResult;
   /** Distinguishes true silence from an empty/abnormal model output. */
@@ -546,6 +578,13 @@ export interface VoiceMemoryTranscriptionUnit {
   completedAt?: string;
   heartbeatAt?: string;
   updatedAt: string;
+}
+
+export interface VoiceMemoryUnexaminedRange {
+  memberId: string;
+  displayName: string;
+  startMs: number;
+  endMs: number;
 }
 
 export interface VoiceMemoryTranscriptionStats {
@@ -575,17 +614,21 @@ export interface VoiceMemoryTranscriptionStats {
   hallucinationSuspectedCount?: number;
   /** Conservative review signal. This is never, by itself, proof that a model output is invalid. */
   suspectedOmissionCount?: number;
+  /** Continuous member-track time outside the scheduled source plan; not a speech estimate. */
+  unexaminedParticipantAudioMs?: number;
+  unexaminedParticipantAudioRanges?: VoiceMemoryUnexaminedRange[];
+  unexaminedRangesTruncated?: boolean;
   /** Scheduler terminal progress; not a claim about recognition quality. */
   taskProgressPercent?: number;
-  /** Sum of the speech units scheduled for this run. */
+  /** Sum of scheduled audio unit durations, including continuous participant tracks. */
   scheduledSpeechMs?: number;
-  /** Successfully processed scheduled speech divided by scheduled speech. */
+  /** Successfully processed scheduled audio divided by scheduled audio. */
   processedSpeechPercent?: number;
-  /** Scheduled speech divided by the selected clip duration. */
+  /** Scheduled track duration divided by clip duration, clamped to 100%; not speech occupancy. */
   speechRatioPercent?: number;
   /** Legacy clip occupancy: processed scheduled speech divided by the selected clip duration. */
   processedPercent?: number;
-  /** Common-VAD speech duration that produced trustworthy output. */
+  /** Approximate share of detected audio activity in units that produced usable output. */
   speechCoveragePercent?: number;
   /** Written only after the final durable result has been saved. */
   finalResultSaved?: boolean;
@@ -695,6 +738,8 @@ export interface VoiceMemoryRecord {
   transcriptionPipelineVersion?: number;
   /** ASR model that produced this transcript; independent from the model currently selected. */
   transcriptionModel?: VoiceMemoryTranscriptionModel;
+  localAsrContext?: VoiceMemoryLocalAsrContext;
+  localAsrAutoGameContext?: boolean;
   /** Per-model A/B results. The active variant is also mirrored in transcript/speakers. */
   transcriptionVariants?: Partial<
     Record<
@@ -702,6 +747,14 @@ export interface VoiceMemoryRecord {
       VoiceMemoryTranscriptionVariant
     >
   >;
+  /** Original text snapshots retained before an explicit restart replaces a model result. */
+  transcriptionOriginalHistory?: Array<{
+    id: string;
+    archivedAt: string;
+    model?: VoiceMemoryTranscriptionModel;
+    transcript: VoiceMemoryTranscriptSegment[];
+    speakers: VoiceMemorySpeaker[];
+  }>;
   /** Effective ASR runtime time; pauses, queueing, conversion and organization are excluded. */
   transcriptionElapsedMs?: number;
   /** Durable coverage and recovery metrics for long-running or comparison transcriptions. */
@@ -745,6 +798,8 @@ export interface VoiceMemoryRecord {
   /** Corrected copy; cloud/local ASR originals remain in transcriptionVariants. */
   transcriptionFusion?: {
     status: "running" | "completed" | "failed";
+    /** Missing on older results, which may contain unverified model-selected wording. */
+    verificationPolicy?: "agreement-v1";
     sourceSignature: string;
     completedBatches: number;
     totalBatches: number;
@@ -752,6 +807,12 @@ export interface VoiceMemoryRecord {
     speakers: VoiceMemorySpeaker[];
     errorCode?: string;
   };
+  /** Earlier visible fusion results retained when the active result is replaced. */
+  transcriptionFusionHistory?: Array<{
+    id: string;
+    archivedAt: string;
+    fusion: NonNullable<VoiceMemoryRecord["transcriptionFusion"]>;
+  }>;
   /** Metadata for the active/saved benchmark run. */
   transcriptionBenchmark?: VoiceMemoryBenchmarkRunMetadata;
   errorMessage?: string;
@@ -883,6 +944,10 @@ export interface VoiceMemoryProcessRequest {
   fuse?: boolean;
   /** One-off model choice for A/B testing; does not change the global default. */
   asrModelId?: AiAsrModelId;
+  /** Optional manual context used only by compatible local ASR. */
+  localAsrContext?: VoiceMemoryLocalAsrContext;
+  /** Opt-in: use only captured member/game history for this recording. */
+  localAsrAutoGameContext?: boolean;
   /** Optional metadata for comparison runs; it never changes recognition parameters. */
   benchmark?: VoiceMemoryBenchmarkRunMetadata;
   markers?: Array<{ id: string; offsetMs: number; label?: string }>;

@@ -6,6 +6,8 @@ export interface CloudAiAdminProvider {
   model: string;
   hasKey: boolean;
   active: boolean;
+  /** An inactive text provider explicitly selected for failover. */
+  fallback?: boolean;
 }
 export interface CloudAiAdminSnapshot {
   revision: number;
@@ -16,10 +18,10 @@ export type CloudAiAdminMutation = {
 } & (
   | {
       action: "save";
-      provider: Omit<CloudAiAdminProvider, "id" | "hasKey" | "active"> & {
+      provider: Omit<CloudAiAdminProvider, "id" | "hasKey" | "active" | "fallback"> & {
         id?: string;
         apiKey?: string;
       };
     }
-  | { action: "activate" | "delete" | "disable"; id: string }
+  | { action: "activate" | "delete" | "disable" | "set-fallback" | "clear-fallback"; id: string }
 );
