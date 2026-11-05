@@ -263,4 +263,3 @@ corepack pnpm --dir apps/desktop test:smoke
 ```
 
 Windows 是正式支持平台；macOS 保留能力降级边界。开发规则见 [AGENTS.md](./AGENTS.md)。自研代码按 [AGPL-3.0-or-later](./LICENSE.md) 开源，[shanghao](https://github.com/soberbw-hash/shanghao) 统一提供源码、安装包、截图和问题反馈；临时下载仓库保留为 [shanghao-downloads](https://github.com/soberbw-hash/shanghao-downloads) 存档。历史版本适用其发布时附带的许可，第三方音频、模型、角色与品牌资源仍遵守各自许可。问题和脱敏后的诊断可提交到 [Issues](https://github.com/soberbw-hash/shanghao/issues)。
-
