@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -59,6 +59,28 @@ test("resuming a unit detects changed or missing source without exposing its pat
     assert.equal((error as Error).message.includes(filePath), false);
     return true;
   });
+});
+
+test("source validation rejects a recording reached through a parent junction", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "shanghao-source-junction-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const target = path.join(root, "target");
+  const alias = path.join(root, "alias");
+  await mkdir(target);
+  await writeFile(path.join(target, "source.webm"), Buffer.from([1, 2, 3]));
+  await symlink(target, alias, process.platform === "win32" ? "junction" : "dir");
+  await assert.rejects(
+    verifySource({
+      filePath: path.join(alias, "source.webm"),
+      speakerId: "a",
+      accountIdentity: "a",
+      displayNameSnapshot: "A",
+      startMs: 0,
+      endMs: 1000,
+      audioOffsetMs: 0,
+    }),
+    /transcription_source_invalid/,
+  );
 });
 
 test("real local transcription pipeline refuses a source changed while inference is running", async (t) => {
