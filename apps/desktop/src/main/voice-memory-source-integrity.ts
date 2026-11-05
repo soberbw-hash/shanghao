@@ -11,17 +11,14 @@ export async function verifySource(
 ): Promise<string> {
   let metadata;
   let actual: string;
+  if (!path.isAbsolute(source.filePath)) throw new Error("transcription_source_invalid");
   try {
     metadata = await lstat(source.filePath);
     actual = await realpath(source.filePath);
   } catch {
     throw new Error("transcription_source_missing");
   }
-  if (
-    !metadata.isFile() ||
-    metadata.isSymbolicLink() ||
-    path.resolve(actual).toLowerCase() !== path.resolve(source.filePath).toLowerCase()
-  )
+  if (!metadata.isFile() || metadata.isSymbolicLink())
     throw new Error("transcription_source_invalid");
   const fingerprint = createHash("sha256")
     .update(
