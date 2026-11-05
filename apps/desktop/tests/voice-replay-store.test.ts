@@ -232,6 +232,29 @@ test("trim retains only complete timestamped sentences, with shifted times and e
     );
   }));
 
+test("trim clamps floating point timestamp boundaries to the sample-derived duration", () =>
+  fixture(async (store) => {
+    const clip = await store.save(
+      "48kHz 边界",
+      encodeVoiceReplayWave(new Float32Array(144_000), 48_000),
+    );
+    await store.transcribeLocal(clip.id, async () => ({
+      text: "边界句",
+      sourceModel: "test-model",
+      segments: [
+        { text: "边界句", startMs: 1001, endMs: 2001, timestampPrecision: "aligned" as const },
+      ],
+    }));
+
+    const trimmed = await store.trim(clip.id, 1001, 2001);
+    const detail = await store.readTranscriptDetail(trimmed.id);
+    assert.equal(detail?.version, 2);
+    if (!detail || detail.version !== 2) throw Error("trim transcript missing");
+    assert.deepEqual(detail.segments, [
+      { text: "边界句", startMs: 0, endMs: 1000, timestampPrecision: "aligned" },
+    ]);
+  }));
+
 test("concurrent replay saves have distinct IDs and complete audio/metadata pairs", () =>
   fixture(async (store) => {
     const clips = await Promise.all(

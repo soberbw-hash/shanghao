@@ -386,15 +386,24 @@ export class VoiceReplayStore {
       const current = (await this.transcripts(id, clip.durationMs))[0]?.value;
       const actualStartMs = (start / 2 / sampleRate) * 1000;
       const actualEndMs = (end / 2 / sampleRate) * 1000;
+      const trimmedDurationMs = ((end - start) / 2 / sampleRate) * 1000;
       const segments =
         current?.version === 2
           ? current.segments
               .filter((segment) => segment.startMs >= actualStartMs && segment.endMs <= actualEndMs)
-              .map((segment) => ({
-                ...segment,
-                startMs: segment.startMs - actualStartMs,
-                endMs: segment.endMs - actualStartMs,
-              }))
+              .map((segment) => {
+                // Sample-derived boundaries can differ from aligned timestamps by a few ULPs.
+                // Clamp rebased times to the exact duration of the generated WAV.
+                const rebasedStartMs = segment.startMs - actualStartMs;
+                const rebasedEndMs = segment.endMs - actualStartMs;
+                const startMs = Math.abs(rebasedStartMs) < 1e-6 ? 0 : Math.max(0, rebasedStartMs);
+                const endMs =
+                  Math.abs(trimmedDurationMs - rebasedEndMs) < 1e-6
+                    ? trimmedDurationMs
+                    : Math.min(trimmedDurationMs, rebasedEndMs);
+                return { ...segment, startMs, endMs };
+              })
+              .filter((segment) => segment.endMs > segment.startMs)
           : [];
       const transcript =
         current?.version === 2 && segments.length

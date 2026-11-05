@@ -66,3 +66,47 @@ test("completed checkpoint fingerprints disambiguate identical speaker timelines
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("partial fingerprints cannot choose between plans with different pending sources", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-partial-plan-"));
+  try {
+    const completedPath = path.join(directory, "completed.wav");
+    const pendingSpeechPath = path.join(directory, "pending-speech.wav");
+    const pendingParticipantPath = path.join(directory, "pending-participant.wav");
+    await writeFile(completedPath, "same completed source");
+    await writeFile(pendingSpeechPath, "speech pending source");
+    await writeFile(pendingParticipantPath, "participant pending source");
+    const first = {
+      speakerId: "account-a",
+      accountIdentity: "account-a",
+      displayNameSnapshot: "A",
+      startMs: 0,
+      endMs: 1_000,
+      audioOffsetMs: 0,
+      filePath: completedPath,
+    };
+    const speech = [first, { ...first, startMs: 1_000, endMs: 2_000, filePath: pendingSpeechPath }];
+    const participant = [
+      first,
+      { ...first, startMs: 1_000, endMs: 2_000, filePath: pendingParticipantPath },
+    ];
+    const checkpoint = [
+      {
+        startMs: 0,
+        endMs: 1_000,
+        speakerId: "account-a",
+        status: "completed",
+        sourceFingerprint: await verifySource(first),
+      },
+      { startMs: 1_000, endMs: 2_000, speakerId: "account-a", status: "pending" },
+    ];
+
+    assert.equal(
+      await findFingerprintMatchedSourcePlan(speech, participant, checkpoint),
+      undefined,
+      "a completed source fingerprint cannot identify a different unfinished source",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
