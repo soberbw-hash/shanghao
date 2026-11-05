@@ -1007,5 +1007,7 @@ export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
   })),
 ] as const;
 
+export const RECENT_RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = RELEASE_HISTORY.slice(0, 3);
+
 export const getReleaseHistoryEntry = (version: string): ReleaseHistoryEntry =>
   RELEASE_HISTORY.find((entry) => entry.version === version) ?? RELEASE_HISTORY[0]!;
