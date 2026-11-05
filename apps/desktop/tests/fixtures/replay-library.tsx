@@ -17,7 +17,11 @@ const count = (key: string) => {
   );
 };
 let releaseRename: (() => void) | undefined;
+let nextTranscript = "合成本地文字";
 const transcripts = new Map<string, string>();
+document.addEventListener("fixture-next-transcript", (event) => {
+  nextTranscript = (event as CustomEvent<string>).detail;
+});
 Object.defineProperty(window, "desktopApi", {
   configurable: true,
   value: {
@@ -30,8 +34,10 @@ Object.defineProperty(window, "desktopApi", {
       transcribeLocal: async (id: string) => {
         count("transcribes");
         await new Promise((resolve) => setTimeout(resolve, 80));
-        transcripts.set(id, "合成本地文字");
-        return "合成本地文字";
+        const text = nextTranscript;
+        nextTranscript = "合成本地文字";
+        transcripts.set(id, text);
+        return text;
       },
       readTranscript: async (id: string) => transcripts.get(id),
       readTranscriptDetail: async (id: string) => {

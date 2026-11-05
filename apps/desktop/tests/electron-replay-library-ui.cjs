@@ -26,7 +26,15 @@ app.whenReady().then(async () => {
       button('本地转文字').click();button('本地转文字').click();await wait(130);
       check(document.documentElement.dataset.transcribes==='1','local transcription submitted twice');
       check(document.querySelector('[aria-label="本地转录文字"]')?.textContent.includes('合成本地文字'),'local transcript missing');
-      const segment=document.querySelector('[aria-label="本地转录文字"] button');check(segment,'structured sentence missing');
+      let segment=document.querySelector('[aria-label="本地转录文字"] button');check(segment,'structured sentence missing');
+      segment.click();await wait(50);
+      const staleEditor=document.querySelector('.voice-replay-transcript-edit textarea');check(staleEditor,'sentence editor missing before replacement');
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(staleEditor,'旧稿修订草稿');staleEditor.dispatchEvent(new Event('input',{bubbles:true}));
+      document.dispatchEvent(new CustomEvent('fixture-next-transcript',{detail:'重新转录的新文字'}));
+      button('本地转文字').click();await wait(130);
+      check(document.querySelector('[aria-label="本地转录文字"]')?.textContent.includes('重新转录的新文字'),'replacement transcript missing');
+      check(!document.querySelector('.voice-replay-transcript-edit textarea'),'stale sentence editor survived transcript replacement');
+      segment=document.querySelector('[aria-label="本地转录文字"] button');check(segment,'replacement structured sentence missing');
       segment.click();await wait(50);
       const trimInputs=document.querySelectorAll('.voice-replay-trim input');
       check(Number(trimInputs[0].value)===0.125&&Number(trimInputs[1].value)===0.75,'sentence did not select its actual audio range');
@@ -58,7 +66,7 @@ app.whenReady().then(async () => {
       button('片段库开关').click();await wait(100);
       document.querySelector('.voice-replay-clips button').click();await wait(80);
       check(document.querySelector('[aria-label="本地转录文字"]')?.textContent.includes('人工修订'),'saved local transcript missing after reopening');
-      check(document.documentElement.dataset.transcribes==='1','reopening ran transcription again');
+      check(document.documentElement.dataset.transcribes==='2','reopening ran transcription again');
       button('导出').click();button('导出').click();await wait(130);
       check(document.documentElement.dataset.exports==='1','export opened twice');
       button('移到系统回收站').click();button('移到系统回收站').click();await wait(130);

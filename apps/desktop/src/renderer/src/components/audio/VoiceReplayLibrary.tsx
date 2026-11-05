@@ -250,6 +250,7 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
                     if (active()) {
                       setTranscriptDetail(detail);
                       setTranscript(text || "没有识别到语音。");
+                      setEditing(undefined);
                     }
                   } catch {
                     if (active())

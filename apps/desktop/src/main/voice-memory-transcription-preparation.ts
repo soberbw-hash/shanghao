@@ -17,10 +17,14 @@ import { splitParticipantTracksIntoSpeakerSources } from "./speaker-transcript";
 import {
   assertRecordingSourceRooms,
   clippedSpeechSources,
+  findFingerprintMatchedSourcePlan,
   selectSpeakerSourcesForResume,
 } from "./voice-memory-source-plan";
 import { unexaminedParticipantAudio } from "./voice-memory-coverage";
-export { selectSpeakerSourcesForResume } from "./voice-memory-source-plan";
+export {
+  findFingerprintMatchedSourcePlan,
+  selectSpeakerSourcesForResume,
+} from "./voice-memory-source-plan";
 export const AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS = 30 * 60_000;
 export const benchmarkDurationForMode = (
   mode: "smoke" | "standard" | "long" | undefined,
@@ -190,6 +194,11 @@ export async function prepareKnownSpeakerSources(
       unit.modelId === asrModelId &&
       unit.pipelineVersion === CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
   );
+  const fingerprintMatchedPlan = await findFingerprintMatchedSourcePlan(
+    speechSources,
+    participantSources,
+    durableSourceUnits,
+  );
   const { knownSpeakerSegments, resumeParticipantSources, ambiguousLegacyPlan } =
     selectSpeakerSourcesForResume(
       speechSources,
@@ -197,6 +206,7 @@ export async function prepareKnownSpeakerSources(
       durableSourceUnits,
       checkpoint,
       asrModelId,
+      fingerprintMatchedPlan,
     );
   if (
     ambiguousLegacyPlan &&
