@@ -911,6 +911,7 @@ export const AiVoiceMemorySettingsCard = ({
             <Switch
               isChecked={settings.isAiAutoTranscribeEnabled}
               ariaLabel="自动转录"
+              isDisabled={!activeTranscriptionReady && !settings.isAiAutoTranscribeEnabled}
               onChange={(checked) => void onChange({ isAiAutoTranscribeEnabled: checked })}
             />
           </SettingsItemRow>

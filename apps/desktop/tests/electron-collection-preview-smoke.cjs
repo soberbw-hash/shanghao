@@ -54,7 +54,7 @@ app.whenReady().then(async () => {
       await new Promise(resolve=>setTimeout(resolve,50));
       if(document.querySelectorAll('.collection-item').length!==3)throw Error('delete failed');
       document.querySelector('.collection-modal-header button').click();
-      await new Promise(resolve=>setTimeout(resolve,300));
+      for(let attempt=0;attempt<20&&document.querySelector('[role="dialog"]');attempt++)await new Promise(resolve=>setTimeout(resolve,50));
       if(document.querySelector('[role="dialog"]'))throw Error('close failed');
     })()`,
       true,

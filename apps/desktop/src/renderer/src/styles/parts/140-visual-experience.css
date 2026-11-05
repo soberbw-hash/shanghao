@@ -1390,6 +1390,22 @@ dialog::backdrop {
   padding: 8px;
 }
 
+.about-release-archive {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(205, 220, 238, 0.72);
+  padding: 8px 16px 12px;
+}
+
+.about-release-archive p {
+  margin: 0;
+  color: #77889e;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 .about-release-item {
   display: grid;
   grid-template-columns: minmax(132px, 0.34fr) minmax(0, 1fr) auto;
@@ -1487,5 +1503,10 @@ dialog::backdrop {
   .about-release-item-copy {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+
+  .about-release-archive {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

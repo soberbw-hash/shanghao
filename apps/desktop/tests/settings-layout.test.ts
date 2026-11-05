@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { RELEASE_HISTORY } from "../src/renderer/src/components/status/releaseHistory";
+import {
+  RECENT_RELEASE_HISTORY,
+  RELEASE_HISTORY,
+} from "../src/renderer/src/components/status/releaseHistory";
 import { QUICK_MESSAGE_PRESETS } from "@private-voice/shared";
 import { readRendererCss } from "./helpers/read-renderer-css";
 
@@ -467,7 +470,7 @@ test("settings pages keep the shared header compact", () => {
   assert.match(styles, /\.settings-page-shell\s*\{[^}]*display:\s*flex;/s);
 });
 
-test("microphone processing lives in the room panel while about keeps release history complete", () => {
+test("microphone processing lives in the room panel while about shows three releases and keeps the archive", () => {
   const homeSource = readFileSync(homePagePath, "utf8");
   const roomDockSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/RoomDock.tsx"),
@@ -504,10 +507,15 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(roomDockSource.includes("pushToTalkEnabled={settings.isPushToTalkEnabled}"), true);
   assert.equal(roomDockSource.includes("microphoneTest={microphoneTest}"), true);
   assert.equal(RELEASE_HISTORY.length >= 83, true);
+  assert.equal(RECENT_RELEASE_HISTORY.length, 3);
   const desktopPackage = JSON.parse(
     readFileSync(path.resolve(process.cwd(), "package.json"), "utf8"),
   ) as { version: string };
   assert.equal(RELEASE_HISTORY[0]?.version, desktopPackage.version);
+  assert.deepEqual(
+    RECENT_RELEASE_HISTORY.map((release) => release.version),
+    [desktopPackage.version, "3.4.17", "3.4.16"],
+  );
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
@@ -528,7 +536,9 @@ test("microphone processing lives in the room panel while about keeps release hi
   assert.equal(settingsSource.includes('{ id: "updates"'), false);
   assert.equal(aboutSource.includes("ReleaseDetailModal"), true);
   assert.equal(aboutSource.includes("slice(0, 10)"), false);
-  assert.equal(aboutSource.includes("完整版本更新记录"), true);
+  assert.equal(aboutSource.includes("最近 3 个正式版本"), true);
+  assert.equal(aboutSource.includes("RECENT_RELEASE_HISTORY.map"), true);
+  assert.equal(aboutSource.includes("查看全部版本"), true);
   assert.equal(aboutSource.includes("检查更新"), true);
   assert.equal(aboutSource.includes("版本 {currentVersion}"), true);
   assert.equal(aboutSource.includes("作者主页"), true);

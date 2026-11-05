@@ -7,6 +7,7 @@
       window.phoneFixture = {
         calls: [],
         configureCalls: 0,
+        failNext: false,
         emit(active) {
           for (const callback of phoneListeners) callback({ active, busy: false });
         },
@@ -15,6 +16,11 @@
         get: async () => ({ active: false, busy: false }),
         set: async (active) => {
           window.phoneFixture.calls.push(active);
+          if (!active && window.phoneFixture.failNext) {
+            window.phoneFixture.failNext = false;
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            throw Error("phone_mode_exit_failed");
+          }
           window.phoneFixture.emit(active);
           await new Promise((resolve) => setTimeout(resolve, 120));
           return { active, busy: false };
