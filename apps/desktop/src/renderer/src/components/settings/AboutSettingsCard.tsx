@@ -15,12 +15,13 @@ import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { ReleaseDetailModal } from "../status/ReleaseDetailModal";
-import { RELEASE_HISTORY, type ReleaseHistoryEntry } from "../status/releaseHistory";
+import { RECENT_RELEASE_HISTORY, type ReleaseHistoryEntry } from "../status/releaseHistory";
 import { SettingsSection } from "./SettingsSection";
 import { AssetStudioSettingsCard } from "./AssetStudioSettingsCard";
 
 const AUTHOR_URL = "https://github.com/soberbw-hash";
 const PROJECT_URL = "https://github.com/soberbw-hash/shanghao";
+const RELEASE_ARCHIVE_URL = `${PROJECT_URL}/releases`;
 const OFFICIAL_WEBSITE_URL = "https://shanghao-d3ga95tc8224e727a-1315451893.tcloudbaseapp.com/";
 
 interface AboutSettingsCardProps {
@@ -196,11 +197,11 @@ export const AboutSettingsCard = ({
             </span>
             <span>
               <strong>历史版本</strong>
-              <small>需要时再展开，不打扰日常设置</small>
+              <small>最近 3 个正式版本，不打扰日常设置</small>
             </span>
           </summary>
-          <div className="about-release-list" aria-label="完整版本更新记录">
-            {RELEASE_HISTORY.map((release, index) => (
+          <div className="about-release-list" aria-label="最近 3 个正式版本">
+            {RECENT_RELEASE_HISTORY.map((release, index) => (
               <button
                 key={release.version}
                 type="button"
@@ -216,6 +217,13 @@ export const AboutSettingsCard = ({
                 <time>{release.date}</time>
               </button>
             ))}
+          </div>
+          <div className="about-release-archive">
+            <p>更早版本的功能已归入项目主页介绍，逐版公告仍保留在发布归档。</p>
+            <Button variant="ghost" onClick={() => openExternal(RELEASE_ARCHIVE_URL)}>
+              查看全部版本
+              <ExternalLink className="size-3.5" />
+            </Button>
           </div>
         </details>
       </SettingsSection>
