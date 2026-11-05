@@ -4,6 +4,18 @@ import path from "node:path";
 import type { KnownSpeakerTranscriptionSource } from "./speaker-transcript";
 import type { VoiceMemoryTranscriptionUnit } from "@private-voice/shared";
 
+async function hasSymlinkedParent(filePath: string): Promise<boolean> {
+  const absolute = path.resolve(filePath);
+  const root = path.parse(absolute).root;
+  const relativeParent = path.relative(root, path.dirname(absolute));
+  let current = root;
+  for (const part of relativeParent.split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    if ((await lstat(current)).isSymbolicLink()) return true;
+  }
+  return false;
+}
+
 /** Lightweight file identity, not a content hash. Never include the path in error text. */
 export async function verifySource(
   source: KnownSpeakerTranscriptionSource,
@@ -11,14 +23,16 @@ export async function verifySource(
 ): Promise<string> {
   let metadata;
   let actual: string;
+  let symlinkedParent: boolean;
   if (!path.isAbsolute(source.filePath)) throw new Error("transcription_source_invalid");
   try {
     metadata = await lstat(source.filePath);
     actual = await realpath(source.filePath);
+    symlinkedParent = await hasSymlinkedParent(source.filePath);
   } catch {
     throw new Error("transcription_source_missing");
   }
-  if (!metadata.isFile() || metadata.isSymbolicLink())
+  if (!metadata.isFile() || metadata.isSymbolicLink() || symlinkedParent)
     throw new Error("transcription_source_invalid");
   const fingerprint = createHash("sha256")
     .update(
