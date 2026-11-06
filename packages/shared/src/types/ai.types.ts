@@ -27,7 +27,6 @@ export const AI_ASR_MODEL_NAMES: Record<AiAsrModelId, string> = {
 /** Presentation only: never removes an installed model or changes a saved model ID. */
 export const AI_ASR_MODEL_GROUPS: ReadonlyArray<{ label: string; ids: readonly AiAsrModelId[] }> = [
   { label: "主力模型", ids: ["qwen3-asr-0.6b-force", "paraformer-zh", "qwen3-asr-1.7b-force"] },
-  { label: "高级实验", ids: ["ark-asr-3b-q8_0"] },
   {
     label: "历史与兼容模型",
     ids: [
@@ -37,6 +36,7 @@ export const AI_ASR_MODEL_GROUPS: ReadonlyArray<{ label: string; ids: readonly A
       "fireredasr2-aed",
     ],
   },
+  { label: "高级实验", ids: ["ark-asr-3b-q8_0"] },
 ];
 
 export type AiAsrProductClass = "high_accuracy" | "high_speed";

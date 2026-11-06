@@ -115,7 +115,7 @@ function Hero({ onDownload }: { onDownload: () => void }) {
       </div>
       <ProductShot
         className="hero-shot entrance entrance-late"
-        src="/screens/room.png"
+        src="/screens/room-showcase.webp"
         alt="上号桌面端的一号房界面"
         caption="一号房正在使用中"
       />
@@ -154,7 +154,7 @@ function RoomSection() {
         title="进房间，就能直接说话。"
         copy="朋友在不在、谁正在说话、谁在放音乐，房间里都看得清楚。"
       />
-      <ProductShot src="/screens/room.png" alt="上号语音房间、角色座位和聊天区域" />
+      <ProductShot src="/screens/room-showcase.webp" alt="上号语音房间、角色座位和聊天区域" />
       <div className="room-notes">
         {notes.map(([Icon, title, copy]) => (
           <div className="room-note" key={title}>
@@ -193,7 +193,7 @@ function RecordSection() {
           </li>
         </ul>
       </div>
-      <ProductShot src="/screens/recordings.png" alt="上号录音库和多模型转录界面" />
+      <ProductShot src="/screens/recordings-v3.4.15-demo.webp" alt="上号录音库和转录界面演示" />
       <ProductShot
         className="comparison-shot"
         src="/screens/comparison.png"

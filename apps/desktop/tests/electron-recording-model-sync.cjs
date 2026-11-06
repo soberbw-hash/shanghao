@@ -67,7 +67,7 @@ app.whenReady().then(async () => {
       const library=()=>document.querySelector('[aria-label="录音库转录模型"]');
       const settings=()=>document.querySelector('[aria-label="语音转录模型来源"]');
       check(library(),'recording library model selector missing');
-      check([...library().querySelectorAll('optgroup')].map(g=>g.label).join('|')==='本地 · 主力模型|本地 · 高级实验|本地 · 历史与兼容模型','recording model groups missing');
+      check([...library().querySelectorAll('optgroup')].map(g=>g.label).join('|')==='本地 · 主力模型|本地 · 历史与兼容模型|本地 · 高级实验','recording model groups missing');
       check([...library().querySelectorAll('option')].some(o=>o.value==='local:fun-asr-nano-2512'),'legacy local model lost');
       check(document.querySelector('#ai-model-management').open,'click did not expand model configuration');
       check(library().value==='cloud','library did not inherit cloud default');

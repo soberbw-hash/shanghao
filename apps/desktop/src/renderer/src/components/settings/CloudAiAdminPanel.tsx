@@ -4,6 +4,7 @@ import type {
   CloudAiAdminProvider,
   CloudAiAdminSnapshot,
 } from "@private-voice/shared";
+import { ChevronDown } from "lucide-react";
 import { useSettingsStore } from "../../store/settingsStore";
 import { Button } from "../base/Button";
 
@@ -114,6 +115,7 @@ function AuthorizedPanel() {
         type="button"
         className="flex w-full items-center justify-between text-left font-semibold text-[#344d6c]"
         aria-expanded={open}
+        aria-label={`${open ? "收起" : "展开"}云端服务管理`}
         onClick={() => {
           setOpen(!open);
           if (open) {
@@ -126,7 +128,13 @@ function AuthorizedPanel() {
         <span>
           云端服务管理 <small className="font-normal text-[#718399]">管理员</small>
         </span>
-        <span aria-hidden="true">{open ? "−" : "+"}</span>
+        <span className="flex items-center gap-1.5 text-sm font-medium text-[#718399]">
+          {open ? "收起" : "展开"}
+          <ChevronDown
+            className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </span>
       </button>
       {open ? (
         <div className="mt-4 space-y-3">
@@ -347,10 +355,17 @@ function AdminGate() {
         type="button"
         className="flex w-full items-center justify-between text-left font-semibold text-[#344d6c]"
         aria-expanded={open}
+        aria-label={`${open ? "收起" : "展开"}管理员功能`}
         onClick={() => setOpen(!open)}
       >
         <span>管理员功能</span>
-        <span aria-hidden="true">{open ? "−" : "+"}</span>
+        <span className="flex items-center gap-1.5 text-sm font-medium text-[#718399]">
+          {open ? "收起" : "展开"}
+          <ChevronDown
+            className={`size-4 transition-transform ${open ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+        </span>
       </button>
       {open &&
         (unlocked ? (

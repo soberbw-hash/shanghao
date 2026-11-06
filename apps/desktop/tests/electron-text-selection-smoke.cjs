@@ -52,10 +52,11 @@ app.whenReady().then(async () => {
     });
     const result = await view.webContents.executeJavaScript(`(()=>{
       const label=document.querySelector('#selection-label');
-      if(getComputedStyle(label).userSelect!=='none'||String(getSelection()))throw Error('ordinary UI text was selectable');
-      if(getComputedStyle(document.querySelector('#ai-model-management summary')).userSelect!=='none')throw Error('production settings label is selectable');
+      const selectedText=String(getSelection());
+      if(getComputedStyle(label).userSelect!=='text'||!selectedText.includes('界面上的普通'))throw Error('ordinary UI text could not be selected by dragging: '+getComputedStyle(label).userSelect+'/'+JSON.stringify(selectedText));
+      if(getComputedStyle(document.querySelector('#ai-model-management summary')).userSelect!=='text')throw Error('production settings label is not selectable');
       for(const selector of ['#selection-input','#selection-textarea','#selection-editable span'])if(getComputedStyle(document.querySelector(selector)).userSelect!=='text')throw Error('editable text selection disabled: '+selector);
-      return {nativeDragDoesNotSelect:true};
+      return {nativeDragSelectsText:true};
     })()`);
     await view.webContents.sendInputEvent({
       type: "mouseDown",
@@ -80,6 +81,7 @@ app.whenReady().then(async () => {
     await view.webContents.executeJavaScript(
       `(()=>{const input=document.querySelector('#selection-input');if(input.selectionEnd<=input.selectionStart)throw Error('native input drag selection failed')})()`,
     );
+    result.ordinaryTextSelection = true;
     result.editableSelection = true;
     console.log(JSON.stringify(result));
     clearTimeout(deadline);

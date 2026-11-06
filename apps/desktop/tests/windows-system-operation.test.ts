@@ -9,7 +9,7 @@ import { assertSystemOperationSender } from "../src/main/windows-integration-ipc
 import { toUserFacingError } from "../src/renderer/src/utils/userFacingError";
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
 import { windowsSystemScript } from "../src/main/windows-system-scripts";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -88,6 +88,47 @@ test(
         other: "other-tool",
         backupPreserved: true,
       });
+      const rendering = parsePowerShellJson<{ drawnPixels: number }>(
+        (
+          await runWindowsPowerShell(
+            String.raw`
+Add-Type -AssemblyName System.Drawing
+$icon=[System.Drawing.Icon]::new((Join-Path $env:SHANGHAO_ICON_TEST_DIR 'ShangHao\transparent-overlay.ico'))
+$bitmap=[System.Drawing.Bitmap]::new(16,16,[System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$graphics=[System.Drawing.Graphics]::FromImage($bitmap)
+$background=[System.Drawing.Color]::Fuchsia
+$graphics.Clear($background)
+$graphics.DrawIcon($icon,0,0)
+$drawnPixels=0
+for($y=0;$y -lt 16;$y++){for($x=0;$x -lt 16;$x++){if($bitmap.GetPixel($x,$y).ToArgb() -ne $background.ToArgb()){$drawnPixels++}}}
+$graphics.Dispose();$bitmap.Dispose();$icon.Dispose()
+@{drawnPixels=$drawnPixels} | ConvertTo-Json -Compress
+`,
+            { SHANGHAO_ICON_TEST_DIR: dir },
+          )
+        ).stdout,
+      );
+      assert.equal(
+        rendering.drawnPixels,
+        0,
+        "Windows must render the replacement icon fully transparent",
+      );
+      const icon = await readFile(path.join(dir, "ShangHao", "transparent-overlay.ico"));
+      assert.equal(icon.readUInt16LE(0), 0, "ICO reserved field");
+      assert.equal(icon.readUInt16LE(2), 1, "ICO resource type");
+      assert.equal(icon.readUInt16LE(4), 1, "ICO must declare its image entry");
+      assert.equal(icon[6], 16, "icon width");
+      assert.equal(icon[7], 16, "icon height");
+      assert.equal(icon.readUInt16LE(12), 24, "mask-based icon has no ambiguous alpha channel");
+      assert.equal(icon.readUInt32LE(14), 872, "DIB resource length");
+      assert.equal(icon.readUInt32LE(18), 22, "DIB resource offset");
+      assert.equal(icon.readUInt32LE(22), 40, "BITMAPINFOHEADER length");
+      assert.equal(icon.readInt32LE(26), 16, "DIB width");
+      assert.equal(icon.readInt32LE(30), 32, "DIB height includes XOR and AND planes");
+      assert.ok(
+        icon.subarray(830).every((value) => value === 0xff),
+        "AND mask is fully transparent",
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

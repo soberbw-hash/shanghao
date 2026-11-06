@@ -616,31 +616,6 @@ export const VoiceMemoryDetail = ({
           </div>
         )}
       </header>
-      <RecordingGameContext
-        game={contextGame}
-        terms={contextTerms}
-        automatic={contextAutomatic}
-        disabled={busy || Boolean(queuedAction) || processing || comparisonOwnsTask}
-        onGame={(value) => {
-          contextDirty.current = true;
-          setContextGame(value);
-        }}
-        onTerms={(value) => {
-          contextDirty.current = true;
-          setContextTerms(value);
-        }}
-        onAutomatic={(value) => {
-          contextDirty.current = true;
-          setContextAutomatic(value);
-        }}
-      />
-      {record.localAsrContext || record.localAsrAutoGameContext ? (
-        <p role="status" className="text-xs text-[#718096]">
-          {record.transcriptionUnits?.some((unit) => unit.contextApplied === true)
-            ? "模型记录显示部分音频曾接收语境信息；实际效果尚待对比。"
-            : "这条录音已设置本地语境；当前没有模型使用记录。"}
-        </p>
-      ) : null}
       {record.transcriptionFusion &&
       record.transcriptionFusion.verificationPolicy !== "agreement-v1" ? (
         <p role="status">历史融合稿已保留，建议与两份原稿及录音核对。重新校对时会保留旧稿。</p>
@@ -758,6 +733,32 @@ export const VoiceMemoryDetail = ({
             </div>
           ))}
         </div>
+      ) : null}
+
+      <RecordingGameContext
+        game={contextGame}
+        terms={contextTerms}
+        automatic={contextAutomatic}
+        disabled={busy || Boolean(queuedAction) || processing || comparisonOwnsTask}
+        onGame={(value) => {
+          contextDirty.current = true;
+          setContextGame(value);
+        }}
+        onTerms={(value) => {
+          contextDirty.current = true;
+          setContextTerms(value);
+        }}
+        onAutomatic={(value) => {
+          contextDirty.current = true;
+          setContextAutomatic(value);
+        }}
+      />
+      {record.localAsrContext || record.localAsrAutoGameContext ? (
+        <p role="status" className="text-xs text-[#718096]">
+          {record.transcriptionUnits?.some((unit) => unit.contextApplied === true)
+            ? "模型记录显示部分音频曾接收语境信息；实际效果尚待对比。"
+            : "这条录音已设置本地语境；当前没有模型使用记录。"}
+        </p>
       ) : null}
 
       {!invalidTranscript && record.highlights.length ? (

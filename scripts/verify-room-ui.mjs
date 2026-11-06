@@ -36,6 +36,11 @@ server.on("error", (error) => {
 });
 const run = (file, args = []) =>
   new Promise((resolve, reject) => {
+    if (process.env.SHANGHAO_UI_TEST && !file.includes(process.env.SHANGHAO_UI_TEST)) {
+      resolve();
+      return;
+    }
+    console.log(`Running ${file}${args.length ? ` ${args.join(" ")}` : ""}`);
     const child = spawn(electron, [path.join(desktop, "tests", file), ...args], {
       cwd: desktop,
       env: environment,
@@ -72,6 +77,7 @@ try {
   await run("electron-automatic-settings-optout.cjs");
   await run("electron-recording-library-feedback.cjs");
   await run("electron-recording-model-sync.cjs");
+  await run("electron-text-selection-smoke.cjs");
   await run("electron-summary-retry.cjs");
   await run("electron-temporary-and-audio.cjs");
   await run("electron-muted-speech-reminder.cjs");

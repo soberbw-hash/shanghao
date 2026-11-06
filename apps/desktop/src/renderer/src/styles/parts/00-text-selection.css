@@ -1,8 +1,8 @@
 body {
-  user-select: none;
+  user-select: text;
 }
 
-/* Text entry remains selectable for editing, copying and keyboard operations. */
+/* Ordinary interface text and text entry remain selectable for copying. */
 input,
 textarea,
 [contenteditable]:not([contenteditable="false"]),

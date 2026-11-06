@@ -80,7 +80,17 @@ const fixture = async (withOrganization = false) => {
   );
   const waitStarted = async () => {
     for (let i = 0; i < 150 && !calls.length; i++) await pause(20);
-    assert.equal(calls.length, 1);
+    assert.equal(
+      calls.length,
+      1,
+      JSON.stringify({
+        records: (await service.list()).map((record) => ({
+          recordingId: record.recordingId,
+          phase: record.phase,
+          errorMessage: record.errorMessage,
+        })),
+      }),
+    );
   };
   const waitFinished = async () => {
     // This integration fixture starts real FFmpeg processes. The full Windows
