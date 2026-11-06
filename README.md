@@ -10,22 +10,6 @@
 
 [下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看最近版本更新](#最近版本更新) · [v3.4.18 完整说明](./docs/release-notes/v3.4.18.md) · [看技术结构](#声音到底经过了什么)
 
-## 最近版本更新
-
-### 3.4.18
-
-加强长录音转录的时间轴回退、原文保留与分成员回溯；增加游戏语境辅助、录音文字回听和模型对比参考稿。新安装默认开启自动转录，设置页保留输入框中的文字选择。云端文本服务代码支持 DeepSeek V4.1 Flash 与 GLM 备用，线上是否启用取决于服务端配置。 [完整说明](./docs/release-notes/v3.4.18.md)
-
-### 3.4.17
-
-录音库支持时间线选段和回收站恢复；房间加入实时纪事和语音回溯入口，并改进音频设备配置、分享和窗口布局。[完整说明](./docs/release-notes/v3.4.17.md)
-
-### 3.4.16
-
-官方房间服务默认连接迁移至阿里云；升级会保留本地录音、聊天和设置，账号仍使用原登录服务。[完整说明](./docs/release-notes/v3.4.16.md)
-
-更早版本的房间管理、游戏场景、屏幕分享预览、录音回顾、AI 助手、素材审核和性能优化，已按实际用途整理到下方功能介绍中。逐版公告和历史发布仍保留在 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases)。
-
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
 <sub>此前固定房间的场景演示，成员为本机隔离环境中的模拟数据。3.4.0 保留房间场景，入口升级为私人房间。</sub>
@@ -242,6 +226,22 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 | `native`                         | 聚焦 Windows 能力与受控后台任务的 Rust Core  |
 
 技术栈：Electron、React、TypeScript、Vite、Zustand、Node.js/ws、WebRTC、Rust。更细的边界见[架构文档](./docs/architecture.md)、[房间运行时](./docs/architecture/room-runtime.md)和[动效规范](./docs/motion-guidelines.md)。
+
+## 最近版本更新
+
+这里仅列出最近三个正式版本。更早版本的功能已按主题整合进上方的功能总览，不再逐版重复；完整历史仍可在 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases) 查看。
+
+### 3.4.18
+
+本版本合并了 v3.4.17 的录音库、房间纪事、语音回溯与音频配置改进，并加入长录音转录回退、原文保留、分成员回溯、游戏语境辅助、文字回听和模型对比参考稿。新安装默认开启自动转录；云端文字服务支持 DeepSeek V4.1 Flash 与 GLM 备用，实际可用状态取决于服务端配置。[完整说明](./docs/release-notes/v3.4.18.md)
+
+### 3.4.16
+
+官方房间服务默认连接迁移至阿里云；升级会保留本地录音、聊天和设置，账号仍使用原登录服务。[完整说明](./docs/release-notes/v3.4.16.md)
+
+### 3.4.15
+
+录音转录与摘要交由后台持续处理，支持中断恢复和临时故障重试；改进临时联机入口、电话模式快捷键与房间状态显示。[完整说明](./docs/release-notes/v3.4.15.md)
 
 ## 下载与使用
 
