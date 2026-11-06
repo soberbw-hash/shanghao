@@ -1,6 +1,3 @@
-.team-island {
-  user-select: none;
-}
 .team-island :is(img, svg) {
   -webkit-user-drag: none;
 }

@@ -5,10 +5,26 @@ $blank = Join-Path $env:ProgramData 'ShangHao\transparent-overlay.ico'
 $legacyBlank = '%SystemRoot%\System32\imageres.dll,197'
 $iconDir = Split-Path -Parent $blank
 New-Item -Path $iconDir -ItemType Directory -Force | Out-Null
-$icon = New-Object byte[] 1150
-$header = [Convert]::FromBase64String('AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAA=')
-[Array]::Copy($header, $icon, $header.Length)
-for ($row = 0; $row -lt 16; $row++) { $icon[1086 + 4 * $row] = 255; $icon[1087 + 4 * $row] = 255 }
+# Explorer's shell-overlay path can render a 32-bit ICO with an all-zero alpha
+# channel as a black square. Use a mask-only 24-bit DIB: 16x16 BGR pixels and a
+# fully transparent, DWORD-aligned AND mask. The icon directory is 22 bytes,
+# followed by a 40-byte BITMAPINFOHEADER, 768 XOR bytes and 64 AND-mask bytes.
+$icon = New-Object byte[] 894
+$icon[2] = 1 # ICONDIR: type=1 (icon)
+$icon[4] = 1 # ICONDIR image count; without this entry Explorer treats the ICO as empty
+$icon[6] = 16 # image width
+$icon[7] = 16 # image height
+$icon[10] = 1 # planes
+$icon[12] = 24 # bit depth; no alpha channel
+[Array]::Copy([BitConverter]::GetBytes([int]872), 0, $icon, 14, 4) # resource size
+[Array]::Copy([BitConverter]::GetBytes([int]22), 0, $icon, 18, 4) # resource offset
+[Array]::Copy([BitConverter]::GetBytes([int]40), 0, $icon, 22, 4) # BITMAPINFOHEADER size
+[Array]::Copy([BitConverter]::GetBytes([int]16), 0, $icon, 26, 4) # bitmap width
+[Array]::Copy([BitConverter]::GetBytes([int]32), 0, $icon, 30, 4) # XOR + AND bitmap height
+[Array]::Copy([BitConverter]::GetBytes([int16]1), 0, $icon, 34, 2) # planes
+[Array]::Copy([BitConverter]::GetBytes([int16]24), 0, $icon, 36, 2) # bit depth
+[Array]::Copy([BitConverter]::GetBytes([int]768), 0, $icon, 42, 4) # XOR bitmap size
+for ($index = 830; $index -lt $icon.Length; $index++) { $icon[$index] = 255 }
 [IO.File]::WriteAllBytes($blank, $icon)
 if (-not (Test-Path -LiteralPath $shellKey)) { New-Item -Path $shellKey -Force | Out-Null }
 if (-not (Test-Path -LiteralPath $backupKey)) { New-Item -Path $backupKey -Force | Out-Null }

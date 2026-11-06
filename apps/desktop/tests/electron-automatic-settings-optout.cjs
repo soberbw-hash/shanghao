@@ -23,13 +23,12 @@ app.whenReady().then(async () => {
       const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
       for(let i=0;i<80&&!document.querySelector('button[aria-label="自动整理"]');i++)await pause(50);
       await pause(100);
-      for(const label of ['自动转录','自动整理']){
-        const button=document.querySelector('button[aria-label="'+label+'"]');
-        if(!button||button.disabled||button.getAttribute('aria-pressed')!=='true')throw Error('unconfigured active switch cannot be disabled: '+label);
-        button.click();await pause(40);
-        if(button.getAttribute('aria-pressed')!=='false'||!button.disabled)throw Error('unconfigured switch did not preserve opt-out: '+label);
-      }
-      return {passed:true,unconfiguredAutomationCanBeDisabled:true};
+      const button=document.querySelector('button[aria-label="自动转录"]');
+      if(!button||button.disabled||button.getAttribute('aria-pressed')!=='true')throw Error('unconfigured active transcription switch cannot be disabled');
+      button.click();await pause(40);
+      if(button.getAttribute('aria-pressed')!=='false'||!button.disabled)throw Error('unconfigured transcription switch did not preserve opt-out');
+      if(document.querySelector('button[aria-label="自动整理"]'))throw Error('obsolete standalone organization switch returned');
+      return {passed:true,unconfiguredTranscriptionCanBeDisabled:true,obsoleteOrganizationSwitchAbsent:true};
     })()`,
       true,
     );

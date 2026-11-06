@@ -45,7 +45,7 @@ app.whenReady().then(async () => {
       const toolbar=rect('.recording-library-toolbar'), first=rect('.transcript-paragraph');
       const text=rect('.voice-memory-detail'), panel=rect('.recording-library-panel');
       if(toolbar.height>40)throw Error('library storage header consumes a separate card');
-      if(first.top>panel.top+280)throw Error('transcript still pushed below controls');
+      if(first.top>panel.top+280)throw Error('transcript still pushed below controls: '+JSON.stringify({offset:first.top-panel.top,panelTop:panel.top,textHeight:text.height,detailChildren:Array.from(document.querySelector('.voice-memory-detail').children).map(child=>({className:child.className||child.tagName,top:child.getBoundingClientRect().top,height:child.getBoundingClientRect().height})),children:Array.from(document.querySelector('.recording-detail-swap').children).map(child=>({className:child.className||child.tagName,top:child.getBoundingClientRect().top,height:child.getBoundingClientRect().height}))}));
       if(panel.bottom-first.top<innerHeight*.45)throw Error('transcript gets too little first-screen reading space');
       const source=document.querySelector('.transcript-source-control');
       const timeline=document.querySelector('.voice-memory-timeline');
@@ -157,11 +157,13 @@ app.whenReady().then(async () => {
     await pause(120);
     const narrow = await window.webContents.executeJavaScript(`(()=>{
       document.querySelector('.recording-processing-settings').open=true;
-      const paragraph=document.querySelector('.transcript-paragraph span');
+      const paragraph=document.querySelector('.transcript-paragraph > span');
       return {
         noOverflow:document.documentElement.scrollWidth<=innerWidth,
         readableText:parseFloat(getComputedStyle(paragraph).fontSize)>=14,
         transcriptWidth:paragraph.getBoundingClientRect().width,
+        viewport:innerWidth,paragraphRect:document.querySelector('.transcript-paragraph').getBoundingClientRect().toJSON(),
+        textRect:paragraph.getBoundingClientRect().toJSON(),panelRect:document.querySelector('.recording-library-panel').getBoundingClientRect().toJSON(),
       };
     })()`);
     check(
@@ -195,8 +197,8 @@ app.whenReady().then(async () => {
         if(overview.getBoundingClientRect().height>40)throw Error('empty summary became a large panel');
         if(first.top>panel.top+280)throw Error('summary state pushes transcript below first screen');
         if(document.querySelector('.voice-memory-audio-trajectory'))throw Error('decorative processing block restored');
-        const details=document.querySelector('.voice-memory-organization');
-        if(!(paragraph.compareDocumentPosition(details)&Node.DOCUMENT_POSITION_FOLLOWING))throw Error('processing details precede transcript');
+        const details=document.querySelector('.recording-game-context');
+        if(!details||!(paragraph.compareDocumentPosition(details)&Node.DOCUMENT_POSITION_FOLLOWING))throw Error('game context controls precede transcript');
         return {status:overview.textContent,firstParagraphTop:first.top};
       })()`),
       );
@@ -212,7 +214,7 @@ app.whenReady().then(async () => {
     await pause(250);
     const density = await window.webContents.executeJavaScript(`(()=>{
       const rows=[...document.querySelectorAll('.transcript-paragraph')], first=rows[0];
-      const textStyle=getComputedStyle(first.querySelector('span')), rowStyle=getComputedStyle(first);
+      const textStyle=getComputedStyle(first.querySelector(':scope > span')), rowStyle=getComputedStyle(first);
       const visibleRows=rows.filter(row=>{const r=row.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}).length;
       if(parseFloat(textStyle.fontSize)!==14||parseFloat(textStyle.lineHeight)>22.5)throw Error('transcript typography too loose');
       if(parseFloat(rowStyle.columnGap)>6||parseFloat(rowStyle.paddingTop)>6)throw Error('transcript gutters too loose');
