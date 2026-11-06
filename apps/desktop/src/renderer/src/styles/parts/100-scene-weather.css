@@ -230,7 +230,6 @@ body::before {
   z-index: 72;
   width: clamp(222px, 20.5%, 286px);
   color: #385570;
-  user-select: none;
 }
 
 .room-recording-calendar-board {

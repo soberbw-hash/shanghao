@@ -465,7 +465,6 @@ body::before {
   color: #547087;
   pointer-events: auto;
   transform: translateX(-50%);
-  user-select: none;
 }
 
 .room-date-calendar-paper {
