@@ -264,7 +264,7 @@ test("channel exit continues from the rendered position without a fixed stand-up
     "utf8",
   );
   const leaveStart = source.indexOf("const leave = async () => {");
-  const leaveEnd = source.indexOf("void leave();", leaveStart);
+  const leaveEnd = source.indexOf("void leave().catch(", leaveStart);
   const leaveFlow = source.slice(leaveStart, leaveEnd);
 
   assert.equal(leaveStart >= 0 && leaveEnd > leaveStart, true);
