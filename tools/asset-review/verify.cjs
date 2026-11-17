@@ -378,7 +378,15 @@ app
     );
     checks++;
     await tab("账号头像");
-    assert.equal(await run("document.querySelectorAll('.review-card').length"), 32);
+    assert.equal(
+      await run("document.querySelectorAll('.review-card').length"),
+      manifest.assets.filter((item) => item.group === "账号头像").length,
+    );
+    assert.equal(
+      manifest.assets.filter((item) => item.relative.startsWith("account-avatars/ip-as-logo/"))
+        .length,
+      35,
+    );
     checks++;
     const asset = manifest.assets.find(
       (item) => item.relative.startsWith("games/screens/") && item.relative.endsWith(".jpg"),
