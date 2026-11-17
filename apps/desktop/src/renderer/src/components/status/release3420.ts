@@ -1,7 +1,7 @@
 import type { ReleaseHistoryEntry } from "./releaseHistory";
 
-export const RELEASE_3419: ReleaseHistoryEntry = {
-  version: "3.4.19",
+export const RELEASE_3420: ReleaseHistoryEntry = {
+  version: "3.4.20",
   date: "2026-11-17",
   title: "房间体验与设置优化",
   summary: "改善房间管理、语音回溯、设置和游戏识别。",
