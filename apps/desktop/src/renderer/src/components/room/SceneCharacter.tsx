@@ -501,6 +501,11 @@ const SceneCharacterView = ({
       if (visibleOpacity > 0.08 && motionPhaseRef.current === "idle" && atDestination) return;
       operationIdRef.current += 1;
       stopActiveAnimations();
+      // A superseded WAAPI animation can outlive its stored reference and
+      // continue overriding the settled inline transform or opacity. Remove
+      // animations on this wrapper only; character and scenery animations live
+      // on descendants and must keep running.
+      element.getAnimations().forEach((animation) => animation.cancel());
       element.style.transform = sceneTransform(targetLeft, targetTop);
       element.style.opacity = String(targetOpacityRef.current);
       currentPositionRef.current = { left: targetLeft, top: targetTop };
@@ -588,7 +593,14 @@ const SceneCharacterView = ({
         onExitedRef.current?.(member.id);
       }
     };
-    void leave();
+    void leave().catch((error: unknown) => {
+      if (!isCurrentOperation()) return;
+      void writeRendererLog("app", "warn", "Character exit failed; removing the stale character", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      safeToRemove?.();
+      onExitedRef.current?.(member.id);
+    });
     return () => {
       if (operationIdRef.current === operationId) operationIdRef.current += 1;
       stopActiveAnimations();

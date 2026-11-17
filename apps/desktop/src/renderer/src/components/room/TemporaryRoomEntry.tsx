@@ -136,7 +136,6 @@ export function TemporaryRoomEntry({
       >
         <UsersRound size={17} />
         <strong>临时联机</strong>
-        <span>和朋友临时聊一会儿 →</span>
       </button>
       {opened && (
         <dialog

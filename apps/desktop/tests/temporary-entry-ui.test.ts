@@ -129,6 +129,13 @@ function fixture(component: "TemporaryRoomEntry" | "TemporaryAvatarPicker", prop
     "../base/Button": { Button: "button" },
     "../base/DialogCloseButton": { DialogCloseButton: "close-button" },
     "./TemporaryAvatarPicker": { TemporaryAvatarPicker: "picker" },
+    "../../features/account/accountAvatarPresets": {
+      ACCOUNT_AVATAR_PRESETS: Array.from({ length: 35 }, (_, index) => ({
+        id: `ip-${index + 1}`,
+        name: `头像${index + 1}`,
+        source: `ip-${index + 1}.webp`,
+      })),
+    },
     "../../features/account/prepareAccountAvatar": {
       prepareAccountAvatar: async (source: string) => `data:image/png;base64,${source}`,
     },
@@ -225,13 +232,13 @@ test("temporary preset selection uses channel portraits and saves normalized ima
   const f = fixture("TemporaryAvatarPicker");
   let tree = f.render();
   const choices = elements(tree).filter((node) => node.type === "button");
-  assert.equal(choices.length, 5);
+  assert.equal(choices.length, 35);
   assert.ok(
     choices.every((node) =>
-      elements(node).some((image) => image.type === "img" && image.props.src?.endsWith(".svg")),
+      elements(node).some((image) => image.type === "img" && image.props.src?.endsWith(".webp")),
     ),
   );
-  assert.ok(elements(tree).some((node) => node.props.alt === "自定义临时头像"));
+  assert.ok(elements(tree).some((node) => node.props.alt === "当前临时头像"));
   choices[0].props.onClick!();
   await settle();
   tree = f.render();
@@ -245,7 +252,7 @@ test("temporary preset selection uses channel portraits and saves normalized ima
   );
   f.releasePreparation("data:image/png;base64,NORMALIZED");
   await settle();
-  assert.equal(f.changed[0][0], "fox");
+  assert.equal(f.changed[0][0], "corgi");
   assert.equal(f.changed[0][1], "data:image/png;base64,NORMALIZED");
 });
 
@@ -258,7 +265,7 @@ test("temporary portrait failures keep the old avatar and late completions canno
   assert.equal(failed.changed.length, 0);
   assert.equal(failed.errors.length, 1);
   assert.deepEqual(failed.preparing, [true, false]);
-  assert.ok(elements(failed.render()).some((node) => node.props.alt === "自定义临时头像"));
+  assert.ok(elements(failed.render()).some((node) => node.props.alt === "当前临时头像"));
 
   const late = fixture("TemporaryAvatarPicker");
   elements(late.render()).find((node) => node.type === "button")!.props.onClick!();
