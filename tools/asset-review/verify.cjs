@@ -380,7 +380,7 @@ app
     await tab("账号头像");
     assert.equal(
       await run("document.querySelectorAll('.review-card').length"),
-      manifest.assets.filter((item) => item.kind === "账号头像").length,
+      manifest.assets.filter((item) => item.group === "账号头像").length,
     );
     assert.equal(
       manifest.assets.filter((item) => item.relative.startsWith("account-avatars/ip-as-logo/"))
