@@ -69,7 +69,7 @@ test("WebM goes to DeepSeek as Ogg Opus; a 503 falls back with the original audi
       const form = options?.body as FormData;
       const blob = form.get("file") as Blob;
       const bytes = Buffer.from(await blob.arrayBuffer());
-      if (target.includes("deepseek.com")) {
+      if (new URL(target).hostname === "api.deepseek.com") {
         assert.equal(bytes.toString("ascii", 0, 4), "OggS");
         assert.ok(bytes.includes(Buffer.from("OpusHead")));
         assert.equal(form.has("model"), false);

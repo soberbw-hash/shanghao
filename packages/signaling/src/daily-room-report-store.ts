@@ -498,7 +498,12 @@ export class DailyRoomReportStore {
     this.gamesByDay.set(key, dayGames);
     const roomGames = (this.reports.gameParticipants[roomIdValue] ??= {});
     const persistedDayGames = (roomGames[report.date] ??= {});
-    persistedDayGames[normalizedGameName] = [...players];
+    Object.defineProperty(persistedDayGames, normalizedGameName, {
+      value: [...players],
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
     report.games = [...dayGames].map(([name, peers]) => ({ name, participantCount: peers.size }));
     report.hadActivity = true;
     this.activeGames.set(activeKey, {
