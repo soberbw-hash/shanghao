@@ -15,6 +15,7 @@ export const IPC_CHANNELS = {
     transcribeLocal: "voice-replay:transcribe-local",
     readTranscript: "voice-replay:read-transcript",
     readTranscriptDetail: "voice-replay:read-transcript-detail",
+    searchTranscripts: "voice-replay:search-transcripts",
     reviseTranscriptSegment: "voice-replay:revise-transcript-segment",
     export: "voice-replay:export",
     shortcut: "voice-replay:shortcut",
@@ -60,6 +61,12 @@ export const IPC_CHANNELS = {
     changed: "temporary-rooms:changed",
   },
   roomMemory: { get: "room-memory:get", save: "room-memory:save" },
+  chronicleArchive: {
+    export: "chronicle-archive:export",
+    read: "chronicle-archive:read",
+    append: "chronicle-archive:append",
+    react: "chronicle-archive:react",
+  },
   storage: {
     inspect: "storage:inspect",
     clearExpiredTemporary: "storage:clear-expired-temporary",

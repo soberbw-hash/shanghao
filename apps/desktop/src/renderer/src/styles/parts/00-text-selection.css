@@ -1,11 +1,10 @@
 body {
-  user-select: text;
+  user-select: none;
 }
 
-/* Ordinary interface text and text entry remain selectable for copying. */
-input,
-textarea,
-[contenteditable]:not([contenteditable="false"]),
-[contenteditable]:not([contenteditable="false"]) * {
+:is(input, textarea, [contenteditable]:not([contenteditable="false"])),
+:is(.chat-message-bubble, .room-chronicle-entries article p),
+:is(.transcript-paragraph, .model-comparison-transcript),
+.voice-replay-transcript-segments {
   user-select: text;
 }

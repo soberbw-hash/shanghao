@@ -1,4 +1,4 @@
-/* global require, console, setTimeout, clearTimeout, AbortSignal */
+/* global require, console, setTimeout, clearTimeout, AbortSignal, process */
 /* eslint-disable @typescript-eslint/no-require-imports */
 // Read-only account recovery. Synthetic audio only; never print or rewrite account/provider keys.
 const { app, net } = require("electron");
@@ -19,6 +19,7 @@ app
       AccountDesktopService,
       RoomChronicleProcessor,
       RoomChronicleSessions,
+      roomChroniclePrompt,
       transcribeWithRemoteProvider,
       createEmptyVoiceMemoryRecord,
       saveRecordingParticipantTrack,
@@ -163,6 +164,36 @@ app
         },
         fetcher,
       );
+      if (process.argv.includes("--chronicle-text-only")) {
+        const content = await client.organize(
+          roomChroniclePrompt([
+            {
+              peerId: "synthetic-a",
+              name: "甲",
+              text: "我这把肯定能C，等着躺吧。",
+              gameContext: { gameName: "英雄联盟", terms: ["亚索"] },
+            },
+            {
+              peerId: "synthetic-b",
+              name: "乙",
+              text: "你刚才还让我救你呢，怎么又开始吹了。先把兵补明白吧。",
+            },
+          ]),
+          AbortSignal.timeout(60000),
+        );
+        const parsed = JSON.parse(content);
+        if (typeof parsed.text !== "string" || !parsed.text.trim())
+          throw Error("synthetic_story_empty");
+        result.syntheticStory = parsed.text;
+        result.storyCharacters = parsed.text.length;
+        await fs.writeFile(
+          path.resolve("../../artifacts/chronicle-synthetic-live-20261111.json"),
+          JSON.stringify(result, null, 2),
+        );
+        console.log(JSON.stringify(result));
+        desktopAccount?.dispose();
+        return;
+      }
       try {
         const audio = path.resolve("../../artifacts/cloud-path-synthetic.wav");
         const response = await client.transcribe(audio, 8000, AbortSignal.timeout(100000));

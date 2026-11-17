@@ -30,7 +30,10 @@ test("legacy accounts receive a stable cloud portrait and explicit choices survi
     assert.deepEqual(Object.values(persisted.avatars), ["peach-fox"]);
 
     const reopened = await AccountAvatarPresetStore.create(file);
-    assert.equal(await reopened.getOrAssign("account-1"), "peach-fox");
+    assert.equal(await reopened.getOrAssign("account-1"), first);
+    assert.equal(reopened.get("account-1"), first);
+    await reopened.set("account-1", "ip-02");
+    assert.equal(await reopened.getOrAssign("account-1"), "ip-02");
     assert.equal(reopened.get("account-2"), undefined);
   } finally {
     if (directory.startsWith(tmpdir())) await rm(directory, { recursive: true, force: true });

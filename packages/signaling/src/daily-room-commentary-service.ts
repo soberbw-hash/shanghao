@@ -77,6 +77,7 @@ export class DailyRoomCommentaryService {
           gameActivities: report.gameActivities,
           participants: report.participants,
           recordingRecaps: report.recordingRecaps,
+          chronicleRecaps: report.chronicleRecaps?.slice(-12),
         }),
       ].join("\n"),
     };

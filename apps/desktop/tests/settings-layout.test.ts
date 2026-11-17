@@ -141,7 +141,7 @@ test("settings keep short lists visible and model actions above neighboring card
   assert.equal(settingsSource.includes('label="隐藏快捷方式小箭头和盾牌"'), true);
   assert.match(
     styles,
-    /\.ai-model-card:has\(\.ai-model-action-menu\[open\]\)\s*\{[^}]*z-index:\s*5;[^}]*overflow:\s*visible;/s,
+    /\.ai-model-card:has\(\.ai-model-action-menu\[open\]\)[^{]*\{[^}]*z-index:\s*5;[^}]*overflow:\s*visible;/s,
   );
   assert.match(styles, /\.ai-model-subgroup:has\(\.ai-model-action-menu\[open\]\)/);
   assert.match(
@@ -514,7 +514,7 @@ test("microphone processing lives in the room panel while about shows three rele
   assert.equal(RELEASE_HISTORY[0]?.version, desktopPackage.version);
   assert.deepEqual(
     RECENT_RELEASE_HISTORY.map((release) => release.version),
-    [desktopPackage.version, "3.4.17", "3.4.16"],
+    [desktopPackage.version, "3.4.18", "3.4.17"],
   );
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
@@ -771,7 +771,7 @@ test("successful empty ASR units remain silence instead of failing the recording
   assert.equal(detailSource.includes('process("transcribe")'), true);
   assert.equal(detailSource.includes('process("organize")'), true);
   assert.equal(detailSource.includes('transcribe: action === "transcribe"'), true);
-  assert.equal(detailSource.includes("organize: true"), true);
+  assert.equal(detailSource.includes("organize: retryUnitIds ? false : true"), true);
   assert.equal(detailSource.includes("diagnostic?.taskId"), false);
 });
 

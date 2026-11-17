@@ -13,15 +13,8 @@ exports.developmentLauncherArguments = (destination) => {
 exports.developmentPowerShellScript = (application, repository, destination) => {
   const literal = (value) => `'${value.replaceAll("'", "''")}'`;
   const executable = path.join(application, "node_modules", "electron", "dist", "electron.exe");
-  return `# ShangHao testing administrator startup
+  return `# ShangHao normal development startup (Windows screen capture compatible)
 $ErrorActionPreference = 'Stop'
-$taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
-$taskPrincipal = New-Object Security.Principal.WindowsPrincipal($taskIdentity)
-if (-not $taskPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-  $taskShell = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-  Start-Process -FilePath $taskShell -Verb RunAs -WindowStyle Hidden -ArgumentList ${literal(exports.developmentLauncherArguments(destination))}
-  exit
-}
 $taskExecutable = ${literal(executable)}
 $taskLauncher = ${literal(path.join(destination, "start-dev.mjs"))}
 $taskRepository = ${literal(repository)}

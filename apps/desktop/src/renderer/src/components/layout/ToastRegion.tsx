@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, ChevronDown, Info, X, XCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  AudioLines,
+  CheckCircle2,
+  ChevronDown,
+  FileAudio2,
+  Info,
+  Sparkles,
+  X,
+  XCircle,
+} from "lucide-react";
 import { cn } from "@private-voice/ui";
 
 import { useAppStore, type ToastMessage } from "../../store/appStore";
@@ -97,7 +107,14 @@ const ToastStack = ({
           <AnimatePresence initial={false} mode="popLayout">
             {visible.map((toast) => {
               const tone = toast.tone ?? "neutral";
-              const ToneIcon = toneIcons[tone];
+              const ToneIcon =
+                toast.cardKind === "voice-replay"
+                  ? AudioLines
+                  : toast.cardKind === "transcription"
+                    ? FileAudio2
+                    : toast.cardKind === "chronicle"
+                      ? Sparkles
+                      : toneIcons[tone];
               const classes = toneClasses[tone];
               return (
                 <motion.div
@@ -109,8 +126,28 @@ const ToastStack = ({
                   role={tone === "danger" ? "alert" : "status"}
                   className={cn(
                     "toast-card toast-stack-front pointer-events-auto flex min-h-14 items-center gap-3 rounded-[18px] px-3.5 py-2.5 text-left",
+                    toast.cardKind && "toast-content-card",
+                    toast.cardKind === "voice-replay" && "toast-content-card-replay",
                     classes.card,
                   )}
+                  style={
+                    toast.cardKind
+                      ? {
+                          minHeight: 88,
+                          padding: "14px 16px",
+                          borderRadius: 20,
+                          background:
+                            toast.cardKind === "voice-replay"
+                              ? "linear-gradient(135deg, rgba(239, 244, 255, 0.99), rgba(226, 238, 255, 0.98))"
+                              : "linear-gradient(135deg, rgba(248, 252, 255, 0.99), rgba(235, 246, 255, 0.98))",
+                          boxShadow:
+                            "0 16px 38px rgba(37, 68, 108, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.98)",
+                          ...(toast.cardKind === "voice-replay"
+                            ? { borderColor: "rgba(112, 161, 230, 0.58)" }
+                            : {}),
+                        }
+                      : undefined
+                  }
                 >
                   <span
                     className={`toast-icon grid h-7 w-7 shrink-0 place-items-center rounded-full ${classes.icon}`}

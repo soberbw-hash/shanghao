@@ -57,7 +57,9 @@ export const AccountSettingsCard = () => {
   };
 
   const savedAvatarId =
-    profile.accountAvatarPresetId ??
+    (profile.accountAvatarPresetId && !profile.accountAvatarPresetId.startsWith("ip-")
+      ? accountAvatarPresetForIdentity(profile.userId)
+      : profile.accountAvatarPresetId) ??
     (profile.avatarUrl ? undefined : accountAvatarPresetForIdentity(profile.userId));
   const draftId = avatarDraft?.userId === profile.userId ? avatarDraft.id : savedAvatarId;
   const selectedAvatar = ACCOUNT_AVATAR_PRESETS.find((preset) => preset.id === draftId);
@@ -113,7 +115,9 @@ export const AccountSettingsCard = () => {
             {profile.avatarUrl || selectedAvatar ? (
               <img
                 src={
-                  avatarChanged
+                  avatarChanged ||
+                  (profile.accountAvatarPresetId &&
+                    !profile.accountAvatarPresetId.startsWith("ip-"))
                     ? selectedAvatar?.source
                     : (profile.avatarUrl ?? selectedAvatar?.source)
                 }

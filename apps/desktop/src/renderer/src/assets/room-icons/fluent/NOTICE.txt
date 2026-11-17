@@ -1,0 +1,2 @@
+Fluent Emoji 3D illustrations by Microsoft, MIT license.
+Source: https://github.com/microsoft/fluentui-emoji

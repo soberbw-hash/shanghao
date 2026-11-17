@@ -78,6 +78,7 @@ function titleOf(input: string): string {
 export class VoiceReplayStore {
   private serial: Promise<unknown> = Promise.resolve();
   private readonly transcribing = new Set<string>();
+  private readonly transcriptSearchIndex = new Map<string, string | undefined>();
   constructor(
     private readonly root: string,
     private readonly trash: (target: string) => Promise<void>,
@@ -132,6 +133,46 @@ export class VoiceReplayStore {
   }
   list(): Promise<VoiceReplayClip[]> {
     return this.run(() => this.listInternal());
+  }
+
+  /** Lazy local text index: filesystem reads stay in Main and repeat searches avoid rereading files. */
+  searchTranscripts(query: string): Promise<{ matchingIds: string[]; incomplete: boolean }> {
+    if (typeof query !== "string" || !query.trim() || query.length > 100)
+      return Promise.reject(Error("invalid_replay_search"));
+    const term = query.normalize("NFKC").trim().toLocaleLowerCase();
+    // Searching is read-only and must not hold the write queue used by saving
+    // newly captured replay audio. A deletion racing this scan is reported as
+    // incomplete and the normal mutation path still invalidates its cache.
+    return (async () => {
+      const clips = await this.listInternal();
+      const matchingIds: string[] = [];
+      let incomplete = false;
+      let cursor = 0;
+      const readNext = async () => {
+        while (cursor < clips.length) {
+          const clip = clips[cursor++];
+          if (!clip) continue;
+          try {
+            if (!this.transcriptSearchIndex.has(clip.id)) {
+              const latest = (await this.transcripts(clip.id, clip.durationMs))[0]?.value;
+              this.transcriptSearchIndex.set(clip.id, latest?.text);
+            }
+            if (
+              this.transcriptSearchIndex
+                .get(clip.id)
+                ?.normalize("NFKC")
+                .toLocaleLowerCase()
+                .includes(term)
+            )
+              matchingIds.push(clip.id);
+          } catch {
+            incomplete = true;
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, clips.length) }, () => readNext()));
+      return { matchingIds, incomplete };
+    })();
   }
 
   private async saveInternal(
@@ -285,6 +326,7 @@ export class VoiceReplayStore {
       const temporary = path.join(directory, `.transcript-${token}.tmp`);
       await fs.writeFile(temporary, encoded, { flag: "wx" });
       await fs.rename(temporary, path.join(directory, `transcript-${token}.json`));
+      this.transcriptSearchIndex.delete(id);
       return next;
     });
   }
@@ -347,6 +389,7 @@ export class VoiceReplayStore {
           flag: "wx",
         });
         await fs.rename(temporary, path.join(directory, `transcript-${token}.json`));
+        this.transcriptSearchIndex.delete(id);
       });
       return text;
     } finally {
@@ -424,6 +467,7 @@ export class VoiceReplayStore {
       if (this.transcribing.has(id)) throw Error("voice_replay_transcription_busy");
       await this.metadata(id);
       await this.trash(await this.directory(id));
+      this.transcriptSearchIndex.delete(id);
     });
   }
 }

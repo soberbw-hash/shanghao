@@ -452,6 +452,13 @@ export class CloudBaseAccountClient {
         : "account_network_error";
     } else if (/resource_exhausted|rate.limit|too.many|too.frequent/.test(detail)) {
       code = stage === "send_code" ? "account_verification_rate_limited" : "account_rate_limited";
+    } else if (
+      stage === "send_code" &&
+      /unimplemented|sms.{0,24}(not.?configured|disabled|unavailable)|provider.{0,24}(not.?configured|disabled|unavailable)|template.{0,24}(not.?approved|invalid|missing)/.test(
+        detail,
+      )
+    ) {
+      code = "account_sms_channel_unavailable";
     } else if (/captcha/.test(detail)) code = "account_verification_challenge_required";
     else if (
       /permission_denied|provider_not_enabled|login_method_disabled|invalid_client|invalid_api_key|unauthorized_client|service_error|server_error|temporarily_unavailable/.test(

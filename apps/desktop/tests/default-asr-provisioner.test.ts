@@ -133,7 +133,7 @@ test("dependency network errors recover while explicit pause and removal remain 
   assert.equal(defaultSettings.aiTranscriptionProvider, "cloud");
   assert.equal(defaultSettings.isAiCloudLocalAssistEnabled, true);
   assert.equal(defaultSettings.aiCloudLocalAsrModel, "qwen3-asr-0.6b-force");
-  assert.equal(defaultSettings.isAiAutoTranscribeEnabled, true);
+  assert.equal(defaultSettings.isAiAutoTranscribeEnabled, false);
   assert.equal(defaultSettings.isAiAutoOrganizeEnabled, true);
   assert.equal(defaultSettings.isAiAutoUploadEnabled, false);
 });

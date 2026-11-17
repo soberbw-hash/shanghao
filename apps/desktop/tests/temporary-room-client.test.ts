@@ -120,6 +120,44 @@ test("the temporary client rejects insecure nonlocal endpoints before opening a 
   assert.equal(opened, false);
 });
 
+test("server-hosted rooms bypass local discovery and admit two anonymous devices", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "shanghao-temp-server-"));
+  const server = new SignalingServer({
+    roomName: "fixture",
+    privateRoomFile: path.join(root, "rooms.json"),
+    dailyRoomReportFile: path.join(root, "daily.json"),
+    accountBackend: { configured: false } as never,
+  });
+  const port = await server.listen();
+  const router = {
+    resolve: async () => {
+      throw Error("unexpected local discovery");
+    },
+    joined: async () => {
+      throw Error("unexpected local host");
+    },
+  };
+  const make = (name: string) =>
+    new TemporaryRoomClient(
+      identity(name),
+      () => `ws://127.0.0.1:${port}/temporary`,
+      (url) => new WebSocket(url, { headers: { "x-forwarded-proto": "https" } }),
+      router,
+    );
+  const first = make("甲");
+  const second = make("乙");
+  t.after(async () => {
+    first.close();
+    second.close();
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const room = await first.create("server");
+  const joined = await second.join(room.room.code, "server");
+  assert.equal(joined.room.sessionId, room.room.sessionId);
+  assert.equal(joined.room.members.length, 2);
+});
+
 test("closing Main while route discovery is pending cannot create a late socket or room", async () => {
   let resolveRoute!: (route: { url: string }) => void;
   let opened = false;

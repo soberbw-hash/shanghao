@@ -218,6 +218,23 @@ test("only the visible walking pose reserves a compositor layer", () => {
   );
 });
 
+test("character pose handoff always selects one visible layer with a short safety overlap", () => {
+  const source = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/SceneCharacter.tsx"),
+    "utf8",
+  );
+  const styles = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/styles/parts/50-character.css"),
+    "utf8",
+  );
+
+  assert.match(source, /const activeCharacterPose = isWalkingVisual[\s\S]*?"away";/);
+  assert.equal((source.match(/activeCharacterPose === "walking"/g) ?? []).length, 1);
+  assert.equal((source.match(/activeCharacterPose === "seated"/g) ?? []).length, 1);
+  assert.equal((source.match(/activeCharacterPose === "away"/g) ?? []).length, 1);
+  assert.match(styles, /transition: opacity 90ms ease-out;/);
+});
+
 test("idle characters share one room scheduler capped at two simultaneous actions", () => {
   const characterSource = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/components/room/SceneCharacter.tsx"),

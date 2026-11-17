@@ -58,7 +58,7 @@ export class AccountAvatarPresetStore {
     const key = accountKey(userId);
     return this.enqueue(async () => {
       const saved = this.avatars[key];
-      if (saved) return saved;
+      if (saved?.startsWith("ip-")) return saved;
       const selected = accountAvatarPresetForIdentity(userId);
       try {
         await this.persist({ ...this.avatars, [key]: selected });

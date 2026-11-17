@@ -16,6 +16,7 @@ export const enqueueToast = (
           item.description === toast.description) &&
       (item.tone ?? "neutral") === tone &&
       item.actionLabel === toast.actionLabel &&
+      item.cardKind === toast.cardKind &&
       item.onAction === toast.onAction &&
       Boolean(item.persistent) === Boolean(toast.persistent),
   );

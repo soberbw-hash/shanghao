@@ -6,7 +6,7 @@ export interface CloudAiAdminProvider {
   model: string;
   hasKey: boolean;
   active: boolean;
-  /** An inactive text provider explicitly selected for failover. */
+  /** An inactive provider explicitly selected for failover within its own kind. */
   fallback?: boolean;
 }
 export interface CloudAiAdminSnapshot {

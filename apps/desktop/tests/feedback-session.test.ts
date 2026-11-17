@@ -34,10 +34,10 @@ test("avatar IPC retains built-in identity and expanded fallback remains compati
     ipc,
     /accountAvatarPresetId:\s*request\?\.accountAvatarPresetId && isAccountAvatarPresetId/,
   );
-  assert.equal(ACCOUNT_AVATAR_PRESET_IDS.length, 32);
+  assert.equal(ACCOUNT_AVATAR_PRESET_IDS.length, 67);
   for (const identity of ["sober", "legacy-user", "中文账号", "123"]) {
     assert.ok(
-      ACCOUNT_AVATAR_PRESET_IDS.slice(0, 10).includes(accountAvatarPresetForIdentity(identity)),
+      ACCOUNT_AVATAR_PRESET_IDS.slice(32).includes(accountAvatarPresetForIdentity(identity)),
     );
   }
 });

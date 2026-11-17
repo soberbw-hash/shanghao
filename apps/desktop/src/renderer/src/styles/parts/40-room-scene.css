@@ -17,6 +17,8 @@
 
 /* ── 场景 ── */
 
+@import "../idle-monitor.css";
+
 .team-island {
   height: 100%;
   min-height: 400px;
@@ -331,40 +333,6 @@
   }
 }
 
-.scene-idle-monitor {
-  position: absolute;
-  inset: 0;
-  display: block;
-  overflow: hidden;
-  border-radius: inherit;
-  background: #8ec7f3;
-}
-
-.scene-idle-monitor-art {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 1;
-  will-change: transform;
-  animation: idle-monitor-drift 24s ease-in-out infinite alternate;
-  animation-delay: calc(0s - var(--idle-monitor-offset));
-}
-
-.scene-idle-monitor.is-static-window .scene-idle-monitor-art {
-  animation: none;
-}
-
-@keyframes idle-monitor-drift {
-  from {
-    transform: scale(1.01) translate3d(-0.4%, 0, 0);
-  }
-  to {
-    transform: scale(1.045) translate3d(0.8%, -0.5%, 0);
-  }
-}
-
 /* Seat changes keep the walking character fluid by temporarily giving its
    compositor animation priority over decorative room motion. */
 .team-island.is-character-motion-active .weather-cloud,
@@ -377,6 +345,7 @@
   .scene-workstation-art-frame,
 .team-island.is-character-motion-active .scene-workstation-idle-fish,
 .team-island.is-character-motion-active .scene-idle-monitor-art,
+.team-island.is-character-motion-active .scene-idle-monitor-light,
 .team-island.is-character-motion-active .scene-workstation-screen.network-unstable::after,
 .team-island.is-character-motion-active
   .scene-character-motion:is(.phase-idle, .phase-away-idle)

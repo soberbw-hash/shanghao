@@ -898,8 +898,9 @@
 }
 
 .settings-save-notice {
-  color: #7c8da2;
-  font-size: 12px;
+  color: #536983;
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
 }
 

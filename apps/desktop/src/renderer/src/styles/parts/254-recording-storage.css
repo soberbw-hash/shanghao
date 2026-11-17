@@ -9,13 +9,15 @@
   padding-inline: 4px;
 }
 .recording-library-toolbar h2 {
-  color: #24384f;
-  font-size: 16px;
-  font-weight: 650;
-}
-.recording-library-local-note {
-  color: #526b87;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: white;
+  color: #316ab8;
+  font-size: 13px;
+  font-weight: 600;
 }
 .recording-storage-settings {
   margin-left: auto;

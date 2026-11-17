@@ -35,6 +35,7 @@ import { CloudAiAdminPanel } from "./CloudAiAdminPanel";
 import { SettingsSection } from "./SettingsSection";
 import { CloudLocalAssistControl } from "./CloudLocalAssistControl";
 import { TranscriptionDataNotice } from "./TranscriptionDataNotice";
+import { AsrGameLexiconSettings } from "./AsrGameLexiconSettings";
 import type { ToastMessage } from "../../store/appStore";
 import { toUserFacingError } from "../../utils/userFacingError";
 import { canReuseTextProviderKey, type TextModelPreset } from "../../features/ai/textModelPreset";
@@ -927,6 +928,7 @@ export const AiVoiceMemorySettingsCard = ({
           />
         </div>
       </section>
+      <AsrGameLexiconSettings settings={settings} onChange={onChange} />
 
       <details
         id="ai-model-management"

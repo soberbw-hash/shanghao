@@ -67,7 +67,7 @@ export function useBackgroundAudioBalance(): void {
       }
       const settings = useSettingsStore.getState().settings!;
       const current = useBackgroundAudioBalanceState.getState();
-      // Default-off users need one capability check, not a permanent stream of idle IPC calls.
+      // Disabled users need one capability check, not a permanent stream of idle IPC calls.
       if (
         !force &&
         attempted &&

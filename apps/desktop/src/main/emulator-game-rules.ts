@@ -8,6 +8,7 @@ const emulatorProcesses = [
   "dnplayer",
   "ldplayer",
   "hd-player",
+  "wgprojectm",
 ];
 export const EMULATOR_GAME_RULES: GameRule[] = [
   {

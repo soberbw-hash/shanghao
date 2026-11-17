@@ -940,6 +940,8 @@ export interface VoiceMemoryProcessRequest {
   transcribe?: boolean;
   /** Discard the prior transcript/checkpoint and run recognition again from the beginning. */
   restartTranscription?: boolean;
+  /** Re-run only these durable local ASR units, preserving their old transcript first. */
+  retryUnitIds?: string[];
   /** Correct existing cloud/local originals without uploading audio or rerunning ASR. */
   fuse?: boolean;
   /** One-off model choice for A/B testing; does not change the global default. */

@@ -26,9 +26,6 @@
   --sg-font-family: "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
 }
 
-code,
-kbd,
-samp,
-pre {
+:is(code, kbd, samp, pre, button, input, textarea, select) {
   font-family: var(--sg-font-family);
 }

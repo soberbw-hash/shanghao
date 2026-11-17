@@ -1533,8 +1533,9 @@ body::before {
   gap: 3px;
 }
 .voice-memory-empty span {
-  color: #71839a;
-  font-size: 12px;
+  color: #526a84;
+  font-size: 13px;
+  line-height: 1.5;
 }
 .voice-memory-empty button,
 .voice-memory-detail header button {

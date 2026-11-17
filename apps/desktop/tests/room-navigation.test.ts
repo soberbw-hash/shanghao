@@ -32,7 +32,10 @@ test("account rooms use server-owned records and the current room's live member 
   assert.match(source, /managed\.roomId === activeRoom\.roomId/u);
   assert.match(source, /members=\{isActive \? activeRoom\.members\.filter/u);
   assert.doesNotMatch(source, /rooms\.(?:rememberJoined|create|delete)|switchChannel/u);
-  assert.match(await read("components/room/RoomManagementDialog.tsx"), /onSaved=\{onClose\}/u);
+  assert.match(
+    await read("components/room/RoomManagementDialog.tsx"),
+    /onChange=\{setCurrentRoom\}/u,
+  );
 });
 
 test("account room layout stacks on small windows and room title truncates", async () => {

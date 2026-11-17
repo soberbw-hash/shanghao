@@ -96,7 +96,6 @@ export const MusicActivityBadge = ({ activity }: { activity: MusicActivity }) =>
             <path fill="currentColor" d={providerPath[activity.provider]} />
           </svg>
         )}
-        <i aria-hidden="true" />
       </span>
       <span id={tooltipId} className="music-activity-tooltip" role="tooltip">
         <strong>{activity.providerName}</strong>

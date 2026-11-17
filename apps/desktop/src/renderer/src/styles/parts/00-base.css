@@ -160,14 +160,11 @@ html[data-renderer="screen-viewer"] #root {
 
 body {
   overflow: hidden;
-  user-select: text;
+  user-select: none;
   background:
     radial-gradient(circle at 9% 3%, rgba(119, 177, 255, 0.14), transparent 32%),
     radial-gradient(circle at 91% 88%, rgba(132, 225, 195, 0.1), transparent 31%),
     linear-gradient(145deg, #f8fbff 0%, #edf3fa 52%, #f4f9f7 100%);
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 @media (prefers-contrast: more) {

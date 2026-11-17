@@ -30,7 +30,7 @@ export function VoiceReplayShortcutSettings() {
   return (
     <SettingsItemRow
       label="保存刚才对话"
-      description={error || "全员同意保留原声后，保存最近选定时长的声音。"}
+      description={error || "手动开启本机缓冲后，可保存最近选定时长的声音片段。"}
     >
       <ShortcutInput
         compact

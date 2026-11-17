@@ -1530,7 +1530,6 @@ export const useRoomState = () => {
 
   return {
     chronicle: activeClient?.chronicle,
-    replay: activeClient?.replay,
     room,
     localStream,
     joinChannel,

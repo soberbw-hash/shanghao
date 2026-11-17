@@ -10,7 +10,6 @@ let shortcutOwner: symbol | undefined;
 
 export function useVoiceReplay() {
   const roomId = useRoomStore((state) => state.room.roomId);
-  const state = useRoomStore((store) => store.replay?.state);
   const connected = useRoomStore(
     (store) => store.room.connectionState === RoomConnectionState.Connected,
   );
@@ -23,26 +22,17 @@ export function useVoiceReplay() {
   const stream = useRoomStore((store) => store.localStream);
   const capture = useRef<VoiceReplayCapture | undefined>(undefined);
   const saving = useRef(false);
+  const manuallyStopped = useRef(false);
+  const previousRoom = useRef(roomId);
+  const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState("");
   const [seconds, setSeconds] = useState<15 | 30 | 60>(30);
   const [revision, setRevision] = useState(0);
-  const consentKey =
-    state &&
-    JSON.stringify([
-      roomId,
-      state.sessionId,
-      state.epoch,
-      state.members,
-      state.approved,
-      state.enabled,
-    ]);
   useEffect(() => {
     const track = stream?.getAudioTracks()[0];
-    if (!state?.enabled || !connected || !track || members !== [...state.members].sort().join("|"))
-      return;
+    if (!enabled || !connected) return;
     const permitted = () => {
       const current = useRoomStore.getState();
-      const next = current.replay?.state;
       return (
         current.room.roomId === roomId &&
         current.room.connectionState === RoomConnectionState.Connected &&
@@ -50,12 +40,10 @@ export function useVoiceReplay() {
           .map((m) => m.id)
           .sort()
           .join("|") === members &&
-        !!next?.enabled &&
-        next.sessionId === state.sessionId &&
-        next.epoch === state.epoch
+        current.localStream === stream
       );
     };
-    const next = new VoiceReplayCapture(state, permitted);
+    const next = new VoiceReplayCapture(permitted);
     capture.current = next;
     let active = true;
     void Promise.resolve()
@@ -64,24 +52,50 @@ export function useVoiceReplay() {
         if (active) setStatus("");
       })
       .catch(() => {
-        if (active) setStatus("回溯缓冲未能开启，可关闭后重试。");
+        if (active) {
+          setEnabled(false);
+          setStatus("回溯缓冲未能开启，可在回溯设置中重试。");
+          useAppStore.getState().pushToast({
+            title: "语音回溯未能开启",
+            description: "可在回溯设置中重试。",
+            tone: "warning",
+            dedupeKey: "voice-replay-start",
+          });
+        }
       });
     return () => {
       active = false;
       next.close();
       if (capture.current === next) capture.current = undefined;
     };
-    // consentKey is the stable identity of a server-confirmed generation.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, consentKey, connected, members, stream]);
+  }, [roomId, enabled, connected, members, stream]);
+  useEffect(() => {
+    if (previousRoom.current !== roomId) {
+      manuallyStopped.current = false;
+      previousRoom.current = roomId;
+    }
+    setEnabled(connected && !manuallyStopped.current);
+  }, [connected, roomId]);
+  const start = () => {
+    manuallyStopped.current = false;
+    setStatus("");
+    setEnabled(true);
+  };
+  const stop = () => {
+    manuallyStopped.current = true;
+    setEnabled(false);
+    capture.current?.close();
+    capture.current = undefined;
+    setStatus("本机缓冲已停止并清空。");
+  };
   const save = async () => {
     if (saving.current) return;
     const api = window.desktopApi.voiceReplay;
     if (!api || !capture.current) {
-      setStatus("全员同意后才能保存回溯。");
+      setStatus("声音还在准备中，请稍后再试。");
       useAppStore.getState().pushToast({
-        title: "语音回溯尚未开启",
-        description: "请先邀请房间成员同意。",
+        title: enabled ? "语音回溯正在准备" : "语音回溯已关闭",
+        description: enabled ? "请稍等片刻后再保存。" : "可在回溯设置中重新开启。",
         dedupeKey: "voice-replay-save",
       });
       return;
@@ -91,6 +105,11 @@ export function useVoiceReplay() {
       const bytes = capture.current.snapshot(seconds);
       if (bytes.length <= 44) {
         setStatus("还没有可保存的声音，请稍等。");
+        useAppStore.getState().pushToast({
+          title: "还没有可保存的声音",
+          description: "请稍等片刻后再保存。",
+          dedupeKey: "voice-replay-save",
+        });
         return;
       }
       await api.save(
@@ -100,17 +119,26 @@ export function useVoiceReplay() {
       setStatus("片段已保存在本机。");
       setRevision((value) => value + 1);
       useAppStore.getState().pushToast({
-        title: "已保存刚才的对话",
-        description: "可在语音回溯中回听，仅存本机。",
+        title: `已保存刚才的 ${seconds} 秒`,
+        description: "片段仅保存在本机，可回听或转成文字。",
         tone: "success",
+        cardKind: "voice-replay",
+        actionLabel: "立即查看",
+        onAction: () => window.dispatchEvent(new Event("shanghao:open-voice-replay-library")),
       });
     } catch (error) {
-      setStatus(
+      const message =
         error instanceof Error &&
-          /voice_replay_(?:not_authorized|audio_stale|closed)/.test(error.message)
+        /voice_replay_(?:not_authorized|audio_stale|closed)/.test(error.message)
           ? "缓冲尚未就绪，请稍等片刻再保存。"
-          : "片段未保存，请检查本机存储后重试。",
-      );
+          : "片段未保存，请检查本机存储后重试。";
+      setStatus(message);
+      useAppStore.getState().pushToast({
+        title: "片段没有保存",
+        description: message,
+        tone: "warning",
+        dedupeKey: "voice-replay-save",
+      });
     } finally {
       saving.current = false;
     }
@@ -136,5 +164,5 @@ export function useVoiceReplay() {
       }
     };
   }, []);
-  return { save, revision, status, setStatus, seconds, setSeconds };
+  return { save, start, stop, enabled, revision, status, setStatus, seconds, setSeconds };
 }

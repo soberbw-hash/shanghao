@@ -1,0 +1,71 @@
+.chronicle-source-status {
+  margin: 0 8px;
+  padding: 10px 12px;
+  border: 1px solid #dce9fa;
+  border-radius: 12px;
+  background: linear-gradient(125deg, #f4f8ff, #eef6fc);
+  color: #405f7d;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.chronicle-source-status strong {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  justify-content: space-between;
+  color: #3e6391;
+  font-size: 13px;
+}
+.chronicle-source-status strong span {
+  font-size: 12px;
+  font-weight: 500;
+}
+.chronicle-source-status p {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.chronicle-source-status small {
+  color: #4d6681;
+  font-size: 12px;
+}
+.room-chronicle-entries article {
+  margin: 0 8px 10px;
+  padding: 12px;
+  border: 1px solid #e0eafb;
+  border-left: 3px solid #aac5ed;
+  border-radius: 14px;
+  background: linear-gradient(130deg, #fcfdff, #f3f8ff);
+}
+.room-chronicle-entries p {
+  color: #314963;
+  line-height: 1.8;
+}
+.chronicle-reactions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.chronicle-reactions button,
+.chronicle-earlier {
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #697e98;
+  font-size: 10px;
+}
+.chronicle-reactions button:hover,
+.chronicle-reactions button[aria-pressed="true"] {
+  border-color: #bfd5f2;
+  background: #eaf3ff;
+  color: #356aab;
+}
+.chronicle-reactions button:focus-visible,
+.chronicle-earlier:focus-visible {
+  outline: 2px solid #4b91dd;
+  outline-offset: 2px;
+}
+.chronicle-earlier {
+  margin: 4px 8px 10px;
+  font-size: 12px;
+}

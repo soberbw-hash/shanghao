@@ -80,7 +80,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const [isRepairingFirewall, setIsRepairingFirewall] = useState(false);
   const [isChangingIconOverlays, setIsChangingIconOverlays] = useState(false);
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
-  const [libraryToolbarTarget, setLibraryToolbarTarget] = useState<HTMLDivElement | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const entranceActiveRef = useRef(false);
   const reduceMotion = usePrefersReducedMotion();
@@ -338,7 +337,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         onChange={handleSaveSettings}
         pushToast={pushToast}
         openTarget={voiceMemoryOpenTarget}
-        toolbarTarget={libraryToolbarTarget}
       />
     ),
     ai: (
@@ -389,11 +387,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
           )}
         >
           <div data-gsap-settings="header">
-            <SettingsPageHeader
-              saveNotice={saveNotice}
-              onBack={() => navigate(settingsReturnTo)}
-              libraryToolbarRef={setLibraryToolbarTarget}
-            />
+            <SettingsPageHeader saveNotice={saveNotice} onBack={() => navigate(settingsReturnTo)} />
           </div>
           <div
             className={`mt-2 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)] ${

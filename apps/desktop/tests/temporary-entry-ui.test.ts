@@ -197,7 +197,7 @@ test("temporary entry separates server-generated creation from joining an existi
   assert.ok(!create.props.disabled);
   await create.props.onClick!();
   await settle();
-  assert.deepEqual(f.created, [[]], "creation never forwards the join code");
+  assert.deepEqual(f.created, [["server"]], "creation forwards only the chosen connection mode");
   assert.equal(f.saved[0].avatarId, "corgi");
   assert.equal(f.saved[0].avatarDataUrl, "data:image/png;base64,OLD");
   tree = f.render();

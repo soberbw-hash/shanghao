@@ -35,6 +35,7 @@ export interface VoiceReplayApi {
   transcribeLocal: (id: string) => Promise<string>;
   readTranscript: (id: string) => Promise<string | undefined>;
   readTranscriptDetail: (id: string) => Promise<VoiceReplayTranscript | undefined>;
+  searchTranscripts?: (query: string) => Promise<{ matchingIds: string[]; incomplete: boolean }>;
   reviseTranscriptSegment: (
     id: string,
     expectedCreatedAt: number,

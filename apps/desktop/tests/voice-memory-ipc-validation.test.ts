@@ -13,6 +13,11 @@ const valid = {
 
 test("voice memory IPC accepts a bounded recording request", () => {
   assert.deepEqual(requireVoiceMemoryProcessRequest(valid), valid);
+  assert.deepEqual(
+    requireVoiceMemoryProcessRequest({ ...valid, retryUnitIds: ["recording-1:qwen:0"] })
+      .retryUnitIds,
+    ["recording-1:qwen:0"],
+  );
 });
 
 test("voice memory IPC rejects malformed and oversized timeline input", () => {
@@ -28,6 +33,12 @@ test("voice memory IPC rejects malformed and oversized timeline input", () => {
     () => requireVoiceMemoryProcessRequest({ ...valid, speakingTimeline: [null] }),
     /invalid_voice_memory_process_request/,
   );
+  for (const retryUnitIds of [[], ["same", "same"], new Array(129).fill("unit"), [42]]) {
+    assert.throws(
+      () => requireVoiceMemoryProcessRequest({ ...valid, retryUnitIds }),
+      /invalid_voice_memory_process_request/,
+    );
+  }
   assert.throws(
     () =>
       requireVoiceMemoryProcessRequest({

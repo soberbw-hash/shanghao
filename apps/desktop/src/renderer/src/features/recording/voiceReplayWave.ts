@@ -1,4 +1,4 @@
-/** Encode an already-consented replay snapshot as mono 16-bit PCM WAV. */
+/** Encode a locally enabled replay snapshot as mono 16-bit PCM WAV. */
 export function encodeVoiceReplayWave(samples: Float32Array, sampleRate: number): Uint8Array {
   if (
     !Number.isInteger(sampleRate) ||

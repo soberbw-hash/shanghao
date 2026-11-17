@@ -117,6 +117,29 @@ test("explicit local transcription validates the clip without blocking another s
     await store.remove(original.id);
   }));
 
+test("transcript search runs through a cached local index and invalidates after edits/removal", () =>
+  fixture(async (store) => {
+    const clip = await store.save("一段回溯", wave());
+    await store.transcribeLocal(clip.id, async () => "嘉文在下路开团");
+    assert.deepEqual(await store.searchTranscripts("嘉文"), {
+      matchingIds: [clip.id],
+      incomplete: false,
+    });
+    const transcript = await store.readTranscriptDetail(clip.id);
+    assert.equal(transcript?.version, 1);
+    await store.transcribeLocal(clip.id, async () => "新的文字稿");
+    assert.deepEqual(await store.searchTranscripts("嘉文"), { matchingIds: [], incomplete: false });
+    assert.deepEqual(await store.searchTranscripts("文字稿"), {
+      matchingIds: [clip.id],
+      incomplete: false,
+    });
+    await store.remove(clip.id);
+    assert.deepEqual(await store.searchTranscripts("文字稿"), {
+      matchingIds: [],
+      incomplete: false,
+    });
+  }));
+
 test("unknown transcript data is preserved and never overwritten", () =>
   fixture(async (store, root) => {
     const clip = await store.save("原片段", wave());

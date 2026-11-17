@@ -15,13 +15,11 @@ import { useRoomChronicleCapture } from "../../features/room/useRoomChronicleCap
 import { RoomChroniclePanel } from "./RoomChroniclePanel";
 import { RoomContentTabs } from "./RoomContentTabs";
 import type { RoomContentTab } from "../../features/chat/roomContentUnread";
-import type { RoomReplayClient } from "../../features/room/RoomReplayClient";
 import { useVoiceReplay } from "../../features/recording/useVoiceReplay";
 import { VoiceReplayControl } from "../audio/VoiceReplayControl";
 
 interface RoomChatPanelProps {
   chronicle?: RoomChronicleClient;
-  replay?: RoomReplayClient;
   sendChatMessage: (
     content: string,
     image?: ChatImageAttachment,
@@ -46,7 +44,6 @@ interface RoomChatPanelProps {
 export const RoomChatPanel = memo(
   ({
     chronicle,
-    replay,
     sendChatMessage,
     recallChatMessage,
     sendQuickMessage,
@@ -140,7 +137,7 @@ export const RoomChatPanel = memo(
           <RoomChroniclePanel
             transport={chronicle}
             status={chronicleStatus}
-            replayControl={<VoiceReplayControl transport={replay} controller={voiceReplay} />}
+            replayControl={<VoiceReplayControl controller={voiceReplay} />}
           />
         }
         alternateContentActive={tab === "chronicle"}

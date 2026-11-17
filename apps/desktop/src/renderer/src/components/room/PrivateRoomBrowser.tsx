@@ -157,7 +157,7 @@ export const PrivateRoomBrowser = ({
           )}
           style={roomIconStyle(room.iconColor)}
         >
-          <PrivateRoomIcon icon={room.icon} className={featured ? "size-6" : "size-5"} />
+          <PrivateRoomIcon icon={room.icon} className="size-full" />
         </span>
         <RoomInformation
           type={preview || featured ? undefined : "button"}

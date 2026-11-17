@@ -7,6 +7,7 @@ import { RoomChronicleSessions } from "./room-chronicle-sessions";
 import { isTemporaryRoomSessionId } from "../../shared/src/types/temporary-room.types";
 import { RoomChronicleProcessor } from "./room-chronicle-processor";
 import type { CloudAiRuntime } from "./cloud-ai-runtime";
+import type { DailyRoomReportStore } from "./daily-room-report-store";
 
 /** Receives only the room and peer identity established by the signaling connection. */
 export class RoomChronicleController {
@@ -16,12 +17,15 @@ export class RoomChronicleController {
   configure(
     runtime: Pick<CloudAiRuntime, "speechService" | "textService">,
     changed: (roomId: string) => void,
+    reports?: Promise<DailyRoomReportStore>,
   ): void {
     this.processor = new RoomChronicleProcessor(
       this.sessions,
       runtime.speechService,
       runtime.textService,
       changed,
+      undefined,
+      reports,
     );
   }
 
@@ -56,9 +60,11 @@ export class RoomChronicleController {
         chunkId: message.chunkId,
         state,
         error:
-          error instanceof Error && error.message === "chronicle_busy"
-            ? "chronicle_busy"
-            : "chronicle_unavailable",
+          error instanceof Error && error.message === "cloud_asr_http_402"
+            ? "chronicle_speech_quota"
+            : error instanceof Error && error.message === "chronicle_busy"
+              ? "chronicle_busy"
+              : "chronicle_unavailable",
       });
     }
   }

@@ -22,6 +22,13 @@
   padding: 20px;
 }
 
+.settings-page .settings-section-card.glass-panel,
+.settings-page .account-settings-card,
+.settings-page .recording-library-browser,
+.settings-page .recording-library-panel {
+  background: linear-gradient(135deg, #f9fcff 0%, #eef6ff 64%, #eaf8f4 100%) !important;
+}
+
 .settings-page .account-settings-fields {
   grid-template-columns: minmax(0, 1fr);
   gap: 13px;
@@ -92,11 +99,6 @@
   color: #316ab8;
   background: #e9f3ff;
 }
-.ai-model-filter-bar button:focus-visible {
-  outline: 2px solid #4d9bf3;
-  outline-offset: 2px;
-}
-
 .quick-message-settings-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -118,8 +120,10 @@
   color: #316ab8;
   background: white;
 }
+.ai-model-filter-bar button:focus-visible,
 .quick-message-settings-tabs button:focus-visible,
-.quick-message-slot:focus-visible {
+.quick-message-slot:focus-visible,
+.ai-model-action-menu summary:focus-visible {
   outline: 2px solid #4d9bf3;
   outline-offset: 2px;
 }
@@ -197,8 +201,8 @@
 }
 
 .quick-message-slot-group-heading > span {
-  color: #71839a;
-  font-size: 11px;
+  color: #526b85;
+  font-size: 12px;
 }
 
 .quick-message-slot-list {
@@ -262,11 +266,7 @@
   z-index: 3;
 }
 
-.ai-model-card:has(.ai-model-action-menu[open]) {
-  z-index: 5;
-  overflow: visible;
-}
-
+.ai-model-card:has(.ai-model-action-menu[open]),
 .settings-section-card.glass-panel:has(.ai-model-action-menu[open]) {
   z-index: 5;
   overflow: visible;
@@ -311,10 +311,6 @@
 }
 .ai-model-action-menu summary::-webkit-details-marker {
   display: none;
-}
-.ai-model-action-menu summary:focus-visible {
-  outline: 2px solid #4d9bf3;
-  outline-offset: 2px;
 }
 .ai-model-action-menu > div {
   position: absolute;

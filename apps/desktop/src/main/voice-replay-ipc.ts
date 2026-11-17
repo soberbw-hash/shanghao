@@ -48,6 +48,7 @@ export function registerVoiceReplayIpc(
   bind(channels.read, (id: string) => store.read(id));
   bind(channels.readTranscript, (id: string) => store.readTranscript(id));
   bind(channels.readTranscriptDetail, (id: string) => store.readTranscriptDetail(id));
+  bind(channels.searchTranscripts, (query: string) => store.searchTranscripts(query));
   bind(
     channels.reviseTranscriptSegment,
     (id: string, expectedCreatedAt: number, index: number, text: string) =>

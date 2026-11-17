@@ -19,7 +19,7 @@ test("cloud assistance defaults on and preserves explicit choices across provide
   assert.equal(fresh.aiTranscriptionProvider, "cloud");
   assert.equal(fresh.isAiCloudLocalAssistEnabled, true);
   assert.equal(fresh.aiCloudLocalAsrModel, "qwen3-asr-0.6b-force");
-  assert.equal(fresh.isAiAutoTranscribeEnabled, true);
+  assert.equal(fresh.isAiAutoTranscribeEnabled, false);
   const chosen = migrateSettings({
     ...defaultSettings,
     isAiCloudLocalAssistEnabled: true,
@@ -95,6 +95,43 @@ test("friend notifications and local game markers default on and preserve explic
   }).settings;
   assert.equal(saved.isFriendOnlineNotificationEnabled, false);
   assert.equal(saved.isRecordingAutoGameMarkerEnabled, false);
+});
+
+test("personal ASR game vocabulary survives settings migration and drops invalid values", () => {
+  const saved = migrateSettings({
+    aiAsrGameLexicon: [
+      { gameName: "Apex Legends", terms: ["Wraith", "Bloodhound", "Wraith"] },
+      { gameName: "<script>", terms: ["unsafe"] },
+    ],
+  }).settings;
+  assert.deepEqual(saved.aiAsrGameLexicon, [
+    { gameName: "Apex Legends", terms: ["Wraith", "Bloodhound"] },
+  ]);
+  assert.deepEqual(migrateSettings(saved).settings.aiAsrGameLexicon, saved.aiAsrGameLexicon);
+  assert.deepEqual(
+    migrateSettings({ aiAsrGameLexicon: "invalid" } as never).settings.aiAsrGameLexicon,
+    [],
+  );
+});
+
+test("background audio smoothing defaults on and upgrades existing settings once", () => {
+  assert.equal(defaultSettings.isBackgroundAudioBalanceEnabled, true);
+  assert.equal(migrateSettings({}).settings.isBackgroundAudioBalanceEnabled, true);
+  assert.equal(
+    migrateSettings({
+      ...defaultSettings,
+      settingsSchemaVersion: SETTINGS_SCHEMA_VERSION - 1,
+      isBackgroundAudioBalanceEnabled: false,
+    }).settings.isBackgroundAudioBalanceEnabled,
+    true,
+  );
+  assert.equal(
+    migrateSettings({
+      ...defaultSettings,
+      isBackgroundAudioBalanceEnabled: false,
+    }).settings.isBackgroundAudioBalanceEnabled,
+    false,
+  );
 });
 
 test("clip and tray preferences use safe defaults and preserve customized profiles", () => {
@@ -228,8 +265,12 @@ test("friend loudness balance is on by default and explicit choices survive migr
 test("voice transcription defaults to resource-safe automation and preserves saved modes", () => {
   assert.equal(defaultSettings.aiProcessingMode, "low_resource");
   assert.equal(migrateSettings({}).settings.aiProcessingMode, "low_resource");
-  assert.equal(defaultSettings.isAiAutoTranscribeEnabled, true);
-  assert.equal(migrateSettings({}).settings.isAiAutoTranscribeEnabled, true);
+  assert.equal(defaultSettings.isAiAutoTranscribeEnabled, false);
+  assert.equal(migrateSettings({}).settings.isAiAutoTranscribeEnabled, false);
+  assert.equal(
+    migrateSettings({ isAiAutoTranscribeEnabled: true }).settings.isAiAutoTranscribeEnabled,
+    true,
+  );
   assert.equal(
     migrateSettings({ isAiAutoTranscribeEnabled: false }).settings.isAiAutoTranscribeEnabled,
     false,

@@ -15,7 +15,7 @@ import { useAudioStore } from "../../src/renderer/src/store/audioStore";
 import "../../src/renderer/src/styles/index.css";
 
 const state: BackgroundAudioState = {
-  enabled: false,
+  enabled: true,
   available: true,
   shortcut: "",
   phase: "off",
@@ -63,7 +63,7 @@ if (!window.desktopApi?.backgroundAudio)
   });
 useSettingsStore.setState({
   settings: {
-    isBackgroundAudioBalanceEnabled: false,
+    isBackgroundAudioBalanceEnabled: true,
     backgroundAudioBalanceShortcut: "",
   } as AppSettings,
 });

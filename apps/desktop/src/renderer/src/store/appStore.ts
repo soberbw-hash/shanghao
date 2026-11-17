@@ -27,6 +27,7 @@ export interface ToastMessage {
   persistent?: boolean;
   dedupeKey?: string;
   clipFilePath?: string;
+  cardKind?: "voice-replay" | "transcription" | "chronicle";
 }
 
 export interface StartupIssue {
@@ -174,8 +175,9 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     });
     clearToastTimer(id);
     if (!toast.persistent) {
-      const duration =
-        tone === "success"
+      const duration = toast.cardKind
+        ? 8_000
+        : tone === "success"
           ? 2_800
           : tone === "neutral"
             ? 4_200

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { CHRONICLE_SUMMARY_INTERVAL_MS } from "./room-chronicle-prompt";
 
 export interface ChronicleEntry {
   id: string;
@@ -6,6 +7,7 @@ export interface ChronicleEntry {
   text: string;
 }
 export interface ChronicleSnapshot {
+  summaryIntervalMs?: number;
   notice?: "retrying" | "unavailable";
   sessionId: string;
   participants: string[];
@@ -30,6 +32,7 @@ export class RoomChronicleSessions {
     if (!session) return undefined;
     this.require(roomId, session.id, memberId);
     return {
+      summaryIntervalMs: CHRONICLE_SUMMARY_INTERVAL_MS,
       sessionId: session.id,
       participants: [...session.participants],
       entries: this.read(roomId, session.id, memberId),

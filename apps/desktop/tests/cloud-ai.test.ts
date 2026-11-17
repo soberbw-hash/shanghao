@@ -189,6 +189,27 @@ test("fallback preserves the requesting room memory and never bypasses a failed 
   assert.equal(calls, 2);
 });
 
+test("a live chronicle can isolate its current sources from older room memory", async () => {
+  let memoryReads = 0;
+  let prompt = "";
+  const service = new CloudAiService({
+    apiKey: "fixture-only",
+    memoryContext: async () => {
+      memoryReads++;
+      return "不该混入本轮的旧发言";
+    },
+    fetcher: async (_input, init) => {
+      prompt = JSON.parse(String(init?.body)).messages[1].content;
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '{"text":"新纪事"}' } }] }),
+      );
+    },
+  });
+  await service.execute({ ...request, prompt: "本轮独立成员发言" }, undefined, false);
+  assert.equal(memoryReads, 0);
+  assert.equal(prompt, "本轮独立成员发言");
+});
+
 test("cloud AI signaling accepts bounded joined-room requests only", () => {
   assert.equal(isSignalEnvelope(request), true);
   assert.equal(

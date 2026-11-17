@@ -139,7 +139,7 @@ export const PrivateRoomEditor = ({
             className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-200/60"
             style={roomIconStyle(iconColor)}
           >
-            <PrivateRoomIcon icon={icon} className="size-6" />
+            <PrivateRoomIcon icon={icon} className="size-full" />
           </span>
           <div className="min-w-0">
             <h2 id="private-room-editor-title" className="text-balance text-lg font-semibold">
