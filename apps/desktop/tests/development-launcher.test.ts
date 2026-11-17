@@ -35,8 +35,7 @@ test(
         { windowsHide: true, timeout: 10000, stdio: "pipe" },
       );
       assert.equal(body.includes("ExecutionPolicy"), false);
-      assert.match(body, /IsInRole.*Administrator/);
-      assert.match(body, /-Verb RunAs -WindowStyle Hidden/);
+      assert.doesNotMatch(body, /IsInRole.*Administrator|Verb RunAs/);
       const args = developmentLauncherArguments("C:\\Launcher Files");
       assert.ok(args.length < 900);
       const bootstrap = Buffer.from(args.split("-EncodedCommand ")[1], "base64").toString(

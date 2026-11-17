@@ -227,9 +227,20 @@ test("game snapshots are bound to the recorded room and older manifests remain r
       endMs: 900,
     };
     const context = await prepareGameAsrContext(record, false, new AbortController().signal);
-    assert.equal(context(source), "游戏：英雄联盟");
+    assert.match(context(source), /^游戏：英雄联盟；相关词：/);
     assert.equal(context({ ...source, accountIdentity: "other" }), "");
     assert.equal(context(), "");
+    const lexiconContext = await prepareGameAsrContext(
+      record,
+      false,
+      new AbortController().signal,
+      [
+        { gameName: "英雄联盟", terms: ["亚索", "闪现"] },
+        { gameName: "CS2", terms: ["烟雾弹"] },
+      ],
+    );
+    assert.match(lexiconContext(source), /^游戏：英雄联盟；相关词：亚索、闪现/);
+    assert.equal(lexiconContext({ ...source, accountIdentity: "other" }), "");
     const manual = await prepareGameAsrContext(
       { ...record, localAsrContext: { gameName: "CS2", terms: ["闪光"] } },
       false,
@@ -241,9 +252,11 @@ test("game snapshots are bound to the recorded room and older manifests remain r
       false,
       new AbortController().signal,
     );
-    assert.equal(customTerms(source), "游戏：英雄联盟；相关词：闪现");
+    assert.match(customTerms(source), /^游戏：英雄联盟；相关词：闪现(?:、|$)/);
     assert.equal(customTerms({ ...source, accountIdentity: "other" }), "相关词：闪现");
-    const benchmark = await prepareGameAsrContext(record, true, new AbortController().signal);
+    const benchmark = await prepareGameAsrContext(record, true, new AbortController().signal, [
+      { gameName: "英雄联盟", terms: ["亚索"] },
+    ]);
     assert.equal(benchmark(source), undefined);
     await save("session-old", "record-old");
     assert.equal(await loadRecordingGameTimeline("record-old"), undefined);

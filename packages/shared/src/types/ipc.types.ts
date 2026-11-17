@@ -282,9 +282,12 @@ export interface DesktopApi {
     saveProfile: (
       profile: import("./temporary-room.types").TemporaryRoomProfile,
     ) => Promise<import("./temporary-room-client.types").TemporaryPublicIdentity>;
-    create: () => Promise<import("./temporary-room-client.types").TemporaryRoomDescriptor>;
+    create: (
+      mode?: "direct" | "server",
+    ) => Promise<import("./temporary-room-client.types").TemporaryRoomDescriptor>;
     join: (
       code: string,
+      mode?: "direct" | "server",
     ) => Promise<import("./temporary-room-client.types").TemporaryRoomDescriptor>;
     manage: (
       request: import("./temporary-room-client.types").TemporaryRoomManageRequest,
@@ -297,6 +300,7 @@ export interface DesktopApi {
   storage: import("./storage.types").StorageApi;
   rooms: import("./private-room.types").PrivateRoomsApi;
   roomMemory: import("./room-memory.types").RoomMemoryApi;
+  chronicleArchive?: import("./chronicle.types").ChronicleArchiveApi;
   phoneMode: {
     get: () => Promise<{ active: boolean; busy: boolean; error?: string; entryCue?: number }>;
     set: (active: boolean) => Promise<void>;

@@ -2,6 +2,7 @@ import { validatePasswordResetRequest } from "./password-reset-validation";
 import { writeClipboardImage } from "./clipboard-image";
 import * as electronRuntime from "electron";
 import { registerScreenShareViewerIpc } from "./screen-share-viewer-ipc";
+import { registerChronicleArchiveIpc } from "./chronicle-archive-ipc";
 import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
 import { registerAiTextProviderIpc } from "./ai-model-configuration-ipc";
 import { registerRoomCapabilitiesIpc } from "./room-capabilities-ipc";
@@ -296,6 +297,7 @@ export const registerIpcHandlers = ({
   };
   const chatHistoryStore = new ChatHistoryStore(app.getPath("userData"));
   const rooms = registerPrivateRoomsIpc(accounts, settingsStore, app.getPath("userData"));
+  registerChronicleArchiveIpc(accounts, settingsStore);
   const dailyRoomReportCache = new DailyRoomReportCache(app.getPath("userData"));
   const weatherSession = session.fromPartition("shanghao-weather-direct", { cache: false });
   const weatherNetworkReady = weatherSession.setProxy({ mode: "direct" });

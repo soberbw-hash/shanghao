@@ -18,6 +18,8 @@ export function RoomContentTabs({
   idPrefix: string;
 }) {
   const chronicle = useRoomStore((state) => state.chronicle?.state);
+  const localId = useRoomStore((state) => state.room.members.find((member) => member.isLocal)?.id);
+  const transmitting = !!localId && !!chronicle?.participants.includes(localId);
   const cursor = useRef(new RoomContentReadCursor());
   const [unread, setUnread] = useState({ chat: false, chronicle: false });
   useEffect(() => {
@@ -37,7 +39,7 @@ export function RoomContentTabs({
           role="tab"
           aria-controls={`${idPrefix}-panel-${key}`}
           aria-selected={tab === key}
-          aria-label={`${key === "chat" ? "聊天" : "转录"}${unread[key] ? "，有新内容" : ""}`}
+          aria-label={`${key === "chat" ? "聊天" : "纪事"}${key === "chronicle" && transmitting ? "，语音转录中" : ""}${unread[key] ? "，有新内容" : ""}`}
           tabIndex={tab === key ? 0 : -1}
           onClick={() => select(key)}
           onKeyDown={(event) => {
@@ -60,7 +62,8 @@ export function RoomContentTabs({
           ) : (
             <NotebookPen size={13} aria-hidden="true" />
           )}
-          {key === "chat" ? "聊天" : "转录"}
+          {key === "chat" ? "聊天" : "纪事"}
+          {key === "chronicle" && transmitting ? <span> · 转录中</span> : null}
           {unread[key] ? <span className="chat-content-unread" aria-hidden="true" /> : null}
         </button>
       ))}

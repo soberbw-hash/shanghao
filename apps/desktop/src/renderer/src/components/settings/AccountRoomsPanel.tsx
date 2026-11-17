@@ -83,7 +83,7 @@ export const AccountRoomsPanel = ({ userId }: { userId: string }) => {
           {visibleRooms.map((room) => (
             <div className="account-room-row" key={room.roomId}>
               <span className="account-room-icon" style={roomIconStyle(room.iconColor)}>
-                <PrivateRoomIcon icon={room.icon} />
+                <PrivateRoomIcon icon={room.icon} className="size-full" />
               </span>
               <div className="account-room-copy">
                 <strong title={room.name}>{room.name}</strong>

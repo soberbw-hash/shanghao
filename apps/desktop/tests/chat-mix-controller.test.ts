@@ -88,17 +88,26 @@ async function fixture(pendingRecovery = false) {
   };
 }
 
-test("voice activity smoothly ducks background, preserves own voice, and restores after hangover", async () => {
+test("brief voice activity does not duck and sustained speech eases background down and back up", async () => {
   const f = await fixture();
   await f.tick(0, true);
-  await f.tick(100, true);
-  await f.tick(200, true);
-  assert(f.values[0] > f.values[1] && f.values[1] > f.values[2]);
-  assert(Math.abs(f.game.volume - 0.28) < 0.0001);
-  assert.equal(f.own.volume, 0.9);
+  await f.tick(100, false);
   await f.tick(500, false);
-  assert(Math.abs(f.game.volume - 0.28) < 0.0001);
-  for (let t = 1100; t <= 1800; t += 100) await f.tick(t, false);
+  assert.equal(f.values.length, 0, "a brief microphone trigger must not duck background audio");
+  assert.equal(f.game.volume, 0.8);
+
+  for (let t = 700; t <= 2400; t += 100) await f.tick(t, true);
+  assert(f.values[0] > f.values[1] && f.values[1] > f.values[2]);
+  assert(
+    f.game.volume > 0.28 && f.game.volume < 0.32,
+    "the attack should approach the target gradually",
+  );
+  assert.equal(f.own.volume, 0.9);
+  await f.tick(3300, false);
+  const duckedVolume = f.game.volume;
+  await f.tick(3400, false);
+  assert(f.game.volume >= duckedVolume, "recovery should begin without a sudden volume jump");
+  for (let t = 3500; t <= 9000; t += 100) await f.tick(t, false);
   assert.equal(f.game.volume, 0.8);
   assert.equal(f.controller.getPhase(), "ready");
   assert.deepEqual(f.journal, []);
@@ -122,6 +131,10 @@ test("speech received before the first worker tick survives startup recovery", a
     },
     () => now,
   );
+  controller.update({ enabled: true, inRoom: true, speaking: true });
+  await controller.tick();
+  assert.equal(changes, 0, "one short activity pulse must not trigger attenuation");
+  now += 300;
   controller.update({ enabled: true, inRoom: true, speaking: true });
   await controller.tick();
   assert(changes > 0, "startup discarded the only speech pulse");
@@ -156,9 +169,9 @@ test("no eligible session and declined writes never report successful balancing"
   );
   controller.update({ enabled: true, inRoom: true, speaking: true });
   await controller.tick();
-  assert.equal(controller.getPhase(), "waiting");
+  assert.equal(controller.getPhase(), "ready");
   visible = true;
-  now = 1200;
+  now = 300;
   controller.update({ enabled: true, inRoom: true, speaking: true });
   await controller.tick();
   assert.equal(controller.getPhase(), "waiting");
@@ -169,16 +182,17 @@ test("lost mutation reply triggers bounded automatic recovery before resuming ne
   const f = await fixture();
   f.uncertainWrite();
   await f.tick(0, true);
+  await f.tick(300, true);
   assert.equal(f.controller.getPhase(), "recovering");
   assert(f.game.volume < 0.8);
   const calls = f.values.length;
   await f.tick(500, true);
   assert.equal(f.values.length, calls);
-  await f.tick(1000, false);
+  await f.tick(1400, false);
   assert.equal(f.game.volume, 0.8);
   assert.deepEqual(f.journal, []);
   f.controller.update({ enabled: false, inRoom: true, speaking: false });
-  await f.tick(1100);
+  await f.tick(1600);
   assert.equal(f.controller.getPhase(), "off");
   await f.controller.stop();
 });
@@ -198,9 +212,11 @@ test("unresolved startup recovery blocks new volume writes; stopping is terminal
 test("manual background adjustment wins during a ramp and is not overwritten on shutdown", async () => {
   const f = await fixture();
   await f.tick(0, true);
-  f.game.volume = 0.61;
   await f.tick(100, true);
   await f.tick(200, true);
+  await f.tick(300, true);
+  f.game.volume = 0.61;
+  await f.tick(400, true);
   assert.equal(f.game.volume, 0.61);
   await f.controller.stop();
   assert.equal(f.game.volume, 0.61);
@@ -233,6 +249,9 @@ test("a slow native call is not duplicated by overlapping ticks or a concurrent 
   );
   await controller.tick();
   now = 100;
+  controller.update({ enabled: true, inRoom: true, speaking: true });
+  await controller.tick();
+  now = 400;
   controller.update({ enabled: true, inRoom: true, speaking: true });
   const first = controller.tick();
   await new Promise((resolve) => setImmediate(resolve));

@@ -1,20 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { BuiltInAvatarId } from "@private-voice/shared";
-import foxPortrait from "../../assets/account-avatars/03-peach-fox.svg";
-import catPortrait from "../../assets/account-avatars/01-sky-cat.svg";
-import duckPortrait from "../../assets/account-avatars/05-sun-duck.svg";
-import pandaPortrait from "../../assets/account-avatars/09-cloud-panda.svg";
-import dogPortrait from "../../assets/account-avatars/08-amber-dog.svg";
-
-// Keep the existing scene id as a legacy fallback; the normalized portrait travels
-// in avatarDataUrl so older clients render the same chosen channel avatar.
-const portraits = [
-  { id: "fox", label: "蜜桃狐", source: foxPortrait },
-  { id: "cat", label: "晴空猫", source: catPortrait },
-  { id: "duck", label: "太阳鸭", source: duckPortrait },
-  { id: "panda", label: "云朵熊猫", source: pandaPortrait },
-  { id: "corgi", label: "琥珀犬", source: dogPortrait },
-] as const;
+import { ACCOUNT_AVATAR_PRESETS } from "../../features/account/accountAvatarPresets";
 
 export function TemporaryAvatarPicker({
   avatarId,
@@ -32,7 +18,7 @@ export function TemporaryAvatarPicker({
   onPreparing: (value: boolean) => void;
 }) {
   const [preparing, setPreparing] = useState(false);
-  const [selectedPortrait, setSelectedPortrait] = useState<BuiltInAvatarId>();
+  const [selectedPortrait, setSelectedPortrait] = useState<string>();
   const selection = useRef(0);
   useEffect(
     () => () => {
@@ -40,7 +26,7 @@ export function TemporaryAvatarPicker({
     },
     [],
   );
-  const prepare = async (input: () => Promise<string>, id: BuiltInAvatarId, preset = false) => {
+  const prepare = async (input: () => Promise<string>, presetId?: string) => {
     if (disabled || preparing) return;
     const generation = ++selection.current;
     setPreparing(true);
@@ -48,8 +34,10 @@ export function TemporaryAvatarPicker({
     try {
       const image = await window.desktopApi.temporaryRooms.prepareAvatar(await input());
       if (generation === selection.current) {
-        setSelectedPortrait(preset ? id : undefined);
-        onChange(id, image);
+        setSelectedPortrait(presetId);
+        // The legacy scene id remains valid for older clients; the chosen image
+        // is sent separately in the normalized avatar data.
+        onChange(avatarId, image);
       }
     } catch {
       if (generation === selection.current) onError("这张图片无法使用，请选择较小的普通图片。");
@@ -74,42 +62,34 @@ export function TemporaryAvatarPicker({
           reader.onerror = () => reject(Error("avatar_read_failed"));
           reader.readAsDataURL(file);
         }),
-      avatarId,
     );
   };
   return (
     <div className="temporary-avatar-picker" role="group" aria-label="临时头像">
       <div className="temporary-avatar-portraits">
-        {portraits.map((avatar) => (
+        {ACCOUNT_AVATAR_PRESETS.map((avatar) => (
           <button
             type="button"
             key={avatar.id}
             disabled={disabled || preparing}
-            aria-label={`选择${avatar.label}`}
-            aria-pressed={
-              selectedPortrait === avatar.id ||
-              (!dataUrl && !selectedPortrait && avatarId === avatar.id)
-            }
+            aria-label={`选择${avatar.name}`}
+            aria-pressed={selectedPortrait === avatar.id}
             className="temporary-avatar-option"
             onClick={() => {
-              void prepare(
-                async () => {
-                  const { prepareAccountAvatar } =
-                    await import("../../features/account/prepareAccountAvatar");
-                  return prepareAccountAvatar(avatar.source, "image/png", 128);
-                },
-                avatar.id,
-                true,
-              );
+              void prepare(async () => {
+                const { prepareAccountAvatar } =
+                  await import("../../features/account/prepareAccountAvatar");
+                return prepareAccountAvatar(avatar.source, "image/png", 128);
+              }, avatar.id);
             }}
           >
             <img src={avatar.source} alt="" width={36} height={36} draggable={false} />
           </button>
         ))}
-        {dataUrl && !selectedPortrait && (
-          <img src={dataUrl} alt="自定义临时头像" width={36} height={36} className="rounded-lg" />
-        )}
       </div>
+      {dataUrl && !selectedPortrait && (
+        <img src={dataUrl} alt="当前临时头像" width={36} height={36} className="rounded-lg" />
+      )}
       <label className="temporary-avatar-upload">
         {preparing ? "处理图片…" : "上传头像"}
         <input

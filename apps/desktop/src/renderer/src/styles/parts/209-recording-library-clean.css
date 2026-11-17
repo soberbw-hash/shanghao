@@ -62,8 +62,8 @@
 
 .recording-processing-settings {
   position: relative;
-  color: #526b87;
-  font-size: 12px;
+  color: #405c79;
+  font-size: 13px;
 }
 
 .recording-processing-settings > summary {
@@ -76,7 +76,7 @@
 }
 
 .recording-processing-settings > summary small {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .recording-processing-settings > summary svg {

@@ -10,6 +10,7 @@ export const voiceReplayApi: VoiceReplayApi = {
   transcribeLocal: (id) => ipcRenderer.invoke(channels.transcribeLocal, id),
   readTranscript: (id) => ipcRenderer.invoke(channels.readTranscript, id),
   readTranscriptDetail: (id) => ipcRenderer.invoke(channels.readTranscriptDetail, id),
+  searchTranscripts: (query) => ipcRenderer.invoke(channels.searchTranscripts, query),
   reviseTranscriptSegment: (id, expectedCreatedAt, index, text) =>
     ipcRenderer.invoke(channels.reviseTranscriptSegment, id, expectedCreatedAt, index, text),
   remove: (id) => ipcRenderer.invoke(channels.remove, id),

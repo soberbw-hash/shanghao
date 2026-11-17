@@ -37,13 +37,194 @@ import portrait30 from "../../assets/account-avatars/30-coral-mushroom.svg";
 import portrait31 from "../../assets/account-avatars/31-linen-ghost.svg";
 import portrait32 from "../../assets/account-avatars/32-apricot-squirrel.svg";
 
+const ipPortraits = import.meta.glob<string>("../../assets/account-avatars/ip-as-logo/*.webp", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
+
 export interface AccountAvatarPreset {
   id: AccountAvatarPresetId;
   name: string;
   source: string;
 }
 
-export const ACCOUNT_AVATAR_PRESETS: AccountAvatarPreset[] = [
+const allAccountAvatarPresets: AccountAvatarPreset[] = [
+  {
+    id: "ip-01",
+    name: "小狐狸",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-01.webp"]!,
+  },
+  {
+    id: "ip-02",
+    name: "小狗",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-02.webp"]!,
+  },
+  {
+    id: "ip-03",
+    name: "机器人",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-03.webp"]!,
+  },
+  {
+    id: "ip-04",
+    name: "考拉",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-04.webp"]!,
+  },
+  {
+    id: "ip-05",
+    name: "橡果",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-05.webp"]!,
+  },
+  {
+    id: "ip-06",
+    name: "白熊",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-06.webp"]!,
+  },
+  {
+    id: "ip-07",
+    name: "蓝鲸",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-07.webp"]!,
+  },
+  {
+    id: "ip-08",
+    name: "仙人掌",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-08.webp"]!,
+  },
+  {
+    id: "ip-09",
+    name: "熊猫",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-09.webp"]!,
+  },
+  {
+    id: "ip-10",
+    name: "火箭",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-10.webp"]!,
+  },
+  {
+    id: "ip-11",
+    name: "蘑菇",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-11.webp"]!,
+  },
+  {
+    id: "ip-12",
+    name: "企鹅",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-12.webp"]!,
+  },
+  {
+    id: "ip-13",
+    name: "牛仔",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-13.webp"]!,
+  },
+  {
+    id: "ip-14",
+    name: "小熊",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-14.webp"]!,
+  },
+  {
+    id: "ip-15",
+    name: "微笑鲸",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-15.webp"]!,
+  },
+  {
+    id: "ip-16",
+    name: "狮子",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-16.webp"]!,
+  },
+  {
+    id: "ip-17",
+    name: "小忍者",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-17.webp"]!,
+  },
+  {
+    id: "ip-18",
+    name: "小石头",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-18.webp"]!,
+  },
+  {
+    id: "ip-19",
+    name: "蜗牛",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-19.webp"]!,
+  },
+  {
+    id: "ip-20",
+    name: "云朵",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-20.webp"]!,
+  },
+  {
+    id: "ip-21",
+    name: "青蛙",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-21.webp"]!,
+  },
+  {
+    id: "ip-22",
+    name: "蝠鲼",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-22.webp"]!,
+  },
+  {
+    id: "ip-23",
+    name: "奶油熊",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-23.webp"]!,
+  },
+  {
+    id: "ip-24",
+    name: "小方块",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-24.webp"]!,
+  },
+  {
+    id: "ip-25",
+    name: "白鲸",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-25.webp"]!,
+  },
+  {
+    id: "ip-26",
+    name: "小茶壶",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-26.webp"]!,
+  },
+  {
+    id: "ip-27",
+    name: "白猫",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-27.webp"]!,
+  },
+  {
+    id: "ip-28",
+    name: "幽灵",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-28.webp"]!,
+  },
+  {
+    id: "ip-29",
+    name: "水母",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-29.webp"]!,
+  },
+  {
+    id: "ip-30",
+    name: "小精灵",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-30.webp"]!,
+  },
+  {
+    id: "ip-31",
+    name: "猫咪",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-31.webp"]!,
+  },
+  {
+    id: "ip-32",
+    name: "小蒙面",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-32.webp"]!,
+  },
+  {
+    id: "ip-33",
+    name: "兔子",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-33.webp"]!,
+  },
+  {
+    id: "ip-34",
+    name: "六角恐龙",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-34.webp"]!,
+  },
+  {
+    id: "ip-35",
+    name: "白犬",
+    source: ipPortraits["../../assets/account-avatars/ip-as-logo/ip-35.webp"]!,
+  },
   { id: "sky-cat", name: "晴空猫", source: skyCat },
   { id: "mint-bear", name: "薄荷熊", source: mintBear },
   { id: "peach-fox", name: "蜜桃狐", source: peachFox },
@@ -78,11 +259,17 @@ export const ACCOUNT_AVATAR_PRESETS: AccountAvatarPreset[] = [
   { id: "apricot-squirrel", name: "杏子松鼠", source: portrait32 },
 ];
 
+export const ACCOUNT_AVATAR_PRESETS = allAccountAvatarPresets.filter((preset) =>
+  preset.id.startsWith("ip-"),
+);
+
 export const accountAvatarPresetSource = (id?: AccountAvatarPresetId): string | undefined =>
   ACCOUNT_AVATAR_PRESETS.find((preset) => preset.id === id)?.source;
 export const accountProfileAvatarSource = (profile?: AccountProfile): string | undefined =>
   profile
     ? accountAvatarPresetSource(
-        profile.accountAvatarPresetId ?? accountAvatarPresetForIdentity(profile.userId),
+        profile.accountAvatarPresetId?.startsWith("ip-")
+          ? profile.accountAvatarPresetId
+          : accountAvatarPresetForIdentity(profile.userId),
       )
     : undefined;

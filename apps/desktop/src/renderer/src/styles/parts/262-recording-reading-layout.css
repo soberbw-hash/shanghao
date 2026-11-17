@@ -1,29 +1,5 @@
-/* Merge library utilities into the previously empty settings header. */
-.settings-library-toolbar-slot {
-  display: none;
-  min-width: 0;
-}
-.settings-recording-shell .settings-page-header {
-  display: grid;
-  grid-template-columns: 168px minmax(0, 1fr) auto;
-  gap: 20px;
-  min-height: 40px;
-}
-.settings-recording-shell .settings-page-eyebrow,
-.settings-recording-shell .settings-save-notice {
-  display: none;
-}
-.settings-recording-shell .settings-page-title {
-  font-size: 20px;
-}
-.settings-recording-shell .settings-library-toolbar-slot {
-  display: block;
-}
-.settings-library-toolbar-slot .recording-library-toolbar {
+.settings-recording-content .recording-library-toolbar {
   gap: 10px;
-}
-.settings-recording-content .recording-library-page--docked {
-  grid-template-rows: minmax(0, 1fr);
 }
 .recording-library-page .voice-memory-detail {
   margin-top: 0;
@@ -208,7 +184,7 @@
   .recording-player-subtitle {
     display: none;
   }
-  .settings-library-toolbar-slot .recording-library-local-note {
+  .settings-recording-content .recording-library-local-note {
     display: none;
   }
 }

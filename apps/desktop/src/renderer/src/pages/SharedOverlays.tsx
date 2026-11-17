@@ -12,6 +12,7 @@ import { SafeModeBanner } from "../components/status/SafeModeBanner";
 import { UpdateModal } from "../components/status/UpdateModal";
 import { ReleaseNotesModal } from "../components/status/ReleaseNotesModal";
 import { DailyRoomReportModal } from "../components/status/DailyRoomReportModal";
+import { VoiceReplayLibraryOverlay } from "../components/audio/VoiceReplayLibraryOverlay";
 import { useAppStore } from "../store/appStore";
 import { useRoomStore } from "../store/roomStore";
 import { useSettingsStore } from "../store/settingsStore";
@@ -117,6 +118,7 @@ export const SharedOverlays = () => {
   return (
     <>
       <ToastRegion />
+      <VoiceReplayLibraryOverlay />
       {bootstrapPhase === "ready" && !updatePending ? <ReleaseNotesModal /> : null}
       <AnimatePresence mode="wait">
         {showDailyReport && yesterdayReport ? (

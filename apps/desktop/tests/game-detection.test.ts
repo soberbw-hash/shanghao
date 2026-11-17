@@ -42,6 +42,16 @@ test("game detection uses structured exact process matches", () => {
 });
 
 test("Peacekeeper Elite requires game evidence when the emulator is shared", () => {
+  assert.equal(matchKnownGame(snapshot("wgprojectm", "和平精英模拟器高清版")), "和平精英");
+  assert.equal(matchKnownGame(snapshot("wgprojectm", "WeGame")), undefined);
+  const running = [
+    JSON.parse(snapshot("LeagueClient", "League of Legends", "", "", false)),
+    JSON.parse(snapshot("wgprojectm", "和平精英模拟器高清版", "", "", false)),
+    JSON.parse(snapshot("electron", "上号", "", "", true)),
+  ];
+  assert.equal(matchKnownGame(running, "和平精英"), "和平精英");
+  running[0].IsForeground = true;
+  assert.equal(matchKnownGame(running, "和平精英"), "英雄联盟");
   assert.equal(matchKnownGame(snapshot("AndroidEmulatorEx", "和平精英")), "和平精英");
   assert.equal(
     matchKnownGame(snapshot("aow_exe", "", "", "--package com.tencent.tmgp.pubgmhd")),

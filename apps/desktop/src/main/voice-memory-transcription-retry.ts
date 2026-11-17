@@ -6,14 +6,12 @@ import type {
 import type { TranscriptionChunkRuntimeResult } from "./asr-benchmark-runtime";
 import { classifyLocalModelRuntimeError } from "./local-model-runtime";
 import { waitForTask } from "./task-cancellation";
-const MAX_TRANSCRIPTION_CHUNK_ATTEMPTS = 3;
+import {
+  transcriptionAttemptLimit,
+  isFatalTranscriptionRuntimeFailure,
+} from "./transcription-retry-policy";
+export { isFatalTranscriptionRuntimeFailure } from "./transcription-retry-policy";
 const TRANSCRIPTION_CHUNK_RETRY_DELAY_MS = 1_000;
-export const isFatalTranscriptionRuntimeFailure = (error: unknown): boolean => {
-  const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
-  return /(?:0xc000001d|-1073741795|3221225501|illegal instruction|ark_asr_(?:backend_missing|q8_model_missing|q8_quantization_required)|unable to compare versions for packaging|no package metadata was found|modulenotfounderror|no module named|importerror:|dll load failed)/i.test(
-    message,
-  );
-};
 
 export async function transcribeChunkWithRetry(
   operation: () => Promise<TranscriptionChunkRuntimeResult>,
@@ -24,6 +22,7 @@ export async function transcribeChunkWithRetry(
     unit: number;
     totalUnits: number;
     benchmark?: boolean;
+    maxAttempts?: number;
   },
   log: (
     level: RendererLogPayload["level"],
@@ -46,7 +45,7 @@ export async function transcribeChunkWithRetry(
   const measuredTimings: TranscriptionChunkRuntimeResult["timing"][] = [];
   const operationStarted = performance.now();
   const attemptHistory: VoiceMemoryTranscriptionAttempt[] = [];
-  const maxAttempts = context.benchmark ? 2 : MAX_TRANSCRIPTION_CHUNK_ATTEMPTS;
+  const maxAttempts = transcriptionAttemptLimit(context.benchmark, context.maxAttempts);
   const rawAnomalyAttempts: NonNullable<TranscriptionChunkRuntimeResult["rawAnomalyAttempts"]> = [];
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (signal.aborted) throw new Error("ai_task_paused");

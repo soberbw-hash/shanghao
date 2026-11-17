@@ -3,8 +3,7 @@ import type { PrivateRoomInfo, RoomMember, RoomBan } from "@private-voice/shared
 import { shanghaoCore } from "../../core/shanghaoCore";
 import { privateRoomErrorMessage } from "../../features/room/privateRoomMessages";
 import { Button } from "../base/Button";
-import { DialogCloseButton } from "../base/DialogCloseButton";
-import { PrivateRoomEditor } from "./PrivateRoomEditor";
+import { RoomManagementIdentity } from "./RoomManagementIdentity";
 import { RoomMemoryPanel } from "./RoomMemoryPanel";
 export const RoomManagementDialog = ({
   room,
@@ -19,7 +18,7 @@ export const RoomManagementDialog = ({
   const [bans, setBans] = useState<RoomBan[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [editing, setEditing] = useState(false);
+  const [currentRoom, setCurrentRoom] = useState(room);
   const [action, setAction] = useState<{ member: RoomMember; kind: "kick" | "ban" }>();
   useEffect(() => {
     dialog.current?.showModal();
@@ -51,7 +50,7 @@ export const RoomManagementDialog = ({
   return (
     <dialog
       ref={dialog}
-      aria-labelledby="room-management-title"
+      aria-label={`房间管理：${currentRoom.name}`}
       style={{ background: "rgba(247, 251, 255, 0.98)" }}
       onCancel={(event) => {
         if (busy) event.preventDefault();
@@ -59,15 +58,13 @@ export const RoomManagementDialog = ({
       }}
       className="island-panel m-auto max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-3xl p-6 text-[#263b56] backdrop:bg-slate-900/20"
     >
-      <header className="mb-4 flex items-center gap-3">
-        <h2 id="room-management-title" className="min-w-0 flex-1 truncate text-lg font-semibold">
-          {room.name}
-        </h2>
-        <Button variant="secondary" disabled={busy} onClick={() => setEditing(true)}>
-          编辑
-        </Button>
-        <DialogCloseButton onClick={onClose} disabled={busy} label="关闭房间管理" />
-      </header>
+      <RoomManagementIdentity
+        room={currentRoom}
+        busy={busy}
+        run={run}
+        onChange={setCurrentRoom}
+        onClose={onClose}
+      />
       <RoomMemoryPanel roomId={room.roomId} />
       {members.some((member) => !member.isEmptySlot) && (
         <h3 className="mb-2 mt-5 text-sm font-semibold">在线成员</h3>
@@ -176,14 +173,6 @@ export const RoomManagementDialog = ({
         <p role="alert" className="mt-3 text-sm text-red-600">
           {error}
         </p>
-      )}
-      {editing && (
-        <PrivateRoomEditor
-          room={room}
-          defaultName="我的"
-          onClose={() => setEditing(false)}
-          onSaved={onClose}
-        />
       )}
     </dialog>
   );

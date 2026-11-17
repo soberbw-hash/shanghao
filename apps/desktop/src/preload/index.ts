@@ -7,6 +7,14 @@ import { backgroundAudioApi } from "./background-audio";
 import { IPC_CHANNELS, type DesktopApi } from "@private-voice/shared";
 
 const desktopApi: DesktopApi = {
+  chronicleArchive: {
+    export: (roomId) => ipcRenderer.invoke(IPC_CHANNELS.chronicleArchive.export, roomId),
+    read: (roomId) => ipcRenderer.invoke(IPC_CHANNELS.chronicleArchive.read, roomId),
+    append: (roomId, entries) =>
+      ipcRenderer.invoke(IPC_CHANNELS.chronicleArchive.append, roomId, entries),
+    react: (roomId, id, reaction) =>
+      ipcRenderer.invoke(IPC_CHANNELS.chronicleArchive.react, roomId, id, reaction),
+  },
   backgroundAudio: backgroundAudioApi,
   recordingRecycle: recordingRecycleApi,
   voiceReplay: voiceReplayApi,
@@ -37,8 +45,8 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.prepareAvatar, dataUrl),
     getProfile: () => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.getProfile),
     saveProfile: (profile) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.saveProfile, profile),
-    create: () => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.create),
-    join: (code) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.join, code),
+    create: (mode) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.create, mode),
+    join: (code, mode) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.join, code, mode),
     manage: (request) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.manage, request),
     release: (contextId) => ipcRenderer.invoke(IPC_CHANNELS.temporaryRooms.release, contextId),
     onChanged: (listener) => {

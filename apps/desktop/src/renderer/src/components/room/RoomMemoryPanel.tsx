@@ -202,7 +202,7 @@ const RoomMemoryEditor = ({ roomId }: { roomId: string }) => {
             <OperationFeedbackIcon
               state={saving ? "pending" : notice === "记忆已保存" ? "success" : "idle"}
             />
-            {saving ? "保存中…" : notice === "记忆已保存" ? "已保存" : "保存记忆"}
+            {saving ? "保存中…" : notice === "记忆已保存" ? "已保存" : "保存"}
           </Button>
         )}
       </div>

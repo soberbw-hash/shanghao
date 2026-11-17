@@ -225,7 +225,11 @@ export const App = () => {
       username: accountSnapshot.profile?.username,
       displayName: accountSnapshot.profile?.displayName,
       avatarUrl:
-        accountSnapshot.profile?.avatarUrl ?? accountProfileAvatarSource(accountSnapshot.profile),
+        accountSnapshot.profile?.accountAvatarPresetId &&
+        !accountSnapshot.profile.accountAvatarPresetId.startsWith("ip-")
+          ? accountProfileAvatarSource(accountSnapshot.profile)
+          : (accountSnapshot.profile?.avatarUrl ??
+            accountProfileAvatarSource(accountSnapshot.profile)),
       isGuest: accountSnapshot.status === "guest",
       nickname: accountSnapshot.profile?.displayName ?? settings.nickname,
       avatarPath: settings.avatarPath,

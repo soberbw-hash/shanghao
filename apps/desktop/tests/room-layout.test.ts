@@ -6,6 +6,23 @@ import test from "node:test";
 import { resolveMemberSceneZones } from "../src/renderer/src/features/voice-scene/sceneZones";
 import { readRendererCss } from "./helpers/read-renderer-css";
 
+test("music provider marks render without outer frames or persistent pulse rings", () => {
+  const styles = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/styles/parts/20-activity-shell.css"),
+    "utf8",
+  );
+  const badge = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/room/MusicActivityBadge.tsx"),
+    "utf8",
+  );
+  const iconRule = styles.match(/\.music-activity-icon\s*\{([^}]+)\}/)?.[1] ?? "";
+  const appleRule = styles.match(/\.music-activity-icon\.is-apple-music\s*\{([^}]+)\}/)?.[1] ?? "";
+
+  assert.doesNotMatch(iconRule, /border\s*:|background\s*:|box-shadow\s*:/);
+  assert.doesNotMatch(appleRule, /border\s*:|background\s*:|box-shadow\s*:/);
+  assert.equal(badge.includes('<i aria-hidden="true" />'), false);
+});
+
 const roomPagePath = path.resolve(process.cwd(), "src/renderer/src/pages/RoomPage.tsx");
 const roomActivityDetectionPath = path.resolve(
   process.cwd(),

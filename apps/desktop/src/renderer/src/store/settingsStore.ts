@@ -110,6 +110,7 @@ const fallbackSettings: AppSettings = {
   recordingLibraryQuotaGb: 20,
   isRecordingWasteAutoCleanupEnabled: true,
   aiAsrModel: DEFAULT_AI_ASR_MODEL_ID,
+  aiAsrGameLexicon: [],
   aiTranscriptionProvider: "cloud",
   aiOrganizerProvider: "cloud",
   aiRoomAskProvider: "cloud",

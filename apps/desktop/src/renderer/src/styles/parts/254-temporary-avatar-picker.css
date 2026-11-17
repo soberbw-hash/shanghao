@@ -1,16 +1,16 @@
 .temporary-avatar-picker {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
 .temporary-avatar-portraits {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  min-width: 0;
-  overflow-x: auto;
-  padding: 3px;
+  max-height: 132px;
+  overflow-y: auto;
 }
 .temporary-avatar-portraits > * {
   flex: 0 0 auto;

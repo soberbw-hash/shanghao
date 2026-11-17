@@ -16,6 +16,7 @@ export class ChronicleMicrophoneCapture {
     private readonly speaking: () => boolean,
     private readonly send: (part: ChronicleAudioPart) => Promise<void>,
     private readonly status: (message: string) => void,
+    private readonly gameContext: () => ChronicleAudioPart["gameContext"] = () => undefined,
   ) {}
 
   start(): void {
@@ -39,6 +40,7 @@ export class ChronicleMicrophoneCapture {
       const chunks: Blob[] = [];
       const start = performance.now();
       const startedAt = Date.now();
+      const gameContext = this.gameContext();
       let speech = false;
       let failed = false;
       this.probe = setInterval(() => {
@@ -68,7 +70,7 @@ export class ChronicleMicrophoneCapture {
           blob.size > 0 &&
           blob.size <= 165_000
         ) {
-          void this.enqueue(blob, durationMs, startedAt);
+          void this.enqueue(blob, durationMs, startedAt, gameContext);
         }
         this.start();
       };
@@ -125,7 +127,12 @@ export class ChronicleMicrophoneCapture {
     if (!this.stopped) this.captureRetry = setTimeout(() => this.start(), 10_000);
   }
 
-  private async enqueue(blob: Blob, durationMs: number, startedAt: number): Promise<void> {
+  private async enqueue(
+    blob: Blob,
+    durationMs: number,
+    startedAt: number,
+    gameContext?: ChronicleAudioPart["gameContext"],
+  ): Promise<void> {
     let bytes: Uint8Array;
     try {
       bytes = new Uint8Array(await blob.arrayBuffer());
@@ -145,6 +152,7 @@ export class ChronicleMicrophoneCapture {
         startedAt,
         mime: blob.type.startsWith("audio/ogg") ? "audio/ogg" : "audio/webm",
         data: btoa(binary),
+        gameContext,
       },
       expires: Date.now() + 120_000,
     });
@@ -158,13 +166,16 @@ export class ChronicleMicrophoneCapture {
     if (!next) return;
     this.busy = true;
     let retry = false;
+    let retryDelay = 10_000;
     try {
       await this.send(next.part);
       if (this.queue[0] === next) this.queue.shift();
       if (!this.stopped) this.status("正在记录，稍后汇总");
-    } catch {
+    } catch (error) {
       retry = true;
-      if (!this.stopped) this.status("连接恢复后自动继续");
+      const quota = error instanceof Error && error.message === "chronicle_speech_quota";
+      if (quota) retryDelay = 60_000;
+      if (!this.stopped) this.status(quota ? "语音服务额度不足，等待恢复" : "连接恢复后自动继续");
     } finally {
       this.busy = false;
       if (!this.stopped)
@@ -172,7 +183,7 @@ export class ChronicleMicrophoneCapture {
           () => {
             void this.drain();
           },
-          retry ? 10_000 : 0,
+          retry ? retryDelay : 0,
         );
     }
   }

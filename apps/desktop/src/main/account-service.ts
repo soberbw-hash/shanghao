@@ -727,6 +727,16 @@ export class AccountDesktopService extends EventEmitter {
           ? { accountAvatarPresetId: input.accountAvatarPresetId }
           : { dataUrl: input.dataUrl },
       ),
+    }).catch((error: unknown) => {
+      if (
+        this.accountProvider === "cloudbase" &&
+        input.accountAvatarPresetId?.startsWith("ip-") &&
+        error instanceof AccountDesktopError &&
+        error.message === "account_avatar_invalid"
+      ) {
+        throw new AccountDesktopError("account_avatar_server_outdated", { cause: error });
+      }
+      throw error;
     });
     if (
       !ownerId ||

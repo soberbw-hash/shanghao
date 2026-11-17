@@ -51,14 +51,17 @@ export function registerTemporaryRoomsIpc(options: {
       return identity.saveProfile(profile);
     },
   );
-  ipcMain.handle(IPC_CHANNELS.temporaryRooms.create, (event) => {
+  ipcMain.handle(IPC_CHANNELS.temporaryRooms.create, (event, mode?: "direct" | "server") => {
     requireOwner(event);
-    return client.create();
+    return client.create(mode);
   });
-  ipcMain.handle(IPC_CHANNELS.temporaryRooms.join, (event, code: string) => {
-    requireOwner(event);
-    return client.join(code);
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.temporaryRooms.join,
+    (event, code: string, mode?: "direct" | "server") => {
+      requireOwner(event);
+      return client.join(code, mode);
+    },
+  );
   ipcMain.handle(
     IPC_CHANNELS.temporaryRooms.manage,
     (event, request: TemporaryRoomManageRequest) => {

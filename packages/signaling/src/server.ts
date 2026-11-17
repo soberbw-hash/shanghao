@@ -243,8 +243,10 @@ export class SignalingServer extends EventEmitter {
       (request) =>
         this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
     );
-    this.chronicle.configure(options.chronicleServices ?? this.cloudAi, (roomId) =>
-      this.broadcastSnapshot(roomId),
+    this.chronicle.configure(
+      options.chronicleServices ?? this.cloudAi,
+      (roomId) => this.broadcastSnapshot(roomId),
+      this.dailyRoomReports,
     );
     this.privateRoomHttp = new PrivateRoomHttpController(
       this.roomDirectory,

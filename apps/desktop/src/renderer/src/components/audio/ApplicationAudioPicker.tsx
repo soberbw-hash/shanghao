@@ -156,7 +156,6 @@ export function ApplicationAudioPicker(props: Props) {
               <div className="application-audio-empty">
                 <SearchX size={28} aria-hidden="true" />
                 <strong>还没有打开音乐应用</strong>
-                <p>打开 QQ音乐、网易云音乐、Apple Music 等音乐应用，再刷新。</p>
               </div>
             )}
           </div>

@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import type { RoomIconColor, RoomIconId } from "@private-voice/shared";
 import { roomIconColors } from "./roomIconColors";
+import roomCharacters from "../../assets/room-icons/room-characters.png";
+import { ROOM_ICON_IDS } from "@private-voice/shared";
 const icons: Record<RoomIconId, LucideIcon> = {
   gamepad: Gamepad2,
   headphones: Headphones,
@@ -77,6 +79,23 @@ export const PrivateRoomIcon = ({
   color?: RoomIconColor;
 }) => {
   const Icon = icons[icon];
+  const index = ROOM_ICON_IDS.indexOf(icon);
+  if (index >= 0) {
+    return (
+      <span
+        className={className}
+        aria-hidden="true"
+        style={{
+          display: "inline-block",
+          flexShrink: 0,
+          borderRadius: "22%",
+          backgroundImage: `url(${roomCharacters})`,
+          backgroundSize: "500% 400%",
+          backgroundPosition: `${(index % 5) * 25}% ${Math.floor(index / 5) * (100 / 3)}%`,
+        }}
+      />
+    );
+  }
   return (
     <Icon
       className={className}

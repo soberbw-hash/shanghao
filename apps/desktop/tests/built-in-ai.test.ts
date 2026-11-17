@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import { execFileSync } from "node:child_process";
+import ffmpegPath from "ffmpeg-static";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { CloudAsrHttpController } from "../../../packages/signaling/src/cloud-asr-http-controller";
 import { CloudAsrService } from "../../../packages/signaling/src/cloud-asr-service";
+import { convertChronicleWebm } from "../../../packages/signaling/src/cloud-asr-convert";
 import { CloudAiService } from "../../../packages/signaling/src/cloud-ai-service";
 import type { AccountBackend } from "../../../packages/signaling/src/account-service";
 import { BuiltInAiClient } from "../src/main/built-in-ai-client";
@@ -25,6 +28,131 @@ const auth = {
 };
 const textAuth = { authorization: auth.authorization, "content-type": "application/json" };
 const audio = Buffer.from("synthetic-audio");
+
+test("real WebM audio remuxes to bounded Ogg Opus without disk writes and supports cancellation", async (t) => {
+  assert.ok(ffmpegPath);
+  const old = process.env.SHANGHAO_ASR_FFMPEG;
+  process.env.SHANGHAO_ASR_FFMPEG = ffmpegPath;
+  t.after(() => {
+    if (old === undefined) delete process.env.SHANGHAO_ASR_FFMPEG;
+    else process.env.SHANGHAO_ASR_FFMPEG = old;
+  });
+  const webm = execFileSync(ffmpegPath, [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:duration=1",
+    "-c:a",
+    "libopus",
+    "-f",
+    "webm",
+    "pipe:1",
+  ]);
+  const ogg = await convertChronicleWebm(webm, new AbortController().signal);
+  assert.equal(ogg.toString("ascii", 0, 4), "OggS");
+  assert.ok(ogg.includes(Buffer.from("OpusHead")));
+  assert.ok(ogg.length < 20000);
+  const decode = (input: Buffer) =>
+    execFileSync(
+      ffmpegPath,
+      ["-v", "error", "-i", "pipe:0", "-f", "s16le", "-ac", "1", "-ar", "16000", "pipe:1"],
+      { input },
+    );
+  const originalPcm = decode(webm);
+  const remuxedPcm = decode(ogg);
+  assert.ok(Math.abs(originalPcm.length - remuxedPcm.length) <= 640);
+  let maximumDifference = 0;
+  for (let i = 0; i + 1 < Math.min(originalPcm.length, remuxedPcm.length); i += 2)
+    maximumDifference = Math.max(
+      maximumDifference,
+      Math.abs(originalPcm.readInt16LE(i) - remuxedPcm.readInt16LE(i)),
+    );
+  assert.ok(maximumDifference <= 64);
+  const stereo = execFileSync(ffmpegPath, [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:duration=1",
+    "-ac",
+    "2",
+    "-c:a",
+    "libopus",
+    "-f",
+    "webm",
+    "pipe:1",
+  ]);
+  await assert.rejects(
+    convertChronicleWebm(stereo, new AbortController().signal),
+    /format_unsupported/,
+  );
+  const tooLong = execFileSync(ffmpegPath, [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "anullsrc=r=48000:cl=mono",
+    "-t",
+    "121",
+    "-c:a",
+    "libopus",
+    "-f",
+    "webm",
+    "pipe:1",
+  ]);
+  await assert.rejects(
+    convertChronicleWebm(tooLong, new AbortController().signal),
+    /format_unsupported/,
+  );
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(convertChronicleWebm(webm, controller.signal));
+  const duringConversion = new AbortController();
+  const pending = convertChronicleWebm(webm, duringConversion.signal);
+  duringConversion.abort();
+  await assert.rejects(pending, /conversion_cancelled/);
+  await assert.rejects(
+    convertChronicleWebm(Buffer.from("bad"), new AbortController().signal),
+    /conversion_failed/,
+  );
+});
+
+test("DeepSeek ASR uses its own endpoint without a model field and rejects incompatible audio", async () => {
+  let called = 0;
+  const service = new CloudAsrService(
+    "fixture",
+    async (url, init) => {
+      called++;
+      assert.equal(String(url), "https://api.deepseek.com/v1/tools/asr");
+      assert.equal((init?.body as FormData).has("model"), false);
+      assert.equal((init?.body as FormData).has("file"), true);
+      return new Response('{"text":"测试"}');
+    },
+    "https://api.deepseek.com/v1/tools/asr",
+    "deepseek-asr",
+  );
+  const wave = Buffer.alloc(44);
+  wave.write("RIFF");
+  wave.writeUInt16LE(1, 22);
+  assert.equal(
+    (await service.transcribe(wave, "audio/wav", new AbortController().signal)).text,
+    "测试",
+  );
+  await assert.rejects(
+    service.transcribe(audio, "audio/webm", new AbortController().signal),
+    /format_unsupported/,
+  );
+  wave.writeUInt16LE(2, 22);
+  await assert.rejects(
+    service.transcribe(wave, "audio/wav", new AbortController().signal),
+    /format_unsupported/,
+  );
+  assert.equal(called, 1);
+});
 const options = {
   apiKey: "server-text-key",
   baseUrl: "https://example.com",

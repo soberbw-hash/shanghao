@@ -241,6 +241,24 @@ const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): Dail
           .filter((recap): recap is DailyRoomRecordingRecap => Boolean(recap))
           .slice(-6)
       : [],
+    chronicleRecaps: Array.isArray(source.chronicleRecaps)
+      ? source.chronicleRecaps
+          .filter(
+            (entry) =>
+              entry &&
+              typeof entry.id === "string" &&
+              typeof entry.createdAt === "string" &&
+              Number.isFinite(Date.parse(entry.createdAt)) &&
+              typeof entry.text === "string" &&
+              entry.text.trim(),
+          )
+          .map((entry) => ({
+            id: entry.id.slice(0, 180),
+            createdAt: entry.createdAt,
+            text: entry.text.trim().slice(0, 800),
+          }))
+          .slice(-60)
+      : [],
     peakConcurrentAt:
       typeof source.peakConcurrentAt === "string" ? source.peakConcurrentAt : undefined,
     lastExit:
@@ -335,6 +353,37 @@ export class DailyRoomReportStore {
     report.hadActivity = true;
     this.touch(report, now);
     return { publishedAt, serverRevision: report.revision ?? 0 };
+  }
+
+  publishChronicleRecap(
+    roomIdValue: string,
+    id: string,
+    textValue: string,
+    sourceAt: number,
+    now = Date.now(),
+  ): { serverRevision: number; date: string } | undefined {
+    if (!isRoomId(roomIdValue) || !id.trim() || id.length > 180 || !Number.isFinite(sourceAt))
+      return undefined;
+    const text = textValue.replace(/\s+/gu, " ").trim().slice(0, 800);
+    if (!text) return undefined;
+    const date = getShanghaiDate(sourceAt);
+    const reportTimestamp = Date.parse(`${date}T12:00:00+08:00`);
+    const ageDays = Math.round(
+      (Date.parse(`${getShanghaiDate(now)}T12:00:00+08:00`) - reportTimestamp) / 86_400_000,
+    );
+    if (!Number.isFinite(reportTimestamp) || ageDays < 0 || ageDays > RETAIN_DAYS) return undefined;
+    const report = this.getMutableReport(roomIdValue, reportTimestamp);
+    const entries = report.chronicleRecaps ?? [];
+    if (entries.some((entry) => entry.id === id))
+      return { serverRevision: report.revision ?? 0, date };
+    report.chronicleRecaps = [
+      ...entries,
+      { id, createdAt: new Date(sourceAt).toISOString(), text },
+    ].slice(-60);
+    report.commentary = undefined;
+    report.hadActivity = true;
+    this.touch(report, now);
+    return { serverRevision: report.revision ?? 0, date };
   }
 
   recordJoin(
@@ -449,7 +498,12 @@ export class DailyRoomReportStore {
     this.gamesByDay.set(key, dayGames);
     const roomGames = (this.reports.gameParticipants[roomIdValue] ??= {});
     const persistedDayGames = (roomGames[report.date] ??= {});
-    persistedDayGames[normalizedGameName] = [...players];
+    Object.defineProperty(persistedDayGames, normalizedGameName, {
+      value: [...players],
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
     report.games = [...dayGames].map(([name, peers]) => ({ name, participantCount: peers.size }));
     report.hadActivity = true;
     this.activeGames.set(activeKey, {

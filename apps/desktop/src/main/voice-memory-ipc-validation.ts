@@ -106,6 +106,12 @@ export const requireVoiceMemoryProcessRequest = (value: unknown): VoiceMemoryPro
     !validOptionalBoolean(request.transcribe) ||
     !validOptionalBoolean(request.fuse) ||
     !validOptionalBoolean(request.restartTranscription) ||
+    (request.retryUnitIds !== undefined &&
+      (!Array.isArray(request.retryUnitIds) ||
+        request.retryUnitIds.length === 0 ||
+        request.retryUnitIds.length > 128 ||
+        new Set(request.retryUnitIds).size !== request.retryUnitIds.length ||
+        request.retryUnitIds.some((id) => !validText(id, 1_024)))) ||
     !validOptionalBoolean(request.localAsrAutoGameContext) ||
     (request.localAsrContext !== undefined && !isLocalAsrContext(request.localAsrContext)) ||
     (request.markers !== undefined &&

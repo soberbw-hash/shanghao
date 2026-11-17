@@ -1,12 +1,8 @@
-/** Manual, per-recording context. The worker ignores it for unsupported models. */
+/** Keeps legacy personal entries usable while removing manual dictionary upkeep from the flow. */
 export function RecordingGameContext({
   game,
   terms,
-  automatic,
-  disabled,
-  onGame,
-  onTerms,
-  onAutomatic,
+  savedTermCount,
 }: {
   game: string;
   terms: string;
@@ -15,40 +11,19 @@ export function RecordingGameContext({
   onGame: (value: string) => void;
   onTerms: (value: string) => void;
   onAutomatic: (value: boolean) => void;
+  onSaveDictionary: () => void;
+  savedTermCount: number;
 }) {
+  const detectedGame = game.trim();
   return (
-    <details className="recording-game-context">
-      <summary>游戏语境增强（试验）</summary>
-      <p>可填写这条录音的游戏和词汇，仅用于千问本地识别；效果仍需实际对比。</p>
-      <label className="recording-game-context-auto">
-        <input
-          type="checkbox"
-          checked={automatic}
-          disabled={disabled}
-          onChange={(event) => onAutomatic(event.target.checked)}
-        />
-        未手动指定游戏时，尝试使用录音期间的成员游戏记录
-      </label>
-      <label>
-        游戏名称
-        <input
-          value={game}
-          maxLength={40}
-          disabled={disabled}
-          onChange={(event) => onGame(event.target.value)}
-        />
-      </label>
-      <label>
-        相关词汇
-        <textarea
-          value={terms}
-          maxLength={350}
-          disabled={disabled}
-          onChange={(event) => onTerms(event.target.value)}
-          placeholder="用逗号分隔，最多 16 个"
-        />
-      </label>
-    </details>
+    <section className="recording-game-context" aria-label="游戏词汇自动适配">
+      <strong>游戏词汇自动适配</strong>
+      <p>
+        本地识别和房间纪事会按房间成员当时的游戏自动匹配常见词汇；云端识别是否支持热词由服务商决定
+        {detectedGame ? `。${detectedGame}已匹配 ${savedTermCount} 个词。` : "。"}
+        {terms.trim() && !detectedGame ? "以前保存的个人词条仍会保留。" : ""}
+      </p>
+    </section>
   );
 }
 

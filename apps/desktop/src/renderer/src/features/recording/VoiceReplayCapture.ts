@@ -1,6 +1,5 @@
 import workletUrl from "./voiceReplay.worklet.js?url";
 import { VoiceReplaySession } from "./voiceReplaySession";
-import type { ReplayStateMessage } from "@private-voice/signaling";
 
 /** Read-only tap: never stops, clones, or changes the room-owned call tracks. */
 export class VoiceReplayCapture {
@@ -11,14 +10,11 @@ export class VoiceReplayCapture {
   private closed = false;
   private gap = false;
   private lastFrameAt = 0;
-  constructor(
-    private readonly consent: NonNullable<ReplayStateMessage["state"]>,
-    private readonly permitted: () => boolean,
-  ) {}
+  constructor(private readonly permitted: () => boolean) {}
 
-  async start(microphone: MediaStreamTrack, remote: MediaStream): Promise<void> {
+  async start(microphone: MediaStreamTrack | undefined, remote: MediaStream): Promise<void> {
     if (this.closed) throw Error("voice_replay_closed");
-    if (!this.consent.enabled || !this.permitted()) throw Error("voice_replay_not_authorized");
+    if (!this.permitted()) throw Error("voice_replay_not_authorized");
     const context = (this.context = new AudioContext({
       sampleRate: 48000,
       latencyHint: "playback",
@@ -26,9 +22,7 @@ export class VoiceReplayCapture {
     try {
       await context.audioWorklet.addModule(workletUrl);
       if (this.closed || !this.permitted()) throw Error("voice_replay_closed");
-      const session = (this.session = new VoiceReplaySession(context.sampleRate));
-      const epoch = session.updateMembers(this.consent.members);
-      for (const id of this.consent.approved) session.approve(id, epoch);
+      this.session = new VoiceReplaySession(context.sampleRate);
       const node = (this.node = new AudioWorkletNode(context, "shanghao-voice-replay", {
         numberOfInputs: 2,
         numberOfOutputs: 1,
@@ -52,8 +46,9 @@ export class VoiceReplayCapture {
           node.port.postMessage("ack");
         }
       };
-      const streams = [new MediaStream([microphone]), remote];
+      const streams = [microphone ? new MediaStream([microphone]) : undefined, remote];
       streams.forEach((stream, index) => {
+        if (!stream?.getAudioTracks().length) return;
         const source = context.createMediaStreamSource(stream);
         source.connect(node, 0, index);
         this.sources.push(source);
@@ -68,9 +63,7 @@ export class VoiceReplayCapture {
   }
   private resetHistory(): void {
     this.session?.close();
-    const session = (this.session = new VoiceReplaySession(this.context!.sampleRate));
-    const epoch = session.updateMembers(this.consent.members);
-    for (const id of this.consent.approved) session.approve(id, epoch);
+    this.session = new VoiceReplaySession(this.context!.sampleRate);
   }
   snapshot(seconds: 15 | 30 | 60): Uint8Array {
     if (this.closed || !this.permitted() || !this.session)

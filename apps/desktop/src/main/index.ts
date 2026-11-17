@@ -674,6 +674,7 @@ const bootstrap = async (): Promise<void> => {
     () => true,
     () => settingsStore?.getSnapshot().isAiCloudLocalAssistEnabled === true,
     () => settingsStore?.getSnapshot().aiCloudLocalAsrModel ?? "qwen3-asr-0.6b-force",
+    () => settingsStore?.getSnapshot().aiAsrGameLexicon ?? [],
   );
   const automaticBacklog = createAutomaticRecordingBacklog({
     settings: () => settingsStore!.getSnapshot(),

@@ -30,8 +30,8 @@ const launcherPath = () =>
     "launch-dev.ps1",
   );
 
-/** Preserve the Windows RunAs flag when Electron recreates a development shortcut. */
-export const ensureDevelopmentShortcutElevation = (shortcut: string): void => {
+/** WGC can reject capture in elevated processes. Keep the default development link unelevated. */
+export const ensureDevelopmentShortcutNormalLaunch = (shortcut: string): void => {
   const bytes = readFileSync(shortcut);
   const shellLinkClass = Buffer.from("0114020000000000c000000000000046", "hex");
   if (
@@ -41,8 +41,8 @@ export const ensureDevelopmentShortcutElevation = (shortcut: string): void => {
   )
     throw new Error("development_shortcut_invalid");
   const flags = bytes.readUInt32LE(20);
-  if ((flags & 0x2000) !== 0) return;
-  bytes.writeUInt32LE(flags | 0x2000, 20);
+  if ((flags & 0x2000) === 0) return;
+  bytes.writeUInt32LE(flags & ~0x2000, 20);
   writeFileSync(shortcut, bytes);
 };
 
@@ -129,7 +129,7 @@ export const repairDevelopmentShortcuts = (): void => {
         current.icon === icon &&
         current.appUserModelId === `${APP_ID}.dev`
       ) {
-        ensureDevelopmentShortcutElevation(shortcut);
+        ensureDevelopmentShortcutNormalLaunch(shortcut);
         continue;
       }
     }
@@ -144,7 +144,7 @@ export const repairDevelopmentShortcuts = (): void => {
       })
     )
       throw new Error("development_shortcut_write_failed");
-    ensureDevelopmentShortcutElevation(shortcut);
+    ensureDevelopmentShortcutNormalLaunch(shortcut);
   }
   // Retire the displayed old Shell item only after the replacement is written.
   for (const folder of [app.getPath("desktop"), programs]) {

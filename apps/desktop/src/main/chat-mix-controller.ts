@@ -1,5 +1,11 @@
 import type { ChatMixSession, ChatMixSessionId } from "./chat-mix-volume-leases";
 
+const SPEECH_ONSET_THRESHOLD_MS = 220;
+const SPEECH_HANGOVER_MS = 850;
+const ATTACK_TIME_CONSTANT_MS = 300;
+const RELEASE_TIME_CONSTANT_MS = 500;
+const FACTOR_SETTLED_EPSILON = 0.001;
+
 export interface ChatMixActivity {
   enabled: boolean;
   inRoom: boolean;
@@ -22,6 +28,7 @@ export class ChatMixController {
   private activity: ChatMixActivity = { enabled: false, inRoom: false, speaking: false };
   private activityUntil = 0;
   private speechUntil = 0;
+  private speechStartedAt?: number;
   private factor = 1;
   private recovery = true;
   private recoveredOnce = false;
@@ -45,8 +52,14 @@ export class ChatMixController {
     const now = this.clock();
     this.activity = { ...activity };
     this.activityUntil = now + 2500;
-    if (activity.enabled && activity.inRoom && activity.speaking) this.speechUntil = now + 850;
-    if (!activity.enabled || !activity.inRoom) this.speechUntil = 0;
+    if (activity.enabled && activity.inRoom && activity.speaking) {
+      this.speechStartedAt ??= now;
+      if (now - this.speechStartedAt >= SPEECH_ONSET_THRESHOLD_MS)
+        this.speechUntil = now + SPEECH_HANGOVER_MS;
+    } else {
+      this.speechStartedAt = undefined;
+      if (!activity.enabled || !activity.inRoom) this.speechUntil = 0;
+    }
   }
   getPhase(): ChatMixPhase {
     return this.phase;
@@ -87,12 +100,12 @@ export class ChatMixController {
       // Cap a delayed tick, rather than jumping straight to the target after a busy frame.
       const elapsed = Math.min(120, Math.max(0, now - (this.lastTick ?? now - 100)));
       this.lastTick = now;
-      const delta = (0.65 * elapsed) / (target < this.factor ? 250 : 650);
       const previousFactor = this.factor;
-      this.factor =
-        target < this.factor
-          ? Math.max(target, this.factor - delta)
-          : Math.min(target, this.factor + delta);
+      const timeConstant =
+        target < this.factor ? ATTACK_TIME_CONSTANT_MS : RELEASE_TIME_CONSTANT_MS;
+      const smoothing = 1 - Math.exp(-elapsed / timeConstant);
+      this.factor += (target - this.factor) * smoothing;
+      if (Math.abs(target - this.factor) <= FACTOR_SETTLED_EPSILON) this.factor = target;
       if (this.factor === 1) {
         if (this.touched) {
           const result = await this.ports.restore();

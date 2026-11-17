@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 
 import windowSkyArtwork from "../../assets/scenes/idle-monitors/window-sky.png";
+import windowSkyHd from "../../assets/scenes/idle-monitors/hd/window-sky.png";
 
 interface IdleMonitorStyle extends CSSProperties {
   "--idle-monitor-offset": string;
@@ -22,11 +23,12 @@ export const IdleMonitorContent = ({
     >
       <img
         className="scene-idle-monitor-art scene-idle-monitor-art--window"
-        src={windowSkyArtwork}
+        src={shouldReduceMotion ? windowSkyArtwork : windowSkyHd}
         alt=""
         draggable={false}
         aria-hidden="true"
       />
+      {!shouldReduceMotion && <span className="scene-idle-monitor-light" aria-hidden="true" />}
     </span>
   );
 };

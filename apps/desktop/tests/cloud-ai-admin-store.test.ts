@@ -140,3 +140,49 @@ test("explicit text fallback survives restart, never exposes keys, and is cleare
   await reopened.mutate({ action: "activate", revision: 3, id: "builtin-text" });
   assert.equal(reopened.fallbackTextProvider(), undefined);
 });
+
+test("speech and text keep independent fallback selections after restart", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-speech-fallback-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "providers.json");
+  const store = await CloudAiAdminStore.open(file, {
+    CLOUD_AI_API_KEY: "text-fixture",
+    SILICONFLOW_API_KEY: "speech-fixture",
+  });
+  const added = await store.mutate({
+    action: "save",
+    revision: 0,
+    provider: {
+      kind: "speech",
+      name: "DeepSeek ASR",
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-asr",
+      apiKey: "fixture",
+    },
+  });
+  const id = added.providers.find((p) => p.name === "DeepSeek ASR")!.id;
+  await store.mutate({ action: "activate", revision: 1, id });
+  await store.mutate({ action: "set-fallback", revision: 2, id: "builtin-speech" });
+  const reopened = await CloudAiAdminStore.open(file, {});
+  assert.equal(reopened.provider("speech")?.id, id);
+  assert.equal(reopened.fallbackSpeechProvider()?.id, "builtin-speech");
+  assert.equal(reopened.provider("text")?.id, "builtin-text");
+  assert.doesNotMatch(JSON.stringify(reopened.snapshot()), /speech-fixture|text-fixture/);
+  const addedText = await reopened.mutate({
+    action: "save",
+    revision: 3,
+    provider: {
+      kind: "text",
+      name: "New text",
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-flash",
+      apiKey: "another-fixture",
+    },
+  });
+  const textId = addedText.providers.find((p) => p.name === "New text")!.id;
+  await reopened.mutate({ action: "activate", revision: 4, id: textId });
+  await reopened.mutate({ action: "set-fallback", revision: 5, id: "builtin-text" });
+  const both = await CloudAiAdminStore.open(file, {});
+  assert.equal(both.fallbackSpeechProvider()?.id, "builtin-speech");
+  assert.equal(both.fallbackTextProvider()?.id, "builtin-text");
+});

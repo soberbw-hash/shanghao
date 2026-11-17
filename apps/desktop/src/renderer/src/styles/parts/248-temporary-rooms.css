@@ -13,11 +13,6 @@
   width: 100%;
   padding: 5px 0;
 }
-.temporary-entry-trigger > span {
-  margin-left: auto;
-  color: #7a8ba2;
-  font-size: 12px;
-}
 .temporary-entry-body {
   display: grid;
   gap: 12px;

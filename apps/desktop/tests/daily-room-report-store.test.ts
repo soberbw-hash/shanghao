@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -7,6 +7,33 @@ import test from "node:test";
 import { DailyRoomReportStore } from "../../../packages/signaling/src/daily-room-report-store";
 
 const at = (value: string): number => Date.parse(`${value}+08:00`);
+
+test("special game names remain own data across persistence and reload", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-daily-games-"));
+  const filePath = path.join(directory, "daily.json");
+  try {
+    const store = await DailyRoomReportStore.create(filePath);
+    const now = at("2026-08-10T20:00:00");
+    store.recordJoin("main", "peer-a", "甲", 1, now);
+    store.recordJoin("main", "peer-b", "乙", 2, now + 1);
+    store.recordGame("main", "peer-a", "甲", "__proto__", now);
+    store.recordGame("main", "peer-b", "乙", "constructor", now + 1);
+    store.recordLeave("main", "peer-a", "甲", 1, now + 2_000);
+    store.recordLeave("main", "peer-b", "乙", 0, now + 3_000);
+    await store.flush();
+    const saved = JSON.parse(await readFile(filePath, "utf8"));
+    assert.deepEqual(saved.gameParticipants.main["2026-08-10"]["__proto__"], ["peer-a"]);
+    assert.deepEqual(saved.gameParticipants.main["2026-08-10"].constructor, ["peer-b"]);
+    const reloaded = await DailyRoomReportStore.create(filePath);
+    const report = reloaded.getHistory("main", at("2026-08-11T12:00:00"))[0];
+    assert.deepEqual(
+      new Set(report?.games.map((game) => game.name)),
+      new Set(["__proto__", "constructor"]),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("special participant IDs remain ordinary data across a save and reload", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-daily-identities-"));

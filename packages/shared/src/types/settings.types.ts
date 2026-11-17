@@ -14,6 +14,11 @@ export type UiScale = 100 | 110 | 125;
 export type BuiltInAvatarId = "fox" | "cat" | "duck" | "panda" | "corgi";
 export type MicEqualizerGains = [number, number, number, number, number];
 
+export interface AsrGameLexiconEntry {
+  gameName: string;
+  terms: string[];
+}
+
 export interface AppSettings {
   settingsSchemaVersion: number;
   profileSchemaVersion: number;
@@ -56,6 +61,8 @@ export interface AppSettings {
   isRecordingWasteAutoCleanupEnabled: boolean;
   isRecordingShortAutoCleanupEnabled?: boolean;
   aiAsrModel: AiAsrModelId;
+  /** Personal, local-only game vocabulary used when the recording game matches. */
+  aiAsrGameLexicon?: AsrGameLexiconEntry[];
   aiTranscriptionProvider?: AiTranscriptionProvider;
   isAiCloudLocalAssistEnabled?: boolean;
   aiCloudLocalAsrModel?: AiAsrModelId;

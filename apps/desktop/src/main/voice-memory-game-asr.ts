@@ -1,4 +1,8 @@
-import type { VoiceMemoryRecord } from "@private-voice/shared";
+import {
+  resolveAsrGameLexicon,
+  type AsrGameLexiconEntry,
+  type VoiceMemoryRecord,
+} from "@private-voice/shared";
 import type { KnownSpeakerTranscriptionSource } from "./speaker-transcript";
 import { localAsrContextPrompt } from "./local-asr-context";
 import { loadRecordingGameTimeline } from "./recording-participant-tracks";
@@ -9,9 +13,10 @@ export async function prepareGameAsrContext(
   record: VoiceMemoryRecord,
   benchmark: boolean,
   signal: AbortSignal,
+  gameLexicon: readonly AsrGameLexiconEntry[] = [],
 ) {
   const timeline =
-    record.localAsrAutoGameContext && !record.localAsrContext?.gameName && !benchmark
+    !record.localAsrContext?.gameName && !benchmark
       ? await loadRecordingGameTimeline(record.recordingId).catch(() => undefined)
       : undefined;
   signal.throwIfAborted();
@@ -27,7 +32,15 @@ export async function prepareGameAsrContext(
         )
       : undefined;
     const gameName = record.localAsrContext?.gameName ?? automatic?.gameName;
-    const terms = record.localAsrContext?.terms ?? [];
+    const savedTerms = resolveAsrGameLexicon(gameLexicon, gameName ?? "")?.terms ?? [];
+    const terms = Array.from(
+      new Map(
+        [...(record.localAsrContext?.terms ?? []), ...savedTerms].map((term) => [
+          term.normalize("NFKC").toLocaleLowerCase(),
+          term,
+        ]),
+      ).values(),
+    ).slice(0, 16);
     return localAsrContextPrompt(
       gameName || terms.length ? { ...(gameName ? { gameName } : {}), terms } : undefined,
     );

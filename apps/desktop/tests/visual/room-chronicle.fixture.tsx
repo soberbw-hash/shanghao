@@ -1,8 +1,15 @@
 import { createRoot } from "react-dom/client";
-import { MemberSpeakingState, RoomConnectionState, type RoomMember } from "@private-voice/shared";
+import {
+  MemberSpeakingState,
+  RoomConnectionState,
+  type RoomMember,
+  type AccountSnapshot,
+  type LocalChronicleEntry,
+} from "@private-voice/shared";
 import { RoomChatPanel } from "../../src/renderer/src/components/chat/RoomChatPanel";
 import { RoomChronicleClient } from "../../src/renderer/src/features/room/RoomChronicleClient";
 import { useRoomStore } from "../../src/renderer/src/store/roomStore";
+import { useAccountStore } from "../../src/renderer/src/store/accountStore";
 import "../../src/renderer/src/styles/index.css";
 
 const member = {
@@ -21,7 +28,9 @@ const result = {
   decodedSeconds: 0,
   bytes: 0,
   inputStillLive: false,
+  reactionWrites: 0,
 };
+let archive: LocalChronicleEntry[] = [];
 const context = new AudioContext();
 const source = context.createOscillator();
 const output = context.createMediaStreamDestination();
@@ -68,6 +77,71 @@ client.capability(true);
 Object.assign(window, {
   chronicleFixture: {
     result,
+    preview() {
+      window.desktopApi.chronicleArchive = {
+        export: async () => ({ saved: true }),
+        read: async () => archive,
+        append: async (_roomId, entries) => {
+          archive = [
+            ...new Map(
+              [
+                ...archive,
+                ...entries.map((entry) => ({
+                  ...entry,
+                  reaction: archive.find((old) => old.id === entry.id)?.reaction,
+                })),
+              ].map((entry) => [entry.id, entry]),
+            ).values(),
+          ];
+          return archive;
+        },
+        react: async (_roomId, id, reaction) => {
+          result.reactionWrites++;
+          archive = archive.map((entry) => (entry.id === id ? { ...entry, reaction } : entry));
+          return archive;
+        },
+      };
+      useAccountStore.setState({
+        snapshot: {
+          status: "signed_in",
+          configured: true,
+          guestAllowed: false,
+          profile: { userId: "synthetic-profile" },
+        } as AccountSnapshot,
+      });
+      const friend = { ...member, id: "fixture-b", isLocal: false, nickname: "队友乙" };
+      useRoomStore.getState().setRoom({
+        roomId: "main",
+        members: [
+          member,
+          friend,
+          { ...friend, id: "empty-slot-1", nickname: "空位", isEmptySlot: true },
+        ],
+        connectionState: RoomConnectionState.Connected,
+      });
+      state = {
+        ...state,
+        participants: [member.id],
+        entries: [
+          {
+            id: "preview-one",
+            at: Date.now() - 120000,
+            text: "甲刚宣布这把稳了，乙立刻提醒：先别急着给自己颁奖。一个负责把气氛抬到决赛现场，一个负责把领奖台拆成折叠凳，主打谁也别想体面下班。😆",
+          },
+          {
+            id: "preview-two",
+            at: Date.now(),
+            text: "上一秒还在互相点菜，下一秒已经统一口径：这波算热身。技术有没有进步不好说，赛后发布会倒是提前练熟了。",
+          },
+        ],
+      };
+      client.capability(true);
+      client.receive({
+        type: "chronicle_state",
+        roomId: "main",
+        state: { ...state, summaryIntervalMs: 120000 },
+      });
+    },
     supported: (enabled: boolean) => client.capability(enabled),
     async close() {
       client.dispose();

@@ -19,6 +19,7 @@ export function TemporaryRoomEntry({
 }) {
   const [nickname, setNickname] = useState("");
   const [code, setCode] = useState("");
+  const [mode, setMode] = useState<"direct" | "server">("server");
   const [avatarId, setAvatarId] = useState<BuiltInAvatarId>("fox");
   const [avatarDataUrl, setAvatarDataUrl] = useState<string>();
   const [working, setWorking] = useState(false);
@@ -103,8 +104,8 @@ export function TemporaryRoomEntry({
         avatarDataUrl,
       });
       descriptor = create
-        ? await window.desktopApi.temporaryRooms.create()
-        : await window.desktopApi.temporaryRooms.join(code);
+        ? await window.desktopApi.temporaryRooms.create(mode)
+        : await window.desktopApi.temporaryRooms.join(code, mode);
       if (!mounted.current) {
         await window.desktopApi.temporaryRooms.release(descriptor.contextId);
         return;
@@ -135,7 +136,6 @@ export function TemporaryRoomEntry({
       >
         <UsersRound size={17} />
         <strong>临时联机</strong>
-        <span>和朋友临时聊一会儿 →</span>
       </button>
       {opened && (
         <dialog
@@ -159,6 +159,20 @@ export function TemporaryRoomEntry({
             无需账号。创建后把房间码发给朋友，或输入朋友的房间码加入。
           </p>
           <div className="temporary-entry-body">
+            <label>
+              连接方式
+              <select
+                value={mode}
+                disabled={blocked}
+                onChange={(event) => setMode(event.target.value as "direct" | "server")}
+              >
+                <option value="server">服务器房间（无需账号）</option>
+                <option value="direct">直接连接（局域网 / P2P）</option>
+              </select>
+            </label>
+            <p className="temporary-dialog-hint">
+              双方需选择相同方式。服务器房间需要服务器在线；直接连接在同一局域网可用，跨网络需要发现或中继服务。
+            </p>
             <label>
               临时昵称
               <input

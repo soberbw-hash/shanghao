@@ -9,6 +9,7 @@ import {
   DEFAULT_QUICK_MESSAGE_SLOTS,
   DEFAULT_QUICK_MESSAGE_VOLUME,
   DEFAULT_AI_ASR_MODEL_ID,
+  normalizeAsrGameLexicon,
   DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
   AI_ASR_MODEL_NAMES,
   normalizeQuickMessageSlots,
@@ -56,6 +57,7 @@ export const defaultSettings: AppSettings = {
   microphoneSendVolume: 1,
   speakerMasterVolume: 1,
   isFriendLoudnessBalanceEnabled: true,
+  isBackgroundAudioBalanceEnabled: true,
   micEqualizerGains: [0, 0, 0, 0, 0],
   lowCutFrequency: "75",
   globalMuteShortcut: "",
@@ -66,6 +68,7 @@ export const defaultSettings: AppSettings = {
   isRecordingWasteAutoCleanupEnabled: true,
   isRecordingShortAutoCleanupEnabled: true,
   aiAsrModel: DEFAULT_AI_ASR_MODEL_ID,
+  aiAsrGameLexicon: [],
   aiTranscriptionProvider: "cloud",
   isAiCloudLocalAssistEnabled: true,
   aiCloudLocalAsrModel: DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
@@ -73,7 +76,7 @@ export const defaultSettings: AppSettings = {
   aiRoomAskProvider: "cloud",
   aiTextModelPreset: "cloud",
   aiProcessingMode: "low_resource",
-  isAiAutoTranscribeEnabled: true,
+  isAiAutoTranscribeEnabled: false,
   isAiAutoOrganizeEnabled: true,
   isAiAutoUploadEnabled: false,
   isNoiseSuppressionEnabled: true,
@@ -289,7 +292,10 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     preferredInputDeviceId: trimUnknownText(raw.preferredInputDeviceId),
     audioDevicePresets: normalizeAudioDevicePresets(raw.audioDevicePresets),
     audioDevicePresetShortcut: trimUnknownText(raw.audioDevicePresetShortcut)?.slice(0, 80) ?? "",
-    isBackgroundAudioBalanceEnabled: normalizeBoolean(raw.isBackgroundAudioBalanceEnabled, false),
+    // Enable the feature once for users upgrading from v3.4.18 and earlier.
+    // After this migration, a saved opt-out remains respected.
+    isBackgroundAudioBalanceEnabled:
+      previousVersion < 37 ? true : normalizeBoolean(raw.isBackgroundAudioBalanceEnabled, true),
     backgroundAudioBalanceShortcut:
       trimUnknownText(raw.backgroundAudioBalanceShortcut)?.slice(0, 80) ?? "",
     phoneMicMode:
@@ -352,6 +358,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
         : raw.aiAsrModel === "qwen3-asr-0.6b"
           ? "qwen3-asr-0.6b-force"
           : "qwen3-asr-0.6b-force",
+    aiAsrGameLexicon: normalizeAsrGameLexicon(raw.aiAsrGameLexicon),
     aiOrganizerProvider:
       previousVersion < 36 || raw.aiOrganizerProvider !== "custom" ? "cloud" : "custom",
     aiTextModelPreset:
@@ -382,7 +389,7 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
             raw.aiProcessingMode === "manual"
           ? raw.aiProcessingMode
           : defaultSettings.aiProcessingMode,
-    isAiAutoTranscribeEnabled: normalizeBoolean(raw.isAiAutoTranscribeEnabled, true),
+    isAiAutoTranscribeEnabled: normalizeBoolean(raw.isAiAutoTranscribeEnabled, false),
     isAiAutoOrganizeEnabled: true,
     isAiAutoUploadEnabled: false,
     relayServerUrl:

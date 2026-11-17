@@ -17,6 +17,8 @@ const messages: Record<string, string> = {
   account_verification_expired: "验证码已过期，请重新获取",
   account_verification_rate_limited: "验证码发送频繁，请稍后再试",
   account_verification_send_failed: "验证码没有发送成功，请稍后重新获取。",
+  account_sms_channel_unavailable:
+    "CloudBase 短信通道暂不可用，请管理员检查短信服务商、发送模板审核状态和发送额度。",
   account_verification_challenge_required: "短信服务需要额外的安全验证，请联系管理员处理。",
   account_registration_failed: "账号未能创建，请稍后重试；如果已经注册成功，可返回登录。",
   account_login_unavailable: "账号服务暂时不可用，请稍后重试或联系管理员。",
@@ -47,6 +49,7 @@ const messages: Record<string, string> = {
   account_guest_not_allowed: "正式环境不允许访客进入，请先登录。",
   account_avatar_invalid:
     "请先选择一张有效头像；自定义图片需为 PNG、JPG 或 WebP，且不超过 512 KB。",
+  account_avatar_server_outdated: "服务器暂不支持这个头像，请联系管理员更新账号服务。",
   account_avatar_upload_failed:
     "头像未能保存到云端，请稍后重试。若刚注册成功，可返回登录后再选择头像。",
   account_profile_unavailable: "账号资料暂时无法读取，请重新登录后再试。",

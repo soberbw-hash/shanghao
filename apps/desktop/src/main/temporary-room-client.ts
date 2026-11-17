@@ -43,6 +43,7 @@ interface Connection {
   reconnect?: Promise<WebSocket>;
   generation: number;
   cleanup?: NodeJS.Timeout;
+  serverHosted?: boolean;
 }
 type Pending = {
   resolve: (value: unknown) => void;
@@ -129,24 +130,32 @@ export class TemporaryRoomClient {
     this.contexts.set(connection.id, connection);
     return connection;
   }
-  async create(): Promise<TemporaryRoomDescriptor> {
-    return this.enter();
+  async create(mode: "direct" | "server" = "direct"): Promise<TemporaryRoomDescriptor> {
+    return this.enter(undefined, mode);
   }
-  async join(code: string): Promise<TemporaryRoomDescriptor> {
-    return this.enter(code);
+  async join(code: string, mode: "direct" | "server" = "direct"): Promise<TemporaryRoomDescriptor> {
+    return this.enter(code, mode);
   }
-  private async enter(code?: string): Promise<TemporaryRoomDescriptor> {
+  private async enter(
+    code?: string,
+    mode: "direct" | "server" = "direct",
+  ): Promise<TemporaryRoomDescriptor> {
     if (this.closed) throw Error("temporary_client_closed");
+    if (mode !== "direct" && mode !== "server") throw Error("temporary_mode_invalid");
     if (this.entering || this.contexts.size) throw Error("temporary_already_joined");
     this.entering = true;
     try {
       const normalized = code === undefined ? undefined : code.replace(/\s/g, "");
       if (normalized !== undefined && !/^\d{8}$/.test(normalized))
         throw Error("temporary_room_code_invalid");
-      const route = (await this.router?.resolve(normalized)) ?? { url: this.endpoint() };
+      const route =
+        mode === "server"
+          ? { url: this.endpoint() }
+          : ((await this.router?.resolve(normalized)) ?? { url: this.endpoint() });
       try {
-        return await this.enterAt(route, normalized);
+        return await this.enterAt(route, normalized, mode === "server");
       } catch (error) {
+        if (mode === "server") throw error;
         const fallback = await this.router?.fallback?.(error, normalized);
         if (!fallback) throw error;
         return await this.enterAt(fallback, normalized);
@@ -158,12 +167,14 @@ export class TemporaryRoomClient {
   private async enterAt(
     route: TemporaryRoomRoute,
     code?: string,
+    serverHosted = false,
   ): Promise<TemporaryRoomDescriptor> {
     const profile = await this.identity.getProfile();
     if (!profile) throw Error("temporary_profile_required");
     if (code !== undefined && !/^\d{8}$/.test(code.replace(/\s/g, "")))
       throw Error("temporary_room_code_invalid");
     const connection = this.createContext(route);
+    connection.serverHosted = serverHosted;
     try {
       const socket = await this.connect(connection);
       let sessionId: string | undefined;
@@ -199,7 +210,9 @@ export class TemporaryRoomClient {
           connection.admission.room.epoch !== route.expected.epoch)
       )
         throw Error("temporary_lan_authority_changed");
-      const warning = await this.router?.joined?.(route, connection.admission.room);
+      const warning = serverHosted
+        ? undefined
+        : await this.router?.joined?.(route, connection.admission.room);
       connection.warning = warning || undefined;
       if (this.contexts.get(connection.id) !== connection || connection.socket !== socket)
         throw Error("temporary_connection_superseded");
@@ -392,7 +405,7 @@ export class TemporaryRoomClient {
         try {
           socket = await this.connect(connection);
         } catch (error) {
-          if (!this.router?.recover) throw error;
+          if (connection.serverHosted || !this.router?.recover) throw error;
           migration = await this.router.recover(connection.admission!.room);
           const target = new URL(migration.url);
           target.searchParams.set("mode", "temporary");
@@ -420,6 +433,7 @@ export class TemporaryRoomClient {
           } catch (error) {
             if (
               migration ||
+              connection.serverHosted ||
               !this.router?.recover ||
               !/^Error: temporary_authority_(lease_expired|fenced)$/.test(String(error))
             )
@@ -478,7 +492,8 @@ export class TemporaryRoomClient {
     const connection = this.contexts.get(id);
     if (!connection) return;
     this.contexts.delete(id);
-    if (connection.admission) this.router?.left?.(connection.admission.room.sessionId);
+    if (connection.admission && !connection.serverHosted)
+      this.router?.left?.(connection.admission.room.sessionId);
     clearTimeout(connection.cleanup);
     connection.generation++;
     connection.openAbort?.abort();

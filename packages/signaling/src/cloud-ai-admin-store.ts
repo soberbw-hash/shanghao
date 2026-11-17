@@ -66,7 +66,7 @@ const validate = (raw: unknown): State => {
       !["text", "speech"].includes(p.kind) ||
       typeof p.active !== "boolean" ||
       (p.fallback !== undefined && typeof p.fallback !== "boolean") ||
-      (p.fallback && (p.kind !== "text" || p.active))
+      (p.fallback && p.active)
     )
       throw Error("cloud_ai_admin_storage_invalid");
     const id = text(p.id, 64);
@@ -74,8 +74,9 @@ const validate = (raw: unknown): State => {
       throw Error("cloud_ai_admin_storage_invalid");
     ids.add(id);
     if (p.active) active.add(p.kind);
-    if (p.fallback && active.has("fallback")) throw Error("cloud_ai_admin_storage_invalid");
-    if (p.fallback) active.add("fallback");
+    if (p.fallback && active.has(`fallback:${p.kind}`))
+      throw Error("cloud_ai_admin_storage_invalid");
+    if (p.fallback) active.add(`fallback:${p.kind}`);
     return {
       id,
       kind: p.kind,
@@ -242,6 +243,12 @@ export class CloudAiAdminStore {
     const provider = this.state.providers.find((p) => p.kind === "text" && p.fallback && p.apiKey);
     return provider ? { ...provider } : undefined;
   }
+  fallbackSpeechProvider(): Readonly<Provider> | undefined {
+    const provider = this.state.providers.find(
+      (p) => p.kind === "speech" && p.fallback && p.apiKey,
+    );
+    return provider ? { ...provider } : undefined;
+  }
   mutate(input: CloudAiAdminMutation): Promise<CloudAiAdminSnapshot> {
     const operation = this.queue.then(async () => {
       if (!this.file) throw Error("cloud_ai_admin_storage_not_configured");
@@ -282,9 +289,9 @@ export class CloudAiAdminStore {
           selected.fallback = false;
         } else if (input.action === "clear-fallback") selected.fallback = false;
         else if (input.action === "set-fallback") {
-          if (selected.kind !== "text" || selected.active || !selected.apiKey)
-            throw Error("cloud_ai_admin_invalid_input");
-          for (const p of providers) if (p.kind === "text") p.fallback = p.id === selected.id;
+          if (selected.active || !selected.apiKey) throw Error("cloud_ai_admin_invalid_input");
+          for (const p of providers)
+            if (p.kind === selected.kind) p.fallback = p.id === selected.id;
         } else {
           if (!selected.apiKey) throw Error("cloud_ai_admin_key_required");
           selected.fallback = false;

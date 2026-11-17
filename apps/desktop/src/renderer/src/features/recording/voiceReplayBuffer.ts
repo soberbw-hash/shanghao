@@ -1,4 +1,4 @@
-/** In-memory mono PCM history. The caller must enforce consent before supplying samples. */
+/** In-memory mono PCM history, created only after this device enables replay. */
 export class VoiceReplayBuffer {
   private readonly samples: Float32Array;
   private writeOffset = 0;

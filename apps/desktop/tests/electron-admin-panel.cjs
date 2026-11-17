@@ -17,7 +17,7 @@ app.whenReady().then(async () => {
       document.querySelector('section>button').click(); await wait(30);
       button('上传密钥文件').click(); await wait(80);
       check(document.documentElement.dataset.imported==='true','key import not requested');
-      [...document.querySelectorAll('section button')].find(b=>b.textContent.includes('云端服务管理')).click(); await wait(30);
+      check(![...document.querySelectorAll('section button')].some(b=>b.textContent.includes('云端服务管理')), 'nested admin toggle remains');
       button('添加服务').click(); await wait(30);
       const input=(label,value)=>{
         const field=[...document.querySelectorAll('label')].find(l=>l.textContent.includes(label))?.querySelector('input');
@@ -55,7 +55,18 @@ app.whenReady().then(async () => {
       button('删除').click(); await wait(30); button('确认').click(); await wait(150);
       check(document.querySelectorAll('article').length===0,'delete not shown');
       check(document.documentElement.dataset.mutations==='7','unexpected mutation count');
-      return { add:true, doubleSubmitBlocked:true, activationConfirmed:true, disable:true, fallback:true, deleteConfirmed:true, keyNotReturned:true };
+      button('添加服务').click(); await wait(30);
+      const select=document.querySelector('form select');
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'speech');
+      select.dispatchEvent(new Event('change',{bubbles:true})); await wait(30);
+      button('填入 DeepSeek 语音配置').click(); await wait(30);
+      check([...document.querySelectorAll('input')].some(i=>i.value==='https://api.deepseek.com'),'speech preset missing');
+      input('API 密钥','synthetic-speech-key');
+      document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})); await wait(150);
+      check(document.querySelector('article').textContent.includes('DeepSeek 语音识别'),'speech provider missing');
+      button('设为备用').click(); await wait(30); button('确认').click(); await wait(150);
+      check(document.querySelector('article').textContent.includes('备用服务'),'speech fallback not shown');
+      return { add:true, doubleSubmitBlocked:true, activationConfirmed:true, disable:true, fallback:true, deleteConfirmed:true, keyNotReturned:true, speechPreset:true, speechFallback:true };
     })()`);
     console.log(JSON.stringify(result));
   } catch(error) { console.error(error); process.exitCode = 1; }

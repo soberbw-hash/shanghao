@@ -446,7 +446,12 @@ export const HomePage = () => {
                 <AccountAvatar
                   className="entry-account-avatar"
                   name={accountProfile.displayName}
-                  src={accountProfile.avatarUrl}
+                  src={
+                    accountProfile.accountAvatarPresetId &&
+                    !accountProfile.accountAvatarPresetId.startsWith("ip-")
+                      ? accountProfileAvatarSource(accountProfile)
+                      : accountProfile.avatarUrl
+                  }
                   fallbackSrc={accountProfileAvatarSource(accountProfile)}
                 />
                 <span>

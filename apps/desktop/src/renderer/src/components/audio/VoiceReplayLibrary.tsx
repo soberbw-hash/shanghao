@@ -69,6 +69,22 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
     setSearching(true);
     const timer = window.setTimeout(() => {
       void (async () => {
+        if (api.searchTranscripts) {
+          try {
+            const result = await api.searchTranscripts(term);
+            if (active) {
+              setTextMatches(new Set(result.matchingIds));
+              setSearchIncomplete(result.incomplete);
+              setSearching(false);
+            }
+          } catch {
+            if (active) {
+              setSearchIncomplete(true);
+              setSearching(false);
+            }
+          }
+          return;
+        }
         const found = new Set<string>();
         for (const clip of clips) {
           if (!active) return;

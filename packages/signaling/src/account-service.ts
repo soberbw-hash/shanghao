@@ -636,8 +636,12 @@ export class CloudBaseAccountService implements AccountBackend {
     let accountAvatarPresetId: AccountAvatarPresetId | undefined;
     try {
       const store = await this.getAvatarPresets();
-      accountAvatarPresetId =
-        store.get(userId) || (existingPortrait ? undefined : await store.getOrAssign(userId));
+      const saved = store.get(userId);
+      accountAvatarPresetId = saved
+        ? await store.getOrAssign(userId)
+        : existingPortrait
+          ? undefined
+          : await store.getOrAssign(userId);
     } catch (error) {
       this.options.logger?.("account avatar store unavailable", {
         errorCode: error instanceof Error ? error.name : "unknown",

@@ -37,7 +37,11 @@ test("a reported PCM gap prevents saving old audio until fresh contiguous sample
     workletUrl: "synthetic-worklet",
     performance: { now: () => now },
     AudioWorkletNode: FakeNode,
-    MediaStream: class {},
+    MediaStream: class {
+      getAudioTracks() {
+        return [{}];
+      }
+    },
     AudioContext: class {
       sampleRate = 48000;
       destination = {};
@@ -56,9 +60,9 @@ test("a reported PCM gap prevents saving old audio until fresh contiguous sample
     snapshot: (seconds: number) => Uint8Array;
     close: () => void;
   };
-  const capture = new Capture({ enabled: true, members: ["a"], approved: ["a"] }, () => true);
+  const capture = new Capture(() => true);
   try {
-    await capture.start({}, {});
+    await capture.start({}, { getAudioTracks: () => [{}] });
     const node = nodes[0]!;
     node.port.onmessage!({ data: new Float32Array(4096).fill(0.2) });
     assert.equal(capture.snapshot(15).length, 44 + 4096 * 2);

@@ -18,11 +18,11 @@
 .voice-replay-dialog p {
   margin: 8px 0;
 }
-.voice-replay-consent {
+.voice-replay-local-buffer {
   padding: 4px 8px;
   color: #71879d;
 }
-.voice-replay-consent summary {
+.voice-replay-local-buffer summary {
   cursor: pointer;
 }
 .voice-replay-actions,

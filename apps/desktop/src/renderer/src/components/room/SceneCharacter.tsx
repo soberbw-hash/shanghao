@@ -253,6 +253,13 @@ const SceneCharacterView = ({
   const isWalkingVisual = ["entering", "walking", "approaching", "turning", "leaving"].includes(
     motionPhase,
   );
+  // Resolve one pose centrally so an unrecognized/transient phase can never
+  // leave all three visual layers transparent.
+  const activeCharacterPose = isWalkingVisual
+    ? "walking"
+    : isSeatZone(displayZone)
+      ? "seated"
+      : "away";
   const isMoving = isWalkingVisual || motionPhase === "standing-up" || motionPhase === "sitting";
   const displayPosition = displayZone === zone ? position : characterPositions[displayZone];
   const renderedCharacterScale = displayPosition.scale;
@@ -483,7 +490,7 @@ const SceneCharacterView = ({
     if (!isPresent || shouldReduceMotion) return;
     // Chromium may suspend an entry animation while the game has focus. A
     // counted member must not remain transparent after its route's deadline.
-    const timeout = window.setInterval(() => {
+    const recoverStalledRoute = () => {
       const element = motionElementRef.current;
       if (!element || !element.isConnected || document.hidden) return;
       const visibleOpacity = Number(window.getComputedStyle(element).opacity);
@@ -494,6 +501,11 @@ const SceneCharacterView = ({
       if (visibleOpacity > 0.08 && motionPhaseRef.current === "idle" && atDestination) return;
       operationIdRef.current += 1;
       stopActiveAnimations();
+      // A superseded WAAPI animation can outlive its stored reference and
+      // continue overriding the settled inline transform or opacity. Remove
+      // animations on this wrapper only; character and scenery animations live
+      // on descendants and must keep running.
+      element.getAnimations().forEach((animation) => animation.cancel());
       element.style.transform = sceneTransform(targetLeft, targetTop);
       element.style.opacity = String(targetOpacityRef.current);
       currentPositionRef.current = { left: targetLeft, top: targetTop };
@@ -505,8 +517,16 @@ const SceneCharacterView = ({
       void writeRendererLog("app", "warn", "Character route watchdog settled an incomplete route", {
         zone,
       });
-    }, 4_500);
-    return () => window.clearInterval(timeout);
+    };
+    const timeout = window.setInterval(recoverStalledRoute, 4_500);
+    // Backgrounded windows may suspend both WAAPI and timer callbacks. Check
+    // immediately when Electron restores the room so a character cannot stay
+    // frozen at an intermediate point until the next polling interval.
+    document.addEventListener("visibilitychange", recoverStalledRoute);
+    return () => {
+      window.clearInterval(timeout);
+      document.removeEventListener("visibilitychange", recoverStalledRoute);
+    };
   }, [isPresent, member.id, shouldReduceMotion, stopActiveAnimations, targetLeft, targetTop, zone]);
 
   useEffect(() => {
@@ -573,7 +593,14 @@ const SceneCharacterView = ({
         onExitedRef.current?.(member.id);
       }
     };
-    void leave();
+    void leave().catch((error: unknown) => {
+      if (!isCurrentOperation()) return;
+      void writeRendererLog("app", "warn", "Character exit failed; removing the stale character", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      safeToRemove?.();
+      onExitedRef.current?.(member.id);
+    });
     return () => {
       if (operationIdRef.current === operationId) operationIdRef.current += 1;
       stopActiveAnimations();
@@ -657,9 +684,9 @@ const SceneCharacterView = ({
                   no character while seated, walking and away poses hand off. */}
               <span
                 className={`room-character-visual-layer room-character-walking-layer ${
-                  isWalkingVisual ? "is-active" : ""
+                  activeCharacterPose === "walking" ? "is-active" : ""
                 }`}
-                aria-hidden={!isWalkingVisual}
+                aria-hidden={activeCharacterPose !== "walking"}
               >
                 <WalkingAnimalSprite
                   avatarId={avatarId}
@@ -671,9 +698,9 @@ const SceneCharacterView = ({
               </span>
               <span
                 className={`room-character-visual-layer room-character-seated-layer ${
-                  !isWalkingVisual && isSeatZone(displayZone) ? "is-active" : ""
+                  activeCharacterPose === "seated" ? "is-active" : ""
                 }`}
-                aria-hidden={isWalkingVisual || !isSeatZone(displayZone)}
+                aria-hidden={activeCharacterPose !== "seated"}
               >
                 <DeskAnimalSprite
                   avatarId={avatarId}
@@ -688,9 +715,9 @@ const SceneCharacterView = ({
               </span>
               <span
                 className={`room-character-visual-layer room-character-away-layer ${
-                  !isWalkingVisual && !isSeatZone(displayZone) ? "is-active" : ""
+                  activeCharacterPose === "away" ? "is-active" : ""
                 }`}
-                aria-hidden={isWalkingVisual || isSeatZone(displayZone)}
+                aria-hidden={activeCharacterPose !== "away"}
               >
                 <AnimalSprite avatarId={avatarId} state="away" isMoving={isMoving} />
               </span>

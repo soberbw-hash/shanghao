@@ -6,11 +6,13 @@ import type {
 } from "@private-voice/signaling";
 
 export type ChronicleAudioPart = Omit<ChronicleAudioMessage, "type" | "roomId" | "peerId">;
+const optedOutSessions = new Set<string>();
 
 /** Additive protocol: never sends a new message to an older server. */
 export class RoomChronicleClient {
   private supported = false;
   private disposed = false;
+  private automaticSession?: string;
   private readonly pending = new Map<
     string,
     { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
@@ -47,6 +49,15 @@ export class RoomChronicleClient {
     enabled?: boolean,
   ): Promise<void> {
     if (!this.supported) throw Error("chronicle_unavailable");
+    if (action === "participate" && sessionId) {
+      const key = `${this.roomId}:${sessionId}`;
+      if (enabled) optedOutSessions.delete(key);
+      else {
+        optedOutSessions.add(key);
+        if (optedOutSessions.size > 256)
+          optedOutSessions.delete(optedOutSessions.values().next().value!);
+      }
+    }
     await this.send({
       type: "chronicle_control",
       roomId: this.roomId,
@@ -55,6 +66,19 @@ export class RoomChronicleClient {
       sessionId,
       enabled,
     });
+  }
+
+  /** Join a new room session once; a member's stop choice wins for that session. */
+  async joinAutomatically(sessionId: string): Promise<void> {
+    if (this.automaticSession === sessionId || optedOutSessions.has(`${this.roomId}:${sessionId}`))
+      return;
+    this.automaticSession = sessionId;
+    try {
+      await this.control("participate", sessionId, true);
+    } catch (error) {
+      this.automaticSession = undefined;
+      throw error;
+    }
   }
 
   async audio(part: ChronicleAudioPart): Promise<void> {

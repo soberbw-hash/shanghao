@@ -2,6 +2,10 @@ import { createDiagnostic, createTaskId } from "./voice-memory-diagnostic-factor
 import { describeEmptyTranscription } from "./voice-memory-empty-result";
 import { archiveFusion } from "./voice-memory-fusion-history";
 import { archiveTranscriptionOriginals } from "./voice-memory-original-history";
+import {
+  MAX_TRANSCRIPTION_UNIT_ATTEMPTS,
+  prepareTargetedTranscriptionRetry,
+} from "./voice-memory-targeted-retry";
 import { assertLocalAsrContext } from "./local-asr-context";
 import { prepareGameAsrContext } from "./voice-memory-game-asr";
 import { verifyCompletedSources, verifySource } from "./voice-memory-source-integrity";
@@ -27,6 +31,7 @@ import {
   type VoiceMemoryQuestionRequest,
   type VoiceMemoryRecord,
   type VoiceMemorySummary,
+  type AsrGameLexiconEntry,
   type VoiceMemorySearchRequest,
   type VoiceMemorySearchResult,
   type VoiceMemoryProcessingStage,
@@ -54,7 +59,7 @@ import {
 import { durableUnitsMatchDefinitions } from "./voice-memory-source-plan";
 import { resolveFfmpegExecutable } from "./media-runtime";
 import { AiTextGateway } from "./ai-text-gateway";
-import { ASSISTANT_ANSWER_STYLE, assistantAnswerText } from "./voice-memory-question-prompt";
+import { answerRecordingVoiceQuestion } from "./voice-memory-recording-question";
 import { answerGlobalVoiceQuestion } from "./voice-memory-global-question";
 import { VoiceMemoryOrganizer } from "./voice-memory-organizer";
 import {
@@ -162,6 +167,7 @@ export class AiVoiceMemoryService {
     private readonly isCloudLocalAssistEnabled: () => boolean = () => false,
     private readonly getCloudLocalAsrModel: () => AiAsrModelId = () =>
       DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
+    private readonly getAsrGameLexicon: () => readonly AsrGameLexiconEntry[] = () => [],
   ) {}
 
   async initialize(): Promise<void> {
@@ -504,7 +510,10 @@ export class AiVoiceMemoryService {
 
   /** Acknowledges a UI retry immediately while the durable worker continues in the background. */
   async start(request: VoiceMemoryProcessRequest, historical = false): Promise<VoiceMemoryRecord> {
-    request = { ...request, organize: !request.benchmark };
+    request = {
+      ...request,
+      organize: request.retryUnitIds ? false : !request.benchmark,
+    };
     if (this.deletingRecordings.has(request.recordingId)) throw new Error("voice_memory_deleted");
     const allowRecreate = this.deletedRecordings.has(request.recordingId);
     return this.serializeRecordingSetup(request.recordingId, () =>
@@ -533,7 +542,9 @@ export class AiVoiceMemoryService {
         pendingRecord.taskStatus !== "processing";
       const startsDistinctTask =
         previousTaskIsTerminal &&
-        Boolean(request.taskId && request.taskId !== pendingRecord?.taskId);
+        Boolean(
+          request.retryUnitIds || (request.taskId && request.taskId !== pendingRecord?.taskId),
+        );
       if ((!request.restartTranscription && !startsDistinctTask) || !previousTaskIsTerminal) {
         if (pendingRecord) return pendingRecord;
       } else {
@@ -545,6 +556,22 @@ export class AiVoiceMemoryService {
     }
     const previousRecord = await this.store.get(request.recordingId);
     assertLocalAsrContext(request.localAsrContext);
+    if (request.retryUnitIds) {
+      if (!request.manual || request.transcribe === false || request.restartTranscription)
+        throw new Error("transcription_retry_request_invalid");
+      if (this.getTranscriptionProvider() !== "local")
+        throw new Error("transcription_retry_local_required");
+      const activeModelId =
+        request.asrModelId ??
+        previousRecord?.transcriptionModel?.id ??
+        this.models.getActiveAsrModel();
+      if (!previousRecord || previousRecord.transcriptionModel?.id !== activeModelId)
+        throw new Error("transcription_retry_model_mismatch");
+      prepareTargetedTranscriptionRetry(
+        previousRecord.transcriptionUnits?.filter((unit) => unit.modelId === activeModelId) ?? [],
+        request.retryUnitIds,
+      );
+    }
     if (
       historical &&
       request.transcribe !== false &&
@@ -557,7 +584,11 @@ export class AiVoiceMemoryService {
     const taskId = request.taskId ?? createTaskId(request.recordingId);
     const queuedRequest = {
       ...request,
-      organize: request.manual ? request.organize : automaticOrganizationConsent(previous, request),
+      organize: request.retryUnitIds
+        ? false
+        : request.manual
+          ? request.organize
+          : automaticOrganizationConsent(previous, request),
       taskId,
       // Manual retries resume saved units, including partial results, unless restart is explicit.
       restartTranscription: request.transcribe !== false && request.restartTranscription === true,
@@ -815,6 +846,9 @@ export class AiVoiceMemoryService {
     try {
       if (shouldTranscribe) {
         record = archiveFusion(record);
+        if (request.retryUnitIds) {
+          record = await this.save(archiveTranscriptionOriginals(record));
+        }
         currentStage = "audio_file";
         await this.runtime.validateInputFile(request.filePath);
         record = await this.updateDiagnostic(record, request, taskId, currentStage, "processing");
@@ -867,6 +901,7 @@ export class AiVoiceMemoryService {
           (stage) => {
             currentStage = stage;
           },
+          request.retryUnitIds,
         );
         record = applySpeakingTimeline(record, request.speakingTimeline ?? []);
       } else if (record.transcript.length === 0 || hasInvalidVoiceMemoryResult(record)) {
@@ -906,16 +941,18 @@ export class AiVoiceMemoryService {
       });
       let organizationError: string | undefined;
       if (!this.textGateway.usesLocalOrganizer?.()) this.remoteTextJobs.add(request.recordingId);
-      record = await processTranscriptFusion(
-        record,
-        request,
-        this.textGateway,
-        this.save.bind(this),
-        controller.signal,
-        () => {
-          currentStage = "organize";
-        },
-      );
+      if (!request.retryUnitIds) {
+        record = await processTranscriptFusion(
+          record,
+          request,
+          this.textGateway,
+          this.save.bind(this),
+          controller.signal,
+          () => {
+            currentStage = "organize";
+          },
+        );
+      }
       if (
         request.organize !== false &&
         (request.manual || (record.autoOrganizeRequested && this.isAutomaticOrganizationEnabled()))
@@ -1085,58 +1122,9 @@ export class AiVoiceMemoryService {
 
   async ask(request: VoiceMemoryQuestionRequest): Promise<VoiceMemoryAnswer> {
     const record = await this.requireRecord(request.recordingId);
-    const terms = request.question
-      .normalize("NFKC")
-      .split(/\s+/)
-      .filter((term) => term.length > 1);
-    const candidates = record.transcript
-      .map((segment) => ({
-        segment,
-        score: terms.reduce((score, term) => score + (segment.text.includes(term) ? 1 : 0), 0),
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 16)
-      .map(({ segment }) => segment);
-    const answer = await this.runQuestion((signal) =>
-      this.textGateway.generateJson<VoiceMemoryAnswer>({
-        roomId: record.roomId,
-        purpose: "question",
-        manual: true,
-        maxNewTokens: 700,
-        signal,
-        prompt: [
-          "你是上号的本地语音记忆助手。只根据给出的录音片段回答朋友间的日常问题。",
-          ...ASSISTANT_ANSWER_STYLE,
-          '返回 JSON：{"text":"回答","sources":[{"startMs":数字,"segmentId":"id","quote":"简短原话"}]}。没有依据就明确说没找到。',
-          `问题：${request.question.slice(0, 500)}`,
-          "片段：",
-          ...candidates.map(
-            (segment) =>
-              `${segment.id}\t${segment.startMs}\t${segment.nickname ?? segment.speakerId}\t${segment.text}`,
-          ),
-        ].join("\n"),
-      }),
+    return this.runQuestion((signal) =>
+      answerRecordingVoiceQuestion(request, record, this.textGateway, signal),
     );
-    return {
-      text: assistantAnswerText(answer.text),
-      sources: (Array.isArray(answer.sources) ? answer.sources : [])
-        .map((source) => {
-          const segment = candidates.find((candidate) => candidate.id === source.segmentId);
-          return segment
-            ? {
-                startMs: segment.startMs,
-                segmentId: segment.id,
-                quote: String(source.quote || segment.text).slice(0, 240),
-                recordingId: record.recordingId,
-                filePath: record.filePath,
-                roomName: record.roomName,
-                createdAt: record.createdAt,
-              }
-            : undefined;
-        })
-        .filter((source): source is NonNullable<typeof source> => Boolean(source))
-        .slice(0, 8),
-    };
   }
 
   async askMemory(request: VoiceMemoryGlobalQuestionRequest): Promise<VoiceMemoryAnswer> {
@@ -1152,6 +1140,7 @@ export class AiVoiceMemoryService {
     requestedModelId?: AiAsrModelId,
     requestedBenchmark?: VoiceMemoryBenchmarkRunMetadata,
     onStage?: (stage: VoiceMemoryProcessingStage) => void,
+    retryUnitIds?: readonly string[],
   ): Promise<VoiceMemoryRecord> {
     const started = performance.now();
     const previousElapsed = record.transcriptionStats?.totalElapsedMs ?? 0;
@@ -1162,6 +1151,8 @@ export class AiVoiceMemoryService {
       requestedModelId,
       requestedBenchmark,
       onStage,
+      false,
+      retryUnitIds,
     );
     if (!requestedBenchmark || !result.transcriptionStats) return result;
     const stats = result.transcriptionStats;
@@ -1197,6 +1188,7 @@ export class AiVoiceMemoryService {
     requestedBenchmark?: VoiceMemoryBenchmarkRunMetadata,
     onStage?: (stage: VoiceMemoryProcessingStage) => void,
     forceLocal = false,
+    retryUnitIds?: readonly string[],
   ): Promise<VoiceMemoryRecord> {
     onStage?.("preprocess");
     // A model comparison is explicit consent to run the selected installed ASR locally.
@@ -1206,6 +1198,7 @@ export class AiVoiceMemoryService {
         ? "local"
         : this.getTranscriptionProvider();
     if (transcriptionProvider !== "local") {
+      if (retryUnitIds) throw new Error("transcription_retry_local_required");
       return transcribeWithRemoteProvider({
         record,
         provider: transcriptionProvider,
@@ -1313,7 +1306,12 @@ export class AiVoiceMemoryService {
         sourceEndMs,
         signal,
       );
-    const contextForSource = await prepareGameAsrContext(record, Boolean(activeBenchmark), signal);
+    const contextForSource = await prepareGameAsrContext(
+      record,
+      Boolean(activeBenchmark),
+      signal,
+      this.getAsrGameLexicon(),
+    );
     if (knownSpeakerSegments?.length) {
       const totalUnits = knownSpeakerSegments.length;
       const checkpointCompatible =
@@ -1339,13 +1337,17 @@ export class AiVoiceMemoryService {
         );
       }
       if (!checkpointCompatible && checkpoint) await this.models.clearTaskCheckpoint(taskId);
-      const units = createTranscriptionUnits(
+      let units = createTranscriptionUnits(
         record.recordingId,
         asrModelId,
         definitions,
         canResumeDurably ? durableUnits : undefined,
         checkpointCompatible ? Math.min(totalUnits, Math.max(0, checkpoint.completedUnits)) : 0,
       );
+      const retryIds = new Set(retryUnitIds ?? []);
+      if (retryUnitIds) {
+        units = prepareTargetedTranscriptionRetry(units, retryUnitIds).units;
+      }
       let stats = statsFromTranscriptionUnits(
         totalDuration,
         units,
@@ -1369,6 +1371,7 @@ export class AiVoiceMemoryService {
         if (!source) continue;
         const durableUnit = units[unit];
         if (!durableUnit) continue;
+        if (retryUnitIds && !retryIds.has(durableUnit.unitId)) continue;
         const sourceFingerprint = await verifySource(source, durableUnit.sourceFingerprint);
         if (durableUnit.status === "completed") continue;
         durableUnit.sourceFingerprint = sourceFingerprint;
@@ -1415,6 +1418,9 @@ export class AiVoiceMemoryService {
             unit: unit + 1,
             totalUnits,
             benchmark: Boolean(activeBenchmark),
+            maxAttempts: retryUnitIds
+              ? Math.max(1, MAX_TRANSCRIPTION_UNIT_ATTEMPTS - (durableUnit.attempts - 1))
+              : undefined,
           },
           this.log.bind(this),
         );
@@ -1623,7 +1629,7 @@ export class AiVoiceMemoryService {
     if (!checkpointCompatible && checkpoint) {
       await this.models.clearTaskCheckpoint(taskId);
     }
-    const units = createTranscriptionUnits(
+    let units = createTranscriptionUnits(
       record.recordingId,
       asrModelId,
       definitions,
@@ -1632,6 +1638,10 @@ export class AiVoiceMemoryService {
         ? completedTranscriptionUnits(checkpoint, totalUnits, transcriptionChunkMs)
         : 0,
     );
+    const retryIds = new Set(retryUnitIds ?? []);
+    if (retryUnitIds) {
+      units = prepareTargetedTranscriptionRetry(units, retryUnitIds).units;
+    }
     let stats = statsFromTranscriptionUnits(
       totalDuration,
       units,
@@ -1653,6 +1663,7 @@ export class AiVoiceMemoryService {
       const offsetMs = sourceStartMs + unit * transcriptionChunkMs;
       const durableUnit = units[unit];
       if (!durableUnit || durableUnit.status === "completed") continue;
+      if (retryUnitIds && !retryIds.has(durableUnit.unitId)) continue;
       const startedAt = new Date().toISOString();
       Object.assign(durableUnit, {
         status: "running" as const,
@@ -1709,6 +1720,9 @@ export class AiVoiceMemoryService {
           unit: unit + 1,
           totalUnits,
           benchmark: Boolean(activeBenchmark),
+          maxAttempts: retryUnitIds
+            ? Math.max(1, MAX_TRANSCRIPTION_UNIT_ATTEMPTS - (durableUnit.attempts - 1))
+            : undefined,
         },
         this.log.bind(this),
       );

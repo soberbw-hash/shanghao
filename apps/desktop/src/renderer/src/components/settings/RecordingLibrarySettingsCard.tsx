@@ -60,7 +60,6 @@ import { isVoiceMemoryTranscriptionComplete } from "../../features/ai/voiceMemor
 
 interface RecordingLibrarySettingsCardProps {
   isActive?: boolean;
-  toolbarTarget?: HTMLDivElement | null;
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => Promise<void> | void;
   pushToast: (toast: {
@@ -254,7 +253,6 @@ export const RecordingLibrarySettingsCard = ({
   onChange,
   pushToast,
   openTarget,
-  toolbarTarget,
 }: RecordingLibrarySettingsCardProps) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -765,9 +763,13 @@ export const RecordingLibrarySettingsCard = ({
   };
 
   const toolbar = (
-    <header className="recording-library-toolbar">
-      <h2>录音库</h2>
-      <span className="recording-library-local-note">保存在本机</span>
+    <header
+      className="recording-library-toolbar quick-message-settings-tabs"
+      aria-label="录音库导航"
+    >
+      <h2 className="recording-library-current" aria-current="page">
+        录音库
+      </h2>
       <VoiceReplayLibraryButton />
       <RecordingRecycleBinButton onRestored={reload} />
       <details ref={storageSettingsRef} className="recording-storage-settings">
@@ -867,10 +869,8 @@ export const RecordingLibrarySettingsCard = ({
     </header>
   );
   return (
-    <div
-      className={`recording-library-page${toolbarTarget ? " recording-library-page--docked" : ""}`}
-    >
-      {toolbarTarget ? createPortal(toolbar, toolbarTarget) : toolbar}
+    <div className="recording-library-page">
+      {toolbar}
       <div className="recording-library-workspace">
         <aside className="recording-library-browser" aria-label="录音列表">
           <div className="recording-browser-head">

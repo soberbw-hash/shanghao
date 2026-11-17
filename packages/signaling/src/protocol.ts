@@ -9,7 +9,13 @@ import type {
   DailyRoomRecordingRecap,
   SceneZoneId,
 } from "@private-voice/shared";
-import { isAllowedNickname, isBuiltInAvatarId, isGameSessionActivity } from "@private-voice/shared";
+import {
+  isAllowedNickname,
+  isBuiltInAvatarId,
+  isGameSessionActivity,
+  isAsrGameLexiconEntry,
+  type AsrGameLexiconEntry,
+} from "@private-voice/shared";
 import {
   isStoredRoomId,
   MAX_ROOM_COLLECTION_IMAGE_LENGTH,
@@ -95,7 +101,8 @@ export interface ChronicleStateMessage extends BaseMessage {
   available?: boolean;
   chunkId?: string;
   state?: import("./room-chronicle-sessions").ChronicleSnapshot;
-  error?: "chronicle_forbidden" | "chronicle_unavailable" | "chronicle_busy";
+  error?:
+    "chronicle_forbidden" | "chronicle_unavailable" | "chronicle_busy" | "chronicle_speech_quota";
 }
 export interface ChronicleAudioMessage extends BaseMessage {
   type: "chronicle_audio";
@@ -107,6 +114,7 @@ export interface ChronicleAudioMessage extends BaseMessage {
   startedAt: number;
   mime: "audio/webm" | "audio/ogg";
   data: string;
+  gameContext?: AsrGameLexiconEntry;
 }
 
 export interface ReplayControlMessage extends BaseMessage {
@@ -681,6 +689,7 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
   switch (value.type) {
     case "chronicle_audio":
       return (
+        (value.gameContext === undefined || isAsrGameLexiconEntry(value.gameContext)) &&
         hasRoom(value) &&
         hasPeer(value) &&
         isIdentifier(value.sessionId, 128) &&

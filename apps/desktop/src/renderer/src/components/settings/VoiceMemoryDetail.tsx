@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TranscriptParagraphList } from "./TranscriptParagraphList";
-import { RecordingUploadAction } from "./RecordingUploadAction";
 import { reuseVoiceMemoryReferences } from "../../features/ai/voiceMemoryReferences";
 import { subscribeSharedRecordingRefresh } from "../../features/recording/sharedRecordingRefresh";
 import { BrainCircuit, FileText, Pause, Play, RotateCcw, Sparkles } from "lucide-react";
@@ -9,9 +8,12 @@ import {
   AI_ASR_MODEL_NAMES,
   buildReadableTranscriptParagraphs,
   hasInvalidVoiceMemoryResult,
+  reviewTranscriptionUnit,
   type AiAsrModelId,
   type RecordingLibraryItem,
   type VoiceMemoryRecord,
+  findAsrGameLexicon,
+  resolveAsrGameLexicon,
 } from "@private-voice/shared";
 
 import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
@@ -62,6 +64,8 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
     return "成员音轨缺失或已更改，无法安全继续旧任务；原录音和文字稿已保留。";
   if (message.includes("invalid_asr_context"))
     return "游戏名称或词汇格式不支持，请检查词数与字符。";
+  if (message.includes("asr_game_lexicon_limit"))
+    return "个人词典最多保存 50 款游戏，请先在 AI 设置中删除不再使用的词典。";
   if (message.includes("transcription_checkpoint_incompatible"))
     return "无法确认旧断点对应的音轨，原稿已保留。可重新转录以完整检查。";
   if (message.includes("voice_memory_shared_result_changed"))
@@ -209,10 +213,13 @@ export const VoiceMemoryDetail = ({
   const autoTranscribe = useSettingsStore(
     (state) => state.settings?.isAiAutoTranscribeEnabled ?? false,
   );
+  const gameLexicon = useSettingsStore((state) => state.settings?.aiAsrGameLexicon ?? []);
+  const saveSettings = useSettingsStore((state) => state.saveSettings);
   const [record, setRecordState] = useState<VoiceMemoryRecord>();
   const [contextGame, setContextGame] = useState("");
   const [contextTerms, setContextTerms] = useState("");
-  const [contextAutomatic, setContextAutomatic] = useState(false);
+  const [contextAutomatic, setContextAutomatic] = useState(true);
+  const [dictionarySaved, setDictionarySaved] = useState(false);
   const contextDirty = useRef(false);
   const contextHydratedFor = useRef<string | undefined>(undefined);
   const [viewChoice, setViewChoice] = useState<{ id: string; choice: TranscriptViewChoice }>();
@@ -238,7 +245,7 @@ export const VoiceMemoryDetail = ({
     contextHydratedFor.current = undefined;
     setContextGame("");
     setContextTerms("");
-    setContextAutomatic(false);
+    setContextAutomatic(true);
     setRecord(undefined);
     setQueuedAction(undefined);
     previousPhaseRef.current = undefined;
@@ -292,15 +299,43 @@ export const VoiceMemoryDetail = ({
     if (!contextDirty.current) {
       setContextGame(record.localAsrContext?.gameName ?? "");
       setContextTerms(record.localAsrContext?.terms.join("，") ?? "");
-      setContextAutomatic(record.localAsrAutoGameContext === true);
+      setContextAutomatic(true);
     }
   }, [record, recording.recordingId]);
 
   const effectiveSelectedAsrModel = isKnownAsrModelId(selectedAsrModel)
     ? selectedAsrModel
     : DEFAULT_ASR_MODEL_ID;
+  const matchedGameLexicon = resolveAsrGameLexicon(gameLexicon, contextGame);
+  const saveGameLexicon = async () => {
+    setError(undefined);
+    setDictionarySaved(false);
+    try {
+      const parsed = parseRecordingGameContext(contextGame, contextTerms);
+      if (!parsed?.gameName || !parsed.terms.length) throw new Error("invalid_asr_context");
+      const key = parsed.gameName.normalize("NFKC").toLocaleLowerCase();
+      const currentLexicon = useSettingsStore.getState().settings?.aiAsrGameLexicon ?? [];
+      const merged = Array.from(
+        new Map(
+          [
+            ...parsed.terms,
+            ...(findAsrGameLexicon(currentLexicon, parsed.gameName)?.terms ?? []),
+          ].map((term) => [term.normalize("NFKC").toLocaleLowerCase(), term]),
+        ).values(),
+      ).slice(0, 16);
+      const next = currentLexicon.filter(
+        (entry) => entry.gameName.normalize("NFKC").toLocaleLowerCase() !== key,
+      );
+      if (next.length >= 50) throw new Error("asr_game_lexicon_limit");
+      next.push({ gameName: parsed.gameName, terms: merged });
+      await saveSettings({ aiAsrGameLexicon: next });
+      setDictionarySaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "个人词典保存失败");
+    }
+  };
 
-  const process = async (action: "transcribe" | "organize" | "fuse") => {
+  const process = async (action: "transcribe" | "organize" | "fuse", retryUnitIds?: string[]) => {
     setBusy(true);
     setQueuedAction(action);
     setError(undefined);
@@ -312,14 +347,31 @@ export const VoiceMemoryDetail = ({
         roomName,
         manual: true,
         transcribe: action === "transcribe",
-        organize: true,
+        organize: retryUnitIds ? false : true,
         fuse: action === "fuse",
-        restartTranscription: action === "transcribe",
+        restartTranscription: action === "transcribe" && !retryUnitIds,
+        retryUnitIds,
         localAsrContext:
           action === "transcribe"
-            ? parseRecordingGameContext(contextGame, contextTerms)
+            ? retryUnitIds
+              ? record?.localAsrContext
+              : (() => {
+                  const context = parseRecordingGameContext(contextGame, contextTerms);
+                  if (!context || transcriptionProvider !== "local") return context;
+                  const saved = resolveAsrGameLexicon(gameLexicon, context.gameName ?? "");
+                  if (!saved?.terms.length) return context;
+                  const terms = Array.from(
+                    new Map(
+                      [...context.terms, ...saved.terms].map((term) => [
+                        term.normalize("NFKC").toLocaleLowerCase(),
+                        term,
+                      ]),
+                    ).values(),
+                  ).slice(0, 16);
+                  return { ...context, terms };
+                })()
             : undefined,
-        localAsrAutoGameContext: action === "transcribe" ? contextAutomatic : undefined,
+        localAsrAutoGameContext: action === "transcribe" ? true : undefined,
         asrModelId:
           action === "transcribe" && transcriptionProvider === "local"
             ? effectiveSelectedAsrModel
@@ -423,13 +475,6 @@ export const VoiceMemoryDetail = ({
             <FileText aria-hidden="true" />
             {queuedAction === "transcribe" ? "排队中" : "开始转录"}
           </button>
-          <RecordingUploadAction
-            key={recording.recordingId}
-            record={record}
-            disabled={busy || Boolean(queuedAction)}
-            onRecord={setRecord}
-            onError={setError}
-          />
         </div>
         <RecordingTranscriptionModelSelect
           disabled={busy || Boolean(queuedAction)}
@@ -452,7 +497,10 @@ export const VoiceMemoryDetail = ({
             contextDirty.current = true;
             setContextAutomatic(value);
           }}
+          onSaveDictionary={() => void saveGameLexicon()}
+          savedTermCount={matchedGameLexicon?.terms.length ?? 0}
         />
+        {dictionarySaved ? <p role="status">已保存到个人游戏词典</p> : null}
         {error ? <p role="alert">{describeError(error, false)}</p> : null}
       </section>
     );
@@ -482,24 +530,58 @@ export const VoiceMemoryDetail = ({
     (record.transcriptionStats || record.phase === "transcribing" || record.phase === "paused")
       ? voiceMemoryTranscriptionPercent(record)
       : record.progress;
+  const reviewUnits = (record.transcriptionUnits ?? [])
+    .filter((unit) => unit.status === "completed" || unit.status === "failed")
+    .map((unit) => ({ unit, decision: reviewTranscriptionUnit(record, unit) }))
+    .filter(({ decision }) => decision.action !== "accept")
+    .slice(0, 128);
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
-      {record.transcriptionUnits?.some((unit) => unit.outputStatus === "quiet_audio_uncertain") && (
+      {reviewUnits.length > 0 && (
         <div className="text-sm text-[#718096]">
-          <p role="status">部分低音量区间无法确认是否有讲话，请回听原录音。</p>
+          <p role="status">部分音频区间需要复核；活动检测和模型异常是线索，不代表已确认漏字。</p>
           <details>
-            <summary>查看低音量区间</summary>
-            {record.transcriptionUnits
-              .filter((unit) => unit.outputStatus === "quiet_audio_uncertain")
-              .slice(0, 128)
-              .map((unit) => (
-                <button type="button" key={unit.unitId} onClick={() => onSeek(unit.startMs)}>
-                  {clock(unit.startMs)}–{clock(unit.endMs)}（回听混音）
-                </button>
-              ))}
-            {record.transcriptionUnits.filter(
-              (unit) => unit.outputStatus === "quiet_audio_uncertain",
-            ).length > 128 && <p>区间较多，仅显示前 128 条。</p>}
+            <summary>查看待复核区间</summary>
+            {reviewUnits.map(({ unit, decision }) => {
+              const canRetryExactlyThisLocalUnit =
+                transcriptionProvider === "local" &&
+                record.transcriptionModel?.id === unit.modelId &&
+                decision.action === "retry_candidate" &&
+                decision.retriesRemaining > 0;
+              return (
+                <div key={unit.unitId} className="flex flex-wrap items-center gap-2 py-1">
+                  <button type="button" onClick={() => onSeek(unit.startMs)}>
+                    {clock(unit.startMs)}–{clock(unit.endMs)}（
+                    {decision.action === "retry_candidate"
+                      ? `异常结果，剩余 ${decision.retriesRemaining} 次尝试`
+                      : decision.reasonCodes.includes("quiet_audio_uncertain")
+                        ? "低音量，回听确认"
+                        : decision.reasonCodes.includes("source_identity_unknown")
+                          ? "说话人来源待核对"
+                          : decision.reasonCodes.includes("transcript_sources_conflict")
+                            ? "两份原稿不一致"
+                            : decision.reasonCodes.includes("timeline_invalid")
+                              ? "时间轴待核对"
+                              : decision.reasonCodes.includes("asr_output_anomaly")
+                                ? "异常输出，回听确认"
+                                : "处理未完成，回听确认"}
+                    ）
+                  </button>
+                  {canRetryExactlyThisLocalUnit ? (
+                    <button
+                      type="button"
+                      disabled={busy || Boolean(queuedAction) || processing}
+                      onClick={() => void process("transcribe", [unit.unitId])}
+                    >
+                      只补转此段
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+            {(record.transcriptionUnits?.filter(
+              (unit) => unit.status === "completed" || unit.status === "failed",
+            ).length ?? 0) > 128 && <p>区间较多，仅显示前 128 条。</p>}
           </details>
         </div>
       )}
@@ -592,13 +674,6 @@ export const VoiceMemoryDetail = ({
                     ? "重新转录"
                     : "开始转录"}
             </button>
-            <RecordingUploadAction
-              key={recording.recordingId}
-              record={record}
-              disabled={busy || Boolean(queuedAction)}
-              onRecord={setRecord}
-              onError={setError}
-            />
             {record.transcriptionAssist?.status === "completed" &&
             (record.transcriptionFusion?.status !== "completed" ||
               record.transcriptionFusion.verificationPolicy !== "agreement-v1" ||
@@ -752,7 +827,10 @@ export const VoiceMemoryDetail = ({
           contextDirty.current = true;
           setContextAutomatic(value);
         }}
+        onSaveDictionary={() => void saveGameLexicon()}
+        savedTermCount={matchedGameLexicon?.terms.length ?? 0}
       />
+      {dictionarySaved ? <p role="status">已保存到个人游戏词典</p> : null}
       {record.localAsrContext || record.localAsrAutoGameContext ? (
         <p role="status" className="text-xs text-[#718096]">
           {record.transcriptionUnits?.some((unit) => unit.contextApplied === true)

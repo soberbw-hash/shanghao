@@ -87,6 +87,27 @@ test("repeated anomalous output remains diagnostic and never final text", async 
   assert.equal(result.result?.rawAnomalyAttempts?.length, 2);
 });
 
+test("targeted retries obey the remaining attempt budget", async () => {
+  let calls = 0;
+  const result = await transcribeChunkWithRetry(
+    async () => {
+      calls++;
+      return {
+        ...success(),
+        outputStatus: "repetition_loop",
+        anomalyTypes: ["repetition_loop"],
+        anomalyReasons: ["repeated"],
+      };
+    },
+    new AbortController().signal,
+    { ...context, maxAttempts: 1 },
+    () => undefined,
+  );
+  assert.equal(calls, 1);
+  assert.equal(result.failed, true);
+  assert.equal(result.attemptHistory.length, 1);
+});
+
 test("shared wait supports already cancelled and mid-wait cancellation", async () => {
   const controller = new AbortController();
   const pending = waitForTask(60_000, controller.signal);

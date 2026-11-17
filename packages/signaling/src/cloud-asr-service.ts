@@ -19,9 +19,35 @@ export class CloudAsrService {
     signal: AbortSignal,
   ): Promise<{ text: string; modelName: string }> {
     if (!this.key) throw Error("cloud_asr_not_configured");
+    const isDeepSeek = new URL(this.provider).hostname === "api.deepseek.com";
+    if (
+      isDeepSeek &&
+      (audio.length > 8 * 1024 * 1024 ||
+        !["audio/wav", "audio/ogg"].includes(mime.split(";", 1)[0]!.toLowerCase()))
+    )
+      throw Error("cloud_asr_provider_format_unsupported");
+    // DeepSeek ignores the right channel: do not silently lose half a stereo recording.
+    if (
+      isDeepSeek &&
+      mime.split(";", 1)[0]!.toLowerCase() === "audio/wav" &&
+      (audio.length < 44 ||
+        audio.toString("ascii", 0, 4) !== "RIFF" ||
+        audio.readUInt16LE(22) !== 1)
+    )
+      throw Error("cloud_asr_provider_format_unsupported");
+    if (isDeepSeek && mime.split(";", 1)[0]!.toLowerCase() === "audio/ogg") {
+      const opusHead = audio.indexOf("OpusHead");
+      if (
+        opusHead < 0 ||
+        opusHead > 128 ||
+        opusHead + 12 > audio.length ||
+        audio[opusHead + 9] !== 1
+      )
+        throw Error("cloud_asr_provider_format_unsupported");
+    }
     const form = new FormData();
     form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), "audio-chunk");
-    form.append("model", this.model);
+    if (!isDeepSeek) form.append("model", this.model);
     const response = await this.fetcher(this.provider, {
       method: "POST",
       redirect: "error",

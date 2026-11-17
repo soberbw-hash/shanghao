@@ -209,16 +209,22 @@ const selectForegroundActivityProcesses = (processes: ProcessSnapshot[]): Proces
 
 export const matchKnownGame = (
   processSnapshot: string | ProcessSnapshot[],
+  previousGame?: GameDetectionSnapshot["gameName"],
 ): GameDetectionSnapshot["gameName"] => {
   const processes = Array.isArray(processSnapshot)
     ? processSnapshot
     : parseProcessSnapshot(processSnapshot);
   const foregroundProcesses = selectForegroundActivityProcesses(processes);
 
-  const matchFromProcesses = (candidates: ProcessSnapshot[]): GameDetectionSnapshot["gameName"] => {
-    if (candidates.some(isKkHostedGameProcess)) return KK_PLATFORM_GAME_NAME;
+  const matchFromProcesses = (
+    candidates: ProcessSnapshot[],
+    onlyGame?: GameDetectionSnapshot["gameName"],
+  ): GameDetectionSnapshot["gameName"] => {
+    if ((!onlyGame || onlyGame === KK_PLATFORM_GAME_NAME) && candidates.some(isKkHostedGameProcess))
+      return KK_PLATFORM_GAME_NAME;
 
     for (const rule of GAME_RULES) {
+      if (onlyGame && rule.name !== onlyGame) continue;
       for (const processInfo of candidates) {
         const processName = normalizeProcessName(processInfo.ProcessName);
         const executableName = normalizeProcessName(
@@ -255,13 +261,18 @@ export const matchKnownGame = (
   // Prefer the foreground process for the most precise identity, but keep an
   // exact running-game match while the user Alt+Tabs to ShangHao or another
   // app. Work activity remains foreground-only.
-  return matchFromProcesses(foregroundProcesses) ?? matchFromProcesses(processes);
+  return (
+    matchFromProcesses(foregroundProcesses) ??
+    (previousGame ? matchFromProcesses(processes, previousGame) : undefined) ??
+    matchFromProcesses(processes)
+  );
 };
 
 const matchKnownGameActivity = (
   processes: ProcessSnapshot[],
+  previousGame?: GameDetectionSnapshot["gameName"],
 ): MatchedActivity<NonNullable<GameDetectionSnapshot["gameName"]>> | undefined => {
-  const gameName = matchKnownGame(processes);
+  const gameName = matchKnownGame(processes, previousGame);
   if (!gameName) return undefined;
   const rule = GAME_RULES.find((candidate) => candidate.name === gameName);
   if (!rule) return { activity: gameName };
@@ -473,7 +484,9 @@ interface DetectedActivities {
   processProbeFailed?: boolean;
 }
 
-const detectActivities = async (): Promise<DetectedActivities> => {
+const detectActivities = async (
+  previousGame?: GameDetectionSnapshot["gameName"],
+): Promise<DetectedActivities> => {
   if (!platformService.isWindows) return {};
 
   const native = await rustCoreClient
@@ -575,7 +588,7 @@ const detectActivities = async (): Promise<DetectedActivities> => {
         { windowsHide: true, maxBuffer: 2 * 1024 * 1024, timeout: 8_000 },
       ).catch(() => ({ stdout: "" }))
     : { stdout: "" };
-  const game = matchKnownGameActivity(processes);
+  const game = matchKnownGameActivity(processes, previousGame);
   return {
     game,
     processes,
@@ -719,7 +732,7 @@ export class GameDetectionController {
       musicActivity: detectedMusicActivity,
       processProbeFailed,
       processes,
-    } = await detectActivities();
+    } = await detectActivities(previousGame);
     if (!this.enabled || generation !== this.generation) {
       return;
     }

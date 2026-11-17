@@ -31,10 +31,9 @@ export class CloudAsrHttpController {
   constructor(
     private readonly accounts: AccountBackend,
     private readonly secure: (request: IncomingMessage) => boolean,
-    private readonly service: Pick<
-      CloudAsrService,
-      "isConfigured" | "transcribe"
-    > = new CloudAsrService(),
+    private readonly service: Pick<CloudAsrService, "isConfigured" | "transcribe"> & {
+      getModelName?: () => string | undefined;
+    } = new CloudAsrService(),
     private readonly textService: Pick<
       CloudAiService,
       "isConfigured" | "execute"
@@ -51,7 +50,7 @@ export class CloudAsrHttpController {
     if (path === "/api/ai/status" && req.method === "GET") {
       send(res, 200, {
         transcriptionConfigured: this.service.isConfigured(),
-        transcriptionModel: CLOUD_ASR_MODEL,
+        transcriptionModel: this.service.getModelName?.() ?? CLOUD_ASR_MODEL,
         textConfigured: this.textService.isConfigured(),
       });
       return true;

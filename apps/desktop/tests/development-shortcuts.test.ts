@@ -13,6 +13,7 @@ const fixture = (packaged = false, collision = true) => {
   }> = [];
   const moved: string[] = [];
   const elevated: string[] = [];
+  const normal: string[] = [];
   const exports = {} as {
     repairDevelopmentShortcuts: () => void;
     developmentRelaunchCommand: () => string;
@@ -39,7 +40,8 @@ const fixture = (packaged = false, collision = true) => {
             file.endsWith(".lnk")
               ? Buffer.concat([
                   Buffer.from("4c0000000114020000000000c000000000000046", "hex"),
-                  Buffer.alloc(56),
+                  Buffer.from([0, 32, 0, 0]),
+                  Buffer.alloc(52),
                 ])
               : file.endsWith(".ps1")
                 ? Buffer.concat([
@@ -52,6 +54,7 @@ const fixture = (packaged = false, collision = true) => {
           copyFileSync: (p: string) => moved.push(p),
           writeFileSync: (file: string, bytes: Buffer) => {
             if (file.endsWith(".lnk") && bytes.readUInt32LE(20) & 0x2000) elevated.push(file);
+            if (file.endsWith(".lnk") && !(bytes.readUInt32LE(20) & 0x2000)) normal.push(file);
           },
         };
       if (id === "@private-voice/shared") return { APP_ID: "com.sober.shanghao", APP_NAME: "上号" };
@@ -82,7 +85,7 @@ const fixture = (packaged = false, collision = true) => {
       throw Error(id);
     },
   });
-  return { writes, moved, elevated, ...exports };
+  return { writes, moved, elevated, normal, ...exports };
 };
 
 test("development shortcuts back up only the conflicting Electron entry and share a branded launcher", () => {
@@ -90,7 +93,8 @@ test("development shortcuts back up only the conflicting Electron entry and shar
   f.repairDevelopmentShortcuts();
   assert.equal(f.moved.length, 1);
   assert.equal(f.writes.length, 3);
-  assert.equal(f.elevated.length, 3);
+  assert.equal(f.elevated.length, 0);
+  assert.equal(f.normal.length, 3, "existing RunAs flags must be cleared after shortcut repair");
   for (const { options } of f.writes) {
     assert.equal(options.appUserModelId, "com.sober.shanghao.dev");
     assert.match(options.target, /powershell\.exe$/);

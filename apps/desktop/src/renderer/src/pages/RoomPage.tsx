@@ -74,7 +74,6 @@ export const RoomPage = () => {
   const switchAfterRecordingRef = useRef<string | undefined>(undefined);
   const {
     chronicle,
-    replay,
     room,
     leaveRoom,
     switchChannel,
@@ -1160,7 +1159,6 @@ export const RoomPage = () => {
           <RoomChatPanel
             key={room.roomId}
             chronicle={chronicle}
-            replay={replay}
             sendChatMessage={sendChatMessage}
             recallChatMessage={recallChatMessage}
             sendQuickMessage={sendQuickMessage}

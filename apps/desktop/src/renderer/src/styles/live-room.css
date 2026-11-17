@@ -3,8 +3,7 @@
 @import "./parts/272-league-lobby-symbols.css";
 @import "./parts/273-league-lobby-slots.css";
 @import "./parts/274-transcript-source-control.css";
-@import "./parts/258-room-chronicle.css";
-@import "./parts/268-room-chronicle-content.css";
+@import "./chronicle.css";
 @import "./parts/259-room-input-behavior.css";
 @import "./parts/260-voice-replay.css";
 @import "./parts/269-voice-replay-content.css";

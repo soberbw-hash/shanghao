@@ -212,6 +212,13 @@ export interface DailyRoomRecordingRecap {
   keywords: string[];
 }
 
+/** Short AI-generated room chronicle entries; raw audio and verbatim transcripts are never stored here. */
+export interface DailyRoomChronicleRecap {
+  id: string;
+  createdAt: string;
+  text: string;
+}
+
 export interface DailyRoomReport {
   roomName?: string;
   schemaVersion?: 1;
@@ -234,6 +241,8 @@ export interface DailyRoomReport {
   participants?: DailyRoomParticipantSummary[];
   /** Local recording recaps appear here only after a user explicitly publishes them. */
   recordingRecaps?: DailyRoomRecordingRecap[];
+  /** AI-generated realtime chronicle summaries saved automatically for this room and day. */
+  chronicleRecaps?: DailyRoomChronicleRecap[];
   peakConcurrentAt?: string;
   lastExit?: {
     nickname: string;

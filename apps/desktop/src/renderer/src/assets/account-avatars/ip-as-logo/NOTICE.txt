@@ -1,0 +1,3 @@
+IP as Logo showcase illustrations, cropped from the original wall image without redrawing.
+Source: https://github.com/s1dashu/ip-as-logo-skill/blob/main/assets/ip-as-logo-wall.webp
+Copyright and license: see LICENSE.txt in this directory.

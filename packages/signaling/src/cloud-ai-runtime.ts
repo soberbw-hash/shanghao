@@ -13,6 +13,7 @@ import { CloudAiAdminStore } from "./cloud-ai-admin-store";
 import { CloudAiAdminAccess } from "./cloud-ai-admin-access";
 import { CloudAiAdminHttp } from "./cloud-ai-admin-http";
 import { CloudAsrService } from "./cloud-asr-service";
+import { convertChronicleWebm } from "./cloud-asr-convert";
 
 type Logger = (message: string, context?: Record<string, unknown>) => void;
 
@@ -23,7 +24,9 @@ export class CloudAiRuntime {
   private readonly configuration: Promise<CloudAiAdminStore>;
   private store?: CloudAiAdminStore;
   readonly textService: Pick<CloudAiService, "isConfigured" | "execute">;
-  readonly speechService: Pick<CloudAsrService, "isConfigured" | "transcribe">;
+  readonly speechService: Pick<CloudAsrService, "isConfigured" | "transcribe"> & {
+    getModelName: () => string | undefined;
+  };
   configureHttp(accounts: AccountBackend, secure: (request: IncomingMessage) => boolean): void {
     this.adminHttp = new CloudAiAdminHttp(new CloudAiAdminAccess(secure), this.configuration);
     this.http = new CloudAsrHttpController(accounts, secure, this.speechService, this.textService);
@@ -74,15 +77,40 @@ export class CloudAiRuntime {
     this.textService = service;
     this.speechService = {
       isConfigured: () => Boolean(this.store?.provider("speech")),
+      getModelName: () => this.store?.provider("speech")?.model,
       transcribe: async (audio, mime, signal) => {
-        const provider = (await this.configuration).provider("speech");
+        const store = await this.configuration;
+        const provider = store.provider("speech");
         if (!provider) throw Error("cloud_asr_not_configured");
-        return new CloudAsrService(
-          provider.apiKey,
-          fetch,
-          `${provider.baseUrl}/audio/transcriptions`,
-          provider.model,
-        ).transcribe(audio, mime, signal);
+        const fallback = store.fallbackSpeechProvider();
+        const call = async (p: typeof provider) => {
+          const deepSeek = new URL(p.baseUrl).hostname === "api.deepseek.com";
+          const converted =
+            deepSeek && mime.split(";", 1)[0]?.trim().toLowerCase() === "audio/webm";
+          const payload = converted ? await convertChronicleWebm(audio, signal) : audio;
+          return new CloudAsrService(
+            p.apiKey,
+            fetch,
+            deepSeek
+              ? "https://api.deepseek.com/v1/tools/asr"
+              : `${p.baseUrl}/audio/transcriptions`,
+            p.model,
+          ).transcribe(payload, converted ? "audio/ogg" : mime, signal);
+        };
+        try {
+          return await call(provider);
+        } catch (error) {
+          if (
+            signal.aborted ||
+            !fallback ||
+            !(error instanceof Error) ||
+            !/^(cloud_asr_conversion_failed|cloud_asr_provider_format_unsupported|cloud_asr_http_(400|401|402|403|408|413|429|5\d\d)|cloud_asr_invalid_response|cloud_asr_response_too_large|fetch failed)$/.test(
+              error.message,
+            )
+          )
+            throw error;
+          return call(fallback);
+        }
       },
     };
     this.requests = new CloudAiRequestController(logger, service);

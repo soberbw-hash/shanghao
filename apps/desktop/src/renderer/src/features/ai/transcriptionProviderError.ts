@@ -19,7 +19,9 @@ export const transcriptionProviderError = (message: string): string | undefined 
     return "云端转录返回了无法识别的结果，请检查服务器接口版本。录音和已有文字已保留。";
   if (message.includes("cloud_asr_not_configured"))
     return "内置云端转录暂不可用，请稍后重试或切换本地模型；无需填写开发者的密钥。";
-  if (/cloud_asr_http_(?:401|402|403|404)/.test(message))
+  if (message.includes("cloud_asr_http_402"))
+    return "内置云端语音服务额度或计费状态异常，管理员需检查语音供应商账户。录音和已有文字已保留，可暂用本地模型。";
+  if (/cloud_asr_http_(?:401|403|404)/.test(message))
     return "内置云端转录服务配置或额度暂不可用，请稍后重试或使用本地模型。";
   if (message.includes("network_error") || message.includes("timeout"))
     return "转录网络连接中断或超时，自动重试后仍未完成。请稍后继续或切换本地模型。";

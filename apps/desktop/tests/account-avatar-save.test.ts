@@ -72,16 +72,19 @@ const setup = async (t: test.TestContext, presets = true) => {
   return { update, saved, changes, uploads: () => uploads };
 };
 
-test("all 32 built-in avatars save through the real HTTP route without image uploads", async (t) => {
+test("all built-in avatars save through the real HTTP route without image uploads", async (t) => {
   const f = await setup(t);
-  for (const id of ACCOUNT_AVATAR_PRESET_IDS) {
-    const response = await f.update({ accountAvatarPresetId: id });
+  for (const [index, id] of ACCOUNT_AVATAR_PRESET_IDS.entries()) {
+    const response = await f.update(
+      { accountAvatarPresetId: id },
+      index < 60 ? "token-a" : "token-b",
+    );
     assert.equal(response.status, 200);
     assert.equal((await response.json()).profile.accountAvatarPresetId, id);
   }
-  assert.equal(f.changes.length, 32);
+  assert.equal(f.changes.length, ACCOUNT_AVATAR_PRESET_IDS.length);
   assert.equal(f.uploads(), 0);
-  assert.equal(f.saved.get("owner-a")?.accountAvatarPresetId, "apricot-squirrel");
+  assert.equal(f.saved.get("owner-b")?.accountAvatarPresetId, ACCOUNT_AVATAR_PRESET_IDS.at(-1));
 });
 
 test("preset limits are per verified account, survive token rotation and allow a shared-IP second account", async (t) => {

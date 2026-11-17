@@ -1,7 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { RoomChronicleClient } from "../src/renderer/src/features/room/RoomChronicleClient";
-import type { ChronicleStateMessage } from "@private-voice/signaling";
+import type { ChronicleStateMessage, SignalEnvelope } from "@private-voice/signaling";
+
+test("automatically joins once and respects a member stopping their own speech across reconnects", async () => {
+  const sent: SignalEnvelope[] = [];
+  const send = async (message: SignalEnvelope) => {
+    sent.push(message);
+  };
+  const client = new RoomChronicleClient("auto-room", "auto-peer", send);
+  client.capability(true);
+  await client.joinAutomatically("session-one");
+  await client.joinAutomatically("session-one");
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0]?.type === "chronicle_control" && sent[0].enabled === true);
+  await client.control("participate", "session-one", false);
+  const reconnected = new RoomChronicleClient("auto-room", "reconnected-peer", send);
+  reconnected.capability(true);
+  await reconnected.joinAutomatically("session-one");
+  assert.equal(sent.length, 2);
+  await reconnected.joinAutomatically("session-two");
+  assert.equal(sent.length, 3);
+  assert.ok(sent[2]?.type === "chronicle_control" && sent[2].sessionId === "session-two");
+});
 
 test("older servers receive no chronicle messages and audio waits for a room-scoped acknowledgement", async () => {
   const sent: unknown[] = [];
