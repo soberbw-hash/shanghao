@@ -114,6 +114,7 @@ export interface ChronicleAudioMessage extends BaseMessage {
   startedAt: number;
   mime: "audio/webm" | "audio/ogg";
   data: string;
+  speakerName?: string;
   gameContext?: AsrGameLexiconEntry;
 }
 
@@ -689,6 +690,7 @@ export const isSignalEnvelope = (value: unknown): value is SignalEnvelope => {
   switch (value.type) {
     case "chronicle_audio":
       return (
+        (value.speakerName === undefined || isValidNickname(value.speakerName)) &&
         (value.gameContext === undefined || isAsrGameLexiconEntry(value.gameContext)) &&
         hasRoom(value) &&
         hasPeer(value) &&

@@ -23,7 +23,12 @@ export function useRoomChronicleCapture(transport?: RoomChronicleClient): string
   const [status, setStatus] = useState("");
   useEffect(() => {
     if (!transport || !sessionId || !localId || !connected || participating || !stream) return;
-    void transport.joinAutomatically(sessionId).catch(() => setStatus("转录连接失败，请重试"));
+    const join = () => {
+      void transport.joinAutomatically(sessionId).catch(() => setStatus("转录连接中，正在重试"));
+    };
+    join();
+    const retry = window.setInterval(join, 10_000);
+    return () => window.clearInterval(retry);
   }, [transport, sessionId, localId, connected, participating, stream]);
   useEffect(() => {
     setStatus("");

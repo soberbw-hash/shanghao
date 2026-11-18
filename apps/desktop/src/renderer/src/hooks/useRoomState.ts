@@ -84,15 +84,20 @@ import {
 } from "../features/room/roomSessionPresentation";
 export { buildChannelInviteText } from "../features/room/roomSessionPresentation";
 import { finishRoomRecordingBeforeRelease } from "../features/recording/roomRecordingOwnership";
-import { retainRoomRuntime, type RoomRuntimeHotState } from "../features/room/roomRuntimeHotState";
+import {
+  retainRoomRuntime,
+  restoreRoomClientRef,
+  type RoomRuntimeHotState,
+} from "../features/room/roomRuntimeHotState";
+import { publishRoomScreenShare } from "../features/screen-share/publishRoomScreenShare";
 
 const previousRuntime = import.meta.hot?.data.roomRuntime as RoomRuntimeHotState | undefined;
-let activeClient: RoomClient | null = previousRuntime?.activeClient ?? null;
+const activeClientRef = restoreRoomClientRef(previousRuntime);
 registerMemberVolumeReset(() => {
   const { room, updateMemberVolume } = useRoomStore.getState();
   applyDefaultMemberVolumes(room.members, (peerId, volume) => {
     updateMemberVolume(peerId, volume);
-    activeClient?.setPeerVolume(peerId, volume);
+    activeClientRef.current?.setPeerVolume(peerId, volume);
   });
 });
 let activePeerId = previousRuntime?.activePeerId;
@@ -110,14 +115,15 @@ export function leaveRoomOnAccountLoss(): void {
   for (const track of useRoomStore.getState().localStream?.getAudioTracks() ?? [])
     track.enabled = false;
   getRemoteAudioMixer().sync([]);
-  void activeClient?.disconnect().catch(() => undefined);
+  void activeClientRef.current?.disconnect().catch(() => undefined);
   void accountLossLeave?.().catch(() => undefined);
 }
 const roomSessionOwnership = previousRuntime?.roomSessionOwnership ?? new RoomSessionOwnership();
 let lastQuickMessageSentAt = previousRuntime?.lastQuickMessageSentAt ?? 0;
 let lastQuickMessageCooldownMs = previousRuntime?.lastQuickMessageCooldownMs ?? 3_000;
 retainRoomRuntime(import.meta.hot, () => ({
-  activeClient,
+  activeClient: activeClientRef.current,
+  activeClientRef,
   activePeerId,
   activeJoinPromise,
   activeSpeakingDetector,
@@ -138,7 +144,7 @@ const ROUTINE_SIGNAL_MESSAGE_TYPES = new Set([
   "screen_frame",
 ]);
 
-export const getRoomRuntimeDiagnostics = () => activeClient?.getDiagnostics();
+export const getRoomRuntimeDiagnostics = () => activeClientRef.current?.getDiagnostics();
 export const getRoomSessionTimeline = () => roomSessionOwnership.snapshot();
 export const getAudioRuntimeSnapshot = () => {
   const output = getRemoteAudioMixer().getDiagnostics();
@@ -148,21 +154,22 @@ export const getAudioRuntimeSnapshot = () => {
     processorPresent: Boolean(activeProcessedMicrophone),
     processorDiagnostics: activeProcessedMicrophone?.processorDiagnostics,
     outputTrack: activeProcessedMicrophone?.stream.getAudioTracks()[0],
-    roomClientPresent: Boolean(activeClient),
+    roomClientPresent: Boolean(activeClientRef.current),
     appliedOutputDeviceId: output.appliedOutputDeviceId,
     outputRouteStatus: output.outputRouteStatus,
   });
 };
 
-export const retryActiveRoomConnection = (): boolean => activeClient?.retryReconnect() ?? false;
+export const retryActiveRoomConnection = (): boolean =>
+  activeClientRef.current?.retryReconnect() ?? false;
 
 export const dispatchQuickMessageShortcut = (slotIndex: number): void => {
   activeQuickMessageShortcutHandler?.(slotIndex);
 };
 
 export const injectRealtimeFault = async (command: RealtimeFaultCommand): Promise<void> => {
-  if (!activeClient) throw new Error("fault_lab_room_client_unavailable");
-  await activeClient.injectFault(command);
+  if (!activeClientRef.current) throw new Error("fault_lab_room_client_unavailable");
+  await activeClientRef.current.injectFault(command);
 };
 
 export const useRoomState = () => {
@@ -220,8 +227,8 @@ export const useRoomState = () => {
           : MemberSpeakingState.Silent,
     });
     const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
-    activeClient?.updateMuteState(isMuted, isSpeaking);
-    activeClient?.updatePresenceState(
+    activeClientRef.current?.updateMuteState(isMuted, isSpeaking);
+    activeClientRef.current?.updatePresenceState(
       isDeafened,
       localMember?.activity ?? "idle",
       localMember?.sceneZone,
@@ -240,7 +247,7 @@ export const useRoomState = () => {
   useEffect(() => {
     if (!profileNickname || useRoomStore.getState().room.temporaryRoom) return;
 
-    activeClient?.updateProfile(
+    activeClientRef.current?.updateProfile(
       profileNickname,
       avatarDataUrl,
       useRoomStore.getState().room.members.find((member) => member.isLocal)?.avatarId ??
@@ -271,7 +278,7 @@ export const useRoomState = () => {
               ? MemberSpeakingState.Speaking
               : MemberSpeakingState.Silent,
         });
-        activeClient?.updateMuteState(muted, !muted && isSpeaking);
+        activeClientRef.current?.updateMuteState(muted, !muted && isSpeaking);
       },
       (level) => {
         if (!ownsDetector()) return;
@@ -304,6 +311,7 @@ export const useRoomState = () => {
     resetStore = false,
     preserveLocalMedia = false,
   }: { resetStore?: boolean; preserveLocalMedia?: boolean } = {}) => {
+    const generation = roomSessionOwnership.current();
     cancelDelayedRoomEntryCue();
     stopQuickMessageMusic();
     await finishRoomRecordingBeforeRelease().catch((error) => {
@@ -316,10 +324,10 @@ export const useRoomState = () => {
         error: error instanceof Error ? error.message : String(error),
       });
     });
-    const generation = roomSessionOwnership.current();
-    const client = activeClient;
+    if (!roomSessionOwnership.owns(generation)) return;
+    const client = activeClientRef.current;
     const temporaryContextId = useRoomStore.getState().room.temporaryRoom?.contextId;
-    activeClient = null;
+    activeClientRef.current = null;
     activePeerId = undefined;
     if (client) roomSessionOwnership.record("disconnect_started", generation);
     await finishOwnedRoomCleanup(
@@ -473,7 +481,7 @@ export const useRoomState = () => {
     const roomName = useRoomStore.getState().room.roomName;
     const memberPresence = new MemberPresenceTracker();
 
-    activeClient = new RoomClient({
+    activeClientRef.current = new RoomClient({
       signalingUrl: serverUrl,
       roomId: channelId,
       peerId,
@@ -504,7 +512,7 @@ export const useRoomState = () => {
           saveLegacyVolume: scheduleMemberVolumeSave,
         });
         for (const member of membersWithVolume) {
-          if (!member.isLocal) activeClient?.setPeerVolume(member.id, member.volume);
+          if (!member.isLocal) activeClientRef.current?.setPeerVolume(member.id, member.volume);
         }
         setMembers(membersWithVolume);
 
@@ -793,13 +801,14 @@ export const useRoomState = () => {
     });
 
     roomSessionOwnership.record("connect_started", generation);
-    await activeClient.connect();
+    await activeClientRef.current.connect();
     assertCurrentSession();
     roomSessionOwnership.record("connected", generation);
-    if (!temporary) loadCurrentRoomReports(activeClient, channelId, () => activeClient);
+    if (!temporary)
+      loadCurrentRoomReports(activeClientRef.current, channelId, () => activeClientRef.current);
     const localMember = useRoomStore.getState().room.members.find((member) => member.isLocal);
-    activeClient.updateMuteState(useAudioStore.getState().isMuted, false);
-    activeClient.updatePresenceState(
+    activeClientRef.current.updateMuteState(useAudioStore.getState().isMuted, false);
+    activeClientRef.current.updatePresenceState(
       useAudioStore.getState().isDeafened,
       localMember?.activity ?? "idle",
       localMember?.sceneZone,
@@ -929,6 +938,7 @@ export const useRoomState = () => {
         mergeChatHistory(cachedMessages);
       } catch (error) {
         roomSessionOwnership.record("join_failed", generation);
+        if (!roomSessionOwnership.owns(generation)) return;
         if (error instanceof Error && error.message === "CLIENT_UPDATE_REQUIRED") {
           await cleanupPreviousSession();
           return;
@@ -940,7 +950,7 @@ export const useRoomState = () => {
           serverUrl,
           channelId,
           error: error instanceof Error ? error.message : String(error),
-          ...activeClient?.getDiagnostics(),
+          ...activeClientRef.current?.getDiagnostics(),
         });
         await cleanupPreviousSession();
         useAppStore.getState().navigate("home");
@@ -969,7 +979,7 @@ export const useRoomState = () => {
   };
 
   const switchChannel = (channelId: ChannelId): Promise<void> => {
-    if (channelId === room.roomId && activeClient) return Promise.resolve();
+    if (channelId === room.roomId && activeClientRef.current) return Promise.resolve();
     return joinChannel(
       room.signalingUrl || useSettingsStore.getState().settings?.relayServerUrl,
       channelId,
@@ -980,9 +990,10 @@ export const useRoomState = () => {
     preferredInputDeviceId?: string,
     { reuseCapture = false }: { reuseCapture?: boolean } = {},
   ) => {
-    const client = activeClient;
+    const client = activeClientRef.current;
     const generation = roomSessionOwnership.current();
-    const ownsSwitch = () => activeClient === client && roomSessionOwnership.owns(generation);
+    const ownsSwitch = () =>
+      activeClientRef.current === client && roomSessionOwnership.owns(generation);
     const operation = inputDeviceSwitchQueue.then(async () => {
       const currentSettings = useSettingsStore.getState().settings;
       if (!client || !ownsSwitch() || !currentSettings) {
@@ -1188,7 +1199,7 @@ export const useRoomState = () => {
     const settings = useSettingsStore.getState().settings;
     if ((!trimmed && !image) || !settings) return;
 
-    if (!activeClient) {
+    if (!activeClientRef.current) {
       pushToast({
         tone: "warning",
         title: "还没进入频道",
@@ -1197,7 +1208,7 @@ export const useRoomState = () => {
       return;
     }
 
-    if (!activeClient.canSendChat()) {
+    if (!activeClientRef.current.canSendChat()) {
       pushToast({
         tone: "warning",
         title: "正在重连",
@@ -1237,7 +1248,7 @@ export const useRoomState = () => {
     }
 
     try {
-      const ack = await activeClient.sendChatMessage(trimmed, image, clientMessageId);
+      const ack = await activeClientRef.current.sendChatMessage(trimmed, image, clientMessageId);
       updateChatDelivery(clientMessageId, {
         id: ack.messageId,
         createdAt: ack.acceptedAt,
@@ -1267,7 +1278,7 @@ export const useRoomState = () => {
   };
 
   const sendKnock = async () => {
-    if (!activeClient || !activeClient.canSendChat()) {
+    if (!activeClientRef.current || !activeClientRef.current.canSendChat()) {
       pushToast({
         tone: "warning",
         title: "还没进入频道",
@@ -1276,24 +1287,25 @@ export const useRoomState = () => {
       return;
     }
 
-    await activeClient.sendKnock();
+    await activeClientRef.current.sendKnock();
   };
 
   const recallChatMessage = async (messageId: string) => {
-    if (!activeClient?.canSendChat()) {
+    if (!activeClientRef.current?.canSendChat()) {
       throw new Error("signaling_not_connected");
     }
-    await activeClient.recallChatMessage(messageId);
+    await activeClientRef.current.recallChatMessage(messageId);
   };
 
   const sendSceneReaction = async (
     targetPeerId: string,
     emoji: import("@private-voice/shared").SceneReaction["emoji"],
   ) => {
-    if (!activeClient?.canSendChat()) {
+    if (!activeClientRef.current?.canSendChat()) {
+      if (decodeMemberAvailability(targetPeerId)) throw new Error("signaling_not_connected");
       return;
     }
-    await activeClient.sendSceneReaction(targetPeerId, emoji);
+    await activeClientRef.current.sendSceneReaction(targetPeerId, emoji);
     if (!decodeMemberAvailability(targetPeerId)) playSceneReactionSound("send-message");
   };
 
@@ -1301,11 +1313,14 @@ export const useRoomState = () => {
     const preset = findQuickMessagePreset(presetId);
     const targetPeerId = preset ? encodeQuickMessageTarget(preset.id) : undefined;
     if (!preset || !targetPeerId) throw new Error("quick_message_preset_unavailable");
-    if (!activeClient?.canSendChat()) {
+    if (!activeClientRef.current?.canSendChat()) {
       throw new Error("signaling_not_connected");
     }
     if (preset.mediaType === "music" && toggleQuickMessageMusic(preset.soundId)) {
-      await activeClient.sendSceneReaction(encodeQuickMessageControlTarget(preset.id), "👍");
+      await activeClientRef.current.sendSceneReaction(
+        encodeQuickMessageControlTarget(preset.id),
+        "👍",
+      );
       return;
     }
     const now = Date.now();
@@ -1330,7 +1345,7 @@ export const useRoomState = () => {
         },
       );
     }
-    await activeClient.sendSceneReaction(targetPeerId, "👍");
+    await activeClientRef.current.sendSceneReaction(targetPeerId, "👍");
   };
 
   const stopSharedQuickMessageMusic = async (source: {
@@ -1339,7 +1354,7 @@ export const useRoomState = () => {
   }): Promise<boolean> => {
     const audio = getQuickMessageAudioSnapshot();
     if (
-      !activeClient?.canSendChat() ||
+      !activeClientRef.current?.canSendChat() ||
       source.peerId !== activePeerId ||
       audio.status !== "playing" ||
       audio.mediaType !== "music" ||
@@ -1350,7 +1365,10 @@ export const useRoomState = () => {
       return false;
     }
     if (!stopQuickMessageMusic(audio.soundId)) return false;
-    await activeClient.sendSceneReaction(encodeQuickMessageControlTarget(audio.presetId), "👍");
+    await activeClientRef.current.sendSceneReaction(
+      encodeQuickMessageControlTarget(audio.presetId),
+      "👍",
+    );
     return true;
   };
 
@@ -1361,14 +1379,14 @@ export const useRoomState = () => {
       return;
     }
     const targetPeerId = encodeQuickReplyTarget(content);
-    if (!targetPeerId || !activeClient?.canSendChat()) {
+    if (!targetPeerId || !activeClientRef.current?.canSendChat()) {
       throw new Error("signaling_not_connected");
     }
     const now = Date.now();
     if (now - lastQuickMessageSentAt < QUICK_REPLY_COOLDOWN_MS) return;
     lastQuickMessageSentAt = now;
     lastQuickMessageCooldownMs = QUICK_REPLY_COOLDOWN_MS;
-    await activeClient.sendSceneReaction(targetPeerId, "👍");
+    await activeClientRef.current.sendSceneReaction(targetPeerId, "👍");
   };
 
   const quickMessageShortcutHandlerRef = useRef<QuickMessageShortcutHandler>(() => undefined);
@@ -1411,24 +1429,19 @@ export const useRoomState = () => {
   );
 
   const startScreenShare = async (stream: MediaStream, profile?: ScreenShareEncodingProfile) => {
-    if (!activeClient) {
-      stream.getTracks().forEach((track) => track.stop());
-      throw new Error("room_not_connected");
-    }
-
-    await activeClient.startScreenShare(stream, profile);
+    await publishRoomScreenShare(activeClientRef, stream, profile);
     await writeRendererLog("webrtc", "info", "Screen share started from room state", {
       videoTracks: stream.getVideoTracks().length,
     });
   };
 
   const stopScreenShare = async () => {
-    await activeClient?.stopScreenShare();
+    await activeClientRef.current?.stopScreenShare();
     await writeRendererLog("webrtc", "info", "Screen share stopped from room state");
   };
 
   const setScreenShareViewingActive = useCallback((active: boolean) => {
-    activeClient?.setScreenShareViewingActive(active);
+    activeClientRef.current?.setScreenShareViewingActive(active);
   }, []);
 
   const moveLocalMember = (
@@ -1466,7 +1479,7 @@ export const useRoomState = () => {
     }
     if (sceneZone === "restroomZone") {
       useAudioStore.getState().setMuted(true);
-      activeClient?.updateMuteState(true, false);
+      activeClientRef.current?.updateMuteState(true, false);
     }
     updateLocalPresence({
       sceneZone,
@@ -1476,7 +1489,7 @@ export const useRoomState = () => {
       musicActivity,
       gameSession: session,
     });
-    activeClient?.updatePresenceState(
+    activeClientRef.current?.updatePresenceState(
       isDeafened,
       activity,
       sceneZone,
@@ -1503,7 +1516,7 @@ export const useRoomState = () => {
     const storageKey = member.profileId || member.nickname;
     runtimeMemberVolumes.set(storageKey, normalizedVolume);
     updateMemberVolume(memberId, normalizedVolume);
-    activeClient?.setPeerVolume(memberId, normalizedVolume);
+    activeClientRef.current?.setPeerVolume(memberId, normalizedVolume);
     scheduleMemberVolumeSave(storageKey, normalizedVolume);
   };
 
@@ -1512,8 +1525,8 @@ export const useRoomState = () => {
     title: string,
     content: string,
   ) => {
-    if (!activeClient) throw new Error("signaling_not_connected");
-    await activeClient.addRoomCollectionItem(kind, title, content);
+    if (!activeClientRef.current) throw new Error("signaling_not_connected");
+    await activeClientRef.current.addRoomCollectionItem(kind, title, content);
     await writeRendererLog("signaling", "info", "Room collection item requested", {
       kind,
       title: title.slice(0, 80),
@@ -1521,15 +1534,15 @@ export const useRoomState = () => {
   };
 
   const removeRoomCollectionItem = async (itemId: string) => {
-    if (!activeClient) throw new Error("signaling_not_connected");
-    await activeClient.removeRoomCollectionItem(itemId);
+    if (!activeClientRef.current) throw new Error("signaling_not_connected");
+    await activeClientRef.current.removeRoomCollectionItem(itemId);
     await writeRendererLog("signaling", "info", "Room collection item removal requested", {
       itemId,
     });
   };
 
   return {
-    chronicle: activeClient?.chronicle,
+    chronicle: activeClientRef.current?.chronicle,
     room,
     localStream,
     joinChannel,
@@ -1548,8 +1561,8 @@ export const useRoomState = () => {
     startScreenShare,
     stopScreenShare,
     setApplicationAudioTrack: async (track?: MediaStreamTrack, sourceName?: string) => {
-      if (!activeClient) throw Error("room_not_connected");
-      await activeClient.setApplicationAudioTrack(track, sourceName);
+      if (!activeClientRef.current) throw Error("room_not_connected");
+      await activeClientRef.current.setApplicationAudioTrack(track, sourceName);
     },
     setScreenShareViewingActive,
     moveLocalMember,

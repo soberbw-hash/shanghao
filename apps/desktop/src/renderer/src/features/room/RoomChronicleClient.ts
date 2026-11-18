@@ -13,6 +13,9 @@ export class RoomChronicleClient {
   private supported = false;
   private disposed = false;
   private automaticSession?: string;
+  private automaticAttemptAt = 0;
+  private automaticJoining = false;
+  private lastState?: ChronicleStateMessage["state"];
   private readonly pending = new Map<
     string,
     { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
@@ -27,7 +30,10 @@ export class RoomChronicleClient {
   capability(supported: boolean): void {
     if (this.disposed) return;
     this.supported = supported;
-    if (!supported) this.rejectPending("chronicle_unavailable");
+    if (!supported) {
+      this.lastState = undefined;
+      this.rejectPending("chronicle_unavailable");
+    }
     this.changed?.({ type: "chronicle_state", roomId: this.roomId, available: supported });
   }
 
@@ -40,7 +46,12 @@ export class RoomChronicleClient {
       if (message.error) pending.reject(new Error(message.error));
       else pending.resolve();
     }
-    this.changed?.({ ...message, available: this.supported });
+    if (!message.error || message.state) this.lastState = message.state;
+    this.changed?.({
+      ...message,
+      state: message.error && !message.state ? this.lastState : message.state,
+      available: this.supported,
+    });
   }
 
   async control(
@@ -68,16 +79,24 @@ export class RoomChronicleClient {
     });
   }
 
-  /** Join a new room session once; a member's stop choice wins for that session. */
+  /** Retry unconfirmed joins at a bounded rate; a member's stop choice wins. */
   async joinAutomatically(sessionId: string): Promise<void> {
-    if (this.automaticSession === sessionId || optedOutSessions.has(`${this.roomId}:${sessionId}`))
+    if (
+      this.automaticJoining ||
+      optedOutSessions.has(`${this.roomId}:${sessionId}`) ||
+      (this.automaticSession === sessionId && Date.now() - this.automaticAttemptAt < 10_000)
+    )
       return;
     this.automaticSession = sessionId;
+    this.automaticAttemptAt = Date.now();
+    this.automaticJoining = true;
     try {
       await this.control("participate", sessionId, true);
     } catch (error) {
       this.automaticSession = undefined;
       throw error;
+    } finally {
+      this.automaticJoining = false;
     }
   }
 

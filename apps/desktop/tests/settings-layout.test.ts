@@ -514,7 +514,7 @@ test("microphone processing lives in the room panel while about shows three rele
   assert.equal(RELEASE_HISTORY[0]?.version, desktopPackage.version);
   assert.deepEqual(
     RECENT_RELEASE_HISTORY.map((release) => release.version),
-    [desktopPackage.version, "3.4.18", "3.4.17"],
+    [desktopPackage.version, "3.4.20", "3.4.18"],
   );
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(

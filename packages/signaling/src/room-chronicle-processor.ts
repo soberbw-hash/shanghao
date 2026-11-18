@@ -152,7 +152,6 @@ export class RoomChronicleProcessor {
           prompt: roomChroniclePrompt(segments),
         },
         signal,
-        false,
       );
       signal.throwIfAborted();
       const value: unknown = JSON.parse(content);

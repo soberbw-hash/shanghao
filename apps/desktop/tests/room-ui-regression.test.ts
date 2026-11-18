@@ -351,7 +351,10 @@ test("local speaker and microphone state are applied atomically before server ec
     "utf8",
   );
   assert.equal(source.includes("speakingState: isMuted"), true);
-  assert.equal(source.includes("activeClient?.updateMuteState(isMuted, isSpeaking)"), true);
+  assert.equal(
+    source.includes("activeClientRef.current?.updateMuteState(isMuted, isSpeaking)"),
+    true,
+  );
   assert.equal(source.includes("updateLocalPresence({\n          speakingState: muted"), true);
   const projection = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/features/room/memberProjection.ts"),

@@ -39,6 +39,7 @@ test("independent member chunks form one bounded shared summary and deduplicate 
   const { sessions, id } = setup();
   let calls = 0;
   let prompt = "";
+  let memoryEnabled: boolean | undefined;
   const processor = new RoomChronicleProcessor(
     sessions,
     {
@@ -50,8 +51,9 @@ test("independent member chunks form one bounded shared summary and deduplicate 
     },
     {
       isConfigured: () => true,
-      execute: async (request) => {
+      execute: async (request, _signal, includeRoomMemory) => {
         prompt = request.prompt;
+        memoryEnabled = includeRoomMemory;
         return '{"text":"甲说自己稳如老狗，乙提醒他刚送了一波。"}';
       },
     },
@@ -69,13 +71,14 @@ test("independent member chunks form one bounded shared summary and deduplicate 
     await processor.submit(part(id), "不能重复");
     await until(() => sessions.read("main", id, "a").length === 1);
     assert.equal(calls, 2);
+    assert.notEqual(memoryEnabled, false);
     assert.match(prompt, /"name":"甲"/);
     assert.match(prompt, /"name":"乙"/);
     assert.match(prompt, /"peerId":"a"/);
     assert.match(prompt, /"peerId":"b"/);
     assert.match(prompt, /"gameName":"英雄联盟"/);
-    assert.match(prompt, /不证明他是句子里每个/);
-    assert.match(prompt, /吃瓜小编/);
+    assert.match(prompt, /拿不准的指代、身份、情绪或因果就保留不确定性/);
+    assert.match(prompt, /不为凑频率硬写/);
     assert.doesNotMatch(prompt, /不能重复/);
     assert.deepEqual(sessions.read("main", id, "a"), sessions.read("main", id, "b"));
   } finally {

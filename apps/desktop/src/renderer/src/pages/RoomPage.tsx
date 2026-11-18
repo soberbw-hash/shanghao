@@ -66,6 +66,7 @@ import { getLatestConnectionHealthTelemetry, useRoomStore } from "../store/roomS
 import { useSettingsStore } from "../store/settingsStore";
 import { useAssistantBotState } from "../features/ai/useAssistantBotState";
 import { toUserFacingError } from "../utils/userFacingError";
+import { screenShareErrorMessage } from "../features/screen-share/screenShareErrorMessage";
 import roomEnvironmentUrl from "../assets/scenes/shanghao-room/environment-v3-extended.png";
 const KNOCK_COOLDOWN_MS = 10_000;
 export const RoomPage = () => {
@@ -856,10 +857,7 @@ export const RoomPage = () => {
       pushToast({
         tone: "danger",
         title: "屏幕分享失败",
-        description:
-          error instanceof DOMException && error.name === "NotFoundError"
-            ? "没有找到可分享的显示器或窗口。"
-            : "桌面捕获没有启动，请重试；错误详情已经写入诊断日志。",
+        description: screenShareErrorMessage(error),
       });
     }
   };

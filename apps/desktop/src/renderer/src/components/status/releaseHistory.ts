@@ -88,6 +88,14 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 ];
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
+  {
+    version: "3.4.21",
+    date: "2026-11-18",
+    title: "房间纪事与操作优化",
+    summary: "改善房间纪事、成员状态与房间管理。",
+    highlights: ["优化纪事排版与房间记忆称呼。", "改善状态浮窗、头像操作与连接提示。"],
+    details: [{ title: "房间体验", items: ["精简纪事界面，改善成员状态和房间管理操作。"] }],
+  },
   RELEASE_3420,
   RELEASE_3418,
   RELEASE_3417,

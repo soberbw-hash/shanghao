@@ -66,6 +66,12 @@ export function useMemberAvailabilityControls(
       select: (nextStatus) => {
         selected.current = { roomId, status: nextStatus };
         setSelection(selected.current);
+        const room = useRoomStore.getState();
+        room.setMembers(
+          room.room.members.map((member) =>
+            member.isLocal ? { ...member, availabilityStatus: nextStatus } : member,
+          ),
+        );
         window.dispatchEvent(new Event("shanghao:availability-audio-feedback"));
         // Phone entry is sounded before Windows mutes outputs by usePhoneModeSync.
         if (!useAudioStore.getState().phoneModeActive)

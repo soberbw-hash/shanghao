@@ -8,7 +8,7 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看最近版本更新](#最近版本更新) · [v3.4.20 完整说明](./docs/release-notes/v3.4.20.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看最近版本更新](#最近版本更新) · [v3.4.21 完整说明](./docs/release-notes/v3.4.21.md) · [看技术结构](#声音到底经过了什么)
 
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
@@ -23,6 +23,8 @@
 ### 先看见朋友
 
 **01 · 朋友有自己的房间。** 每个账号可创建三个私人房间，设置名称并选择 20 个图标，通过六位频道号查找、预览后加入。最近、收藏和我的房间各有入口；每间最多五人，房主可编辑、移出、封禁和解封成员。成员进房、入座、离开、回来，人物和工位跟着变化。
+
+官方房间服务连接阿里云；账号继续使用原登录服务。升级时保留本机录音、聊天和设置。
 
 ![房间人物、座位与成员状态局部](./docs/readme/room-presence.webp)
 
@@ -231,6 +233,10 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 这里仅列出最近三个正式版本。更早版本的功能已按主题整合进上方的功能总览，不再逐版重复；完整历史仍可在 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases) 查看。
 
+### 3.4.21
+
+改善房间纪事、成员状态和房间管理，修复开发版热更新时可能影响屏幕分享的问题。[完整说明](./docs/release-notes/v3.4.21.md)
+
 ### 3.4.20
 
 改善房间管理、对话回溯和设置界面，适配和平精英模拟器，并完善临时联机与录音转录体验。[完整说明](./docs/release-notes/v3.4.20.md)
@@ -239,13 +245,9 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 本版本合并了 v3.4.17 的录音库、房间纪事、语音回溯与音频配置改进，并加入长录音转录回退、原文保留、分成员回溯、游戏语境辅助、文字回听和模型对比参考稿。新安装默认开启自动转录；云端文字服务支持 DeepSeek V4.1 Flash 与 GLM 备用，实际可用状态取决于服务端配置。[完整说明](./docs/release-notes/v3.4.18.md)
 
-### 3.4.16
-
-官方房间服务默认连接迁移至阿里云；升级会保留本地录音、聊天和设置，账号仍使用原登录服务。[完整说明](./docs/release-notes/v3.4.16.md)
-
 ## 下载与使用
 
-当前仓库版本为 **3.4.20**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.20 更新公告](./docs/release-notes/v3.4.20.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.21**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.21 更新公告](./docs/release-notes/v3.4.21.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 
