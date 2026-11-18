@@ -381,7 +381,7 @@ test("each remote member has compact local-only volume and mute controls", () =>
   assert.equal(sceneCharacterSource.includes("toggleLocalMemberMute"), true);
   assert.equal(roomStateSource.includes("runtimeMemberVolumes"), true);
   assert.equal(volumePersistenceSource.includes("pendingSaves"), true);
-  assert.equal(roomStateSource.includes("activeClient?.setPeerVolume"), true);
+  assert.equal(roomStateSource.includes("activeClientRef.current?.setPeerVolume"), true);
   assert.equal(stylesSource.includes("width: 194px"), true);
   assert.equal(stylesSource.includes("top: calc(100% + 6px)"), true);
   assert.equal(stylesSource.includes(".scene-character-anchor.is-audio-controls-open"), true);

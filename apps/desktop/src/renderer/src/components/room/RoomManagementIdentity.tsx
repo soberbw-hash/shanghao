@@ -27,20 +27,27 @@ export function RoomManagementIdentity({
   const [choosingIcon, setChoosingIcon] = useState(false);
   return (
     <>
-      <header className="mb-4 flex items-center gap-3">
+      <header className="mb-4 flex items-start gap-3">
         <button
           type="button"
-          className="size-11 shrink-0 rounded-xl focus-visible:outline-2 focus-visible:outline-blue-500"
+          className="group relative size-11 shrink-0 cursor-pointer rounded-xl transition-transform duration-150 hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none motion-reduce:hover:scale-100"
           disabled={busy}
           aria-label="更换房间头像"
+          title="更换房间头像"
           aria-expanded={choosingIcon}
           onClick={() => setChoosingIcon((value) => !value)}
         >
           <PrivateRoomIcon icon={room.icon} className="size-full" />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-slate-900/45 text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+          >
+            <Pencil size={16} />
+          </span>
         </button>
         {editingName ? (
           <form
-            className="flex min-w-0 flex-1 items-center gap-2"
+            className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
             onSubmit={(event) => {
               event.preventDefault();
               const next = name.trim();
@@ -59,6 +66,7 @@ export function RoomManagementIdentity({
             }}
           >
             <Input
+              className="min-w-[8rem] flex-1 basis-[10rem]"
               aria-label="房间名称"
               value={name}
               maxLength={32}
@@ -66,12 +74,17 @@ export function RoomManagementIdentity({
               onChange={(event) => setName(event.target.value)}
               autoFocus
             />
-            <Button type="submit" disabled={busy || !name.trim()}>
+            <Button
+              type="submit"
+              className="shrink-0 whitespace-nowrap"
+              disabled={busy || !name.trim()}
+            >
               保存
             </Button>
             <Button
               type="button"
               variant="ghost"
+              className="shrink-0 whitespace-nowrap"
               disabled={busy}
               onClick={() => {
                 setName(room.name);
@@ -82,7 +95,7 @@ export function RoomManagementIdentity({
             </Button>
           </form>
         ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2">
             <h2 className="min-w-0 truncate text-lg font-semibold">{room.name}</h2>
             <button
               type="button"

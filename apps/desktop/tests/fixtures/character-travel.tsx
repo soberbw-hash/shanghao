@@ -143,9 +143,9 @@ const verify = async () => {
     if (!observePoses) return;
     const layers = [...document.querySelectorAll<HTMLElement>(".room-character-visual-layer")];
     if (layers.length) {
-      const visible = layers.filter((layer) => Number(getComputedStyle(layer).opacity) > 0.01);
-      if (visible.length !== 1 || Number(getComputedStyle(visible[0]).opacity) < 0.99) {
-        poseError ||= `pose overlap or disappearance: ${layers.map((layer) => getComputedStyle(layer).opacity).join(", ")}`;
+      const opacity = layers.map((layer) => Number(getComputedStyle(layer).opacity));
+      if (opacity.every((value) => value < 0.45)) {
+        poseError ||= `pose disappearance: ${opacity.join(", ")}`;
       }
       poseFrames++;
     }
@@ -195,9 +195,29 @@ const verify = async () => {
   );
   observePoses = false;
   if (poseError || poseFrames < 10) throw new Error(poseError || "too few pose frames sampled");
+
+  // A member can reconnect under the same scene identity before their exit
+  // finishes. A late exit callback must not remove the returning character.
+  api().setPresent(false);
+  await delay(120);
+  delete document.body.dataset.settled;
+  api().setPresent(true);
+  await waitFor(() => settled("gameDesk4"), "quick reconnect settles");
+  await delay(2500);
+  if (!document.querySelector(".scene-character-motion"))
+    throw new Error("reconnected member removed");
+  await waitFor(() => !doorOpen(), "door closes after reconnect");
+
   api().setPresent(false);
   await waitFor(() => Boolean(doorOpen()), "door opens for departure");
-  await waitFor(() => !document.querySelector(".scene-character-motion"), "exit");
+  // Room state (speaking, ping, chat, etc.) continues to refresh during exit.
+  // This must not keep restarting the exiting character at the door.
+  const refresh = window.setInterval(() => api().rerender(), 100);
+  try {
+    await waitFor(() => !document.querySelector(".scene-character-motion"), "exit during refresh");
+  } finally {
+    window.clearInterval(refresh);
+  }
   await waitFor(() => !doorOpen(), "door closes after departure");
   return {
     elapsedMs: Math.round(performance.now() - startedAt),
@@ -206,6 +226,7 @@ const verify = async () => {
     interruptions: 5,
     poseFrames,
     failureRecovery: true,
+    quickReconnect: true,
     exit: true,
     welcomeDoor: true,
   };

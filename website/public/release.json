@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.17",
-  "published_at": "2026-11-03T15:19:02Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.17",
+  "tag_name": "v3.4.20",
+  "published_at": "2026-11-17T13:27:22Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.20",
   "highlights": [
-    "改进录音库：支持片段时间范围选择、回收站恢复，并优化文字稿和摘要显示。",
-    "优化房间状态切换、音频设备配置、屏幕分享以及不同窗口尺寸下的布局。",
-    "改进后台转录任务恢复和临时错误重试，保留已有的录音和文字。",
-    "新增实时纪事、语音回溯和云端管理的客户端与服务端实现，使用这些功能需要相应服务器能力。"
+    "房间管理中可直接修改名称和头像，保存对话与回溯设置使用同一入口。",
+    "设置页面统一浅色背景，优化界面文字、头像选择及录音库布局。",
+    "适配和平精英模拟器游戏窗口，游戏名称显示为“和平精英”。",
+    "临时联机增加服务器房间和直接连接的选择，两者无需注册账号；跨网络直接连接可能需要发现或中继服务。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.17-Setup-x64.exe",
-      "size": 216435098,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.17/ShangHao-3.4.17-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.17/ShangHao-3.4.17-Setup-x64.exe",
-      "sha256": "7d0601151723996dfce6a1c3e820aa49f8b42f8a72aee38ba82fd4ccb00b301f"
+      "name": "ShangHao-3.4.20-Setup-x64.exe",
+      "size": 229494606,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.20/ShangHao-3.4.20-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.20/ShangHao-3.4.20-Setup-x64.exe",
+      "sha256": "4e4f86ff738d6b2ead48fe8fbbc676d6d3e54d9c8e79044e8c387fa1ffb8be89"
     }
   ]
 }

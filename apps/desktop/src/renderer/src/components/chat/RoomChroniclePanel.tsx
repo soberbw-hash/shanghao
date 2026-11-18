@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import { BookOpen, Mic, MicOff } from "lucide-react";
+import { BookOpen, Download, Mic, MicOff } from "lucide-react";
 import { useRoomStore } from "../../store/roomStore";
 import type { RoomChronicleClient } from "../../features/room/RoomChronicleClient";
 import { useChronicleArchive } from "../../features/room/useChronicleArchive";
@@ -49,6 +49,16 @@ export function RoomChroniclePanel({
         {replayControl}
         <button
           type="button"
+          disabled={!archive.stored || !archive.entries.length}
+          title="导出本机纪事，不包含逐字转录稿"
+          onClick={() => void archive.exportStories()}
+        >
+          <Download size={14} />
+          导出聊天纪事
+        </button>
+        <button
+          type="button"
+          className="chronicle-transcription-control"
           aria-label={
             pending
               ? "正在处理转录请求"
@@ -73,42 +83,27 @@ export function RoomChroniclePanel({
               : "开始转录"}
         </button>
       </div>
-      <div className="chronicle-source-status">
-        <strong>
+      <details className="chronicle-source-status">
+        <summary>
           转录状态{" "}
           <span>
             {heard.length}/{members.length} 人参与转录
           </span>
-        </strong>
-        {heard.length ? (
-          <p>已提供语音：{heard.map((member) => member.nickname).join("、")}</p>
-        ) : null}
-        {state ? (
-          <p>语音发送至云端转录；生成的纪事摘要会自动保存到房间每日回顾，原始转录不保存。</p>
-        ) : null}
+        </summary>
+        {heard.length ? <p>参与：{heard.map((member) => member.nickname).join("、")}</p> : null}
+        {state ? <p>语音发送至云端转录，不保存原始转录。</p> : null}
         <small>
-          {state?.summaryIntervalMs === 120_000 ? "约2分钟整理一条 · " : ""}
           {archive.stored
-            ? "本机保留纪事与评价；摘要同步至房间每日回顾"
+            ? "纪事保存在本机，并同步至房间回顾。"
             : archive.available
               ? "本机纪事加载中"
               : "仅查看本次纪事"}
         </small>
-      </div>
+      </details>
       {archive.error ? (
         <p className="room-chronicle-hint" role="status">
           {archive.error}
         </p>
-      ) : null}
-      {archive.stored && archive.entries.length ? (
-        <button
-          type="button"
-          className="chronicle-earlier"
-          title="导出当前房间已生成的纪事摘要与评价，包含本次已完成内容；不包含逐字转录稿"
-          onClick={() => void archive.exportStories()}
-        >
-          导出聊天纪事
-        </button>
       ) : null}
       {error || message?.error || state?.notice ? (
         <p role="status" className="room-chronicle-hint">
@@ -135,11 +130,6 @@ export function RoomChroniclePanel({
             {archive.entries.slice(-shown).map((entry) => (
               <article key={entry.id}>
                 <time dateTime={new Date(entry.at).toISOString()}>
-                  {new Date(entry.at).toLocaleDateString("zh-CN", {
-                    month: "2-digit",
-                    day: "2-digit",
-                  })}
-                  <br />
                   {new Date(entry.at).toLocaleTimeString("zh-CN", {
                     hour: "2-digit",
                     minute: "2-digit",
@@ -147,31 +137,6 @@ export function RoomChroniclePanel({
                 </time>
                 <div>
                   <p>{entry.text}</p>
-                  <div className="chronicle-reactions" aria-label="评价这条纪事">
-                    <button
-                      type="button"
-                      aria-pressed={entry.reaction === "funny"}
-                      disabled={!archive.stored}
-                      onClick={() =>
-                        void archive.react(
-                          entry.id,
-                          entry.reaction === "funny" ? undefined : "funny",
-                        )
-                      }
-                    >
-                      有梗 😆
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={entry.reaction === "flat"}
-                      disabled={!archive.stored}
-                      onClick={() =>
-                        void archive.react(entry.id, entry.reaction === "flat" ? undefined : "flat")
-                      }
-                    >
-                      没接住
-                    </button>
-                  </div>
                 </div>
               </article>
             ))}

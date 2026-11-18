@@ -5,6 +5,7 @@ import type { RoomSessionOwnership } from "./sessionOwnership";
 
 export interface RoomRuntimeHotState {
   activeClient: RoomClient | null;
+  activeClientRef?: { current: RoomClient | null };
   activePeerId?: string;
   activeJoinPromise: Promise<void> | null;
   activeSpeakingDetector: ReturnType<typeof createSpeakingDetector> | null;
@@ -16,6 +17,10 @@ export interface RoomRuntimeHotState {
   lastQuickMessageSentAt: number;
   lastQuickMessageCooldownMs: number;
 }
+
+/** Share the live cell, not a snapshot, with async work from the previous module. */
+export const restoreRoomClientRef = (previous?: RoomRuntimeHotState) =>
+  previous?.activeClientRef ?? { current: previous?.activeClient ?? null };
 
 /** Visual HMR must not orphan live connections or recorders. Production has no HMR. */
 export const retainRoomRuntime = (hot: ImportMeta["hot"], snapshot: () => RoomRuntimeHotState) => {

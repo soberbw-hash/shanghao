@@ -29,6 +29,7 @@ const result = {
   bytes: 0,
   inputStillLive: false,
   reactionWrites: 0,
+  exportRequests: 0,
 };
 let archive: LocalChronicleEntry[] = [];
 const context = new AudioContext();
@@ -79,7 +80,10 @@ Object.assign(window, {
     result,
     preview() {
       window.desktopApi.chronicleArchive = {
-        export: async () => ({ saved: true }),
+        export: async () => {
+          result.exportRequests++;
+          return { saved: true };
+        },
         read: async () => archive,
         append: async (_roomId, entries) => {
           archive = [

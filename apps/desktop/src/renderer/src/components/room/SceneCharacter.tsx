@@ -177,6 +177,10 @@ const SceneCharacterView = ({
         }
       : basePosition;
   const [isPresent, safeToRemove] = usePresence();
+  // Presence callbacks can change on every parent render while a member exits.
+  // Keep the latest callback without restarting the exit route each time.
+  const safeToRemoveRef = useRef(safeToRemove);
+  safeToRemoveRef.current = safeToRemove;
   const [motionPhase, setMotionPhase] = useState<CharacterMotionPhase>(
     shouldReduceMotion ? (zone === "restroomZone" ? "away-idle" : "idle") : "entering",
   );
@@ -536,7 +540,7 @@ const SceneCharacterView = ({
     const leave = async () => {
       const element = motionElementRef.current;
       if (!element) {
-        safeToRemove?.();
+        safeToRemoveRef.current?.();
         onExitedRef.current?.(member.id);
         return;
       }
@@ -589,7 +593,7 @@ const SceneCharacterView = ({
         }
       }
       if (isCurrentOperation()) {
-        safeToRemove?.();
+        safeToRemoveRef.current?.();
         onExitedRef.current?.(member.id);
       }
     };
@@ -598,14 +602,14 @@ const SceneCharacterView = ({
       void writeRendererLog("app", "warn", "Character exit failed; removing the stale character", {
         reason: error instanceof Error ? error.message : String(error),
       });
-      safeToRemove?.();
+      safeToRemoveRef.current?.();
       onExitedRef.current?.(member.id);
     });
     return () => {
       if (operationIdRef.current === operationId) operationIdRef.current += 1;
       stopActiveAnimations();
     };
-  }, [isPresent, member.id, personality, safeToRemove, shouldReduceMotion, stopActiveAnimations]);
+  }, [isPresent, member.id, personality, shouldReduceMotion, stopActiveAnimations]);
 
   return (
     <div

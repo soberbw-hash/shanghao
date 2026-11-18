@@ -1,6 +1,6 @@
 .chronicle-source-status {
   margin: 0 8px;
-  padding: 10px 12px;
+  padding: 6px 12px;
   border: 1px solid #dce9fa;
   border-radius: 12px;
   background: linear-gradient(125deg, #f4f8ff, #eef6fc);
@@ -8,15 +8,27 @@
   font-size: 12px;
   line-height: 1.6;
 }
-.chronicle-source-status strong {
+.chronicle-source-status summary {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
   justify-content: space-between;
   color: #3e6391;
   font-size: 13px;
+  cursor: pointer;
+  list-style: none;
 }
-.chronicle-source-status strong span {
+.chronicle-source-status summary::-webkit-details-marker {
+  display: none;
+}
+.chronicle-source-status summary::after {
+  content: "⌄";
+  margin-left: auto;
+}
+.chronicle-source-status[open] summary::after {
+  content: "⌃";
+}
+.chronicle-source-status summary span {
   font-size: 12px;
   font-weight: 500;
 }
@@ -29,23 +41,20 @@
   font-size: 12px;
 }
 .room-chronicle-entries article {
-  margin: 0 8px 10px;
-  padding: 12px;
+  margin: 0 8px 6px;
+  padding: 9px 12px;
   border: 1px solid #e0eafb;
-  border-left: 3px solid #aac5ed;
-  border-radius: 14px;
+  border-radius: 12px;
   background: linear-gradient(130deg, #fcfdff, #f3f8ff);
 }
 .room-chronicle-entries p {
-  color: #314963;
-  line-height: 1.8;
+  color: #293f5c;
+  font-weight: 400;
+  letter-spacing: normal;
 }
-.chronicle-reactions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
+.room-chronicle-entries time {
+  font-variant-numeric: tabular-nums;
 }
-.chronicle-reactions button,
 .chronicle-earlier {
   padding: 3px 8px;
   border: 1px solid transparent;
@@ -54,13 +63,7 @@
   color: #697e98;
   font-size: 10px;
 }
-.chronicle-reactions button:hover,
-.chronicle-reactions button[aria-pressed="true"] {
-  border-color: #bfd5f2;
-  background: #eaf3ff;
-  color: #356aab;
-}
-.chronicle-reactions button:focus-visible,
+.chronicle-source-status summary:focus-visible,
 .chronicle-earlier:focus-visible {
   outline: 2px solid #4b91dd;
   outline-offset: 2px;
