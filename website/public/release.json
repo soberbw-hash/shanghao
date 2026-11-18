@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.20",
-  "published_at": "2026-11-17T13:27:22Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.20",
+  "tag_name": "v3.4.21",
+  "published_at": "2026-11-18T06:22:56Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.21",
   "highlights": [
-    "房间管理中可直接修改名称和头像，保存对话与回溯设置使用同一入口。",
-    "设置页面统一浅色背景，优化界面文字、头像选择及录音库布局。",
-    "适配和平精英模拟器游戏窗口，游戏名称显示为“和平精英”。",
-    "临时联机增加服务器房间和直接连接的选择，两者无需注册账号；跨网络直接连接可能需要发现或中继服务。"
+    "调整房间名称编辑按钮的布局，头像增加鼠标悬停和键盘聚焦提示。",
+    "精简房间纪事的状态、时间和排版，移除评价按钮；生成纪事时参考房间记忆中可确认的称呼。",
+    "改进成员状态浮窗、角色离场动画恢复和参与者自动加入纪事的处理。",
+    "修复开发过程中热更新可能导致房间连接引用丢失的问题，并区分屏幕分享的连接和采集错误。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.20-Setup-x64.exe",
-      "size": 229494606,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.20/ShangHao-3.4.20-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.20/ShangHao-3.4.20-Setup-x64.exe",
-      "sha256": "4e4f86ff738d6b2ead48fe8fbbc676d6d3e54d9c8e79044e8c387fa1ffb8be89"
+      "name": "ShangHao-3.4.21-Setup-x64.exe",
+      "size": 229495522,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.21/ShangHao-3.4.21-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.21/ShangHao-3.4.21-Setup-x64.exe",
+      "sha256": "115cbc54dd10f3a4708ee25f25776f3b63ef264c5801f03532e56dda6c49288f"
     }
   ]
 }
