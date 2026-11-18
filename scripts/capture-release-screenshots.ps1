@@ -1,5 +1,6 @@
 param(
-  [string]$OutputDirectory = "docs/assets"
+  [string]$OutputDirectory = "docs/assets",
+  [int]$RendererPort = 5173
 )
 
 Set-StrictMode -Version Latest
@@ -9,7 +10,7 @@ $workspaceRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $desktopDirectory = Join-Path $workspaceRoot "apps/desktop"
 $electronCommand = Join-Path $desktopDirectory "node_modules/electron/dist/electron.exe"
 $viteCommand = Join-Path $desktopDirectory "node_modules/.bin/vite.cmd"
-$rendererUrl = "http://127.0.0.1:5173"
+$rendererUrl = "http://127.0.0.1:$RendererPort"
 
 if (-not (Test-Path $electronCommand)) {
   throw "Electron runtime not found. Run corepack pnpm install first."
@@ -62,7 +63,7 @@ New-Item -ItemType Directory -Path $captureWorkspace | Out-Null
 try {
   if (-not (Test-RendererReady)) {
     $viteProcess = Start-Process -FilePath $viteCommand `
-      -ArgumentList "--host", "127.0.0.1", "--port", "5173", "--strictPort" `
+      -ArgumentList "--host", "127.0.0.1", "--port", "$RendererPort", "--strictPort" `
       -WorkingDirectory $desktopDirectory `
       -WindowStyle Hidden `
       -PassThru
