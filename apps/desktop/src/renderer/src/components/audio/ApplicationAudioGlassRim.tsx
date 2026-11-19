@@ -1,10 +1,9 @@
 import { useEffect, useId, useRef, type RefObject } from "react";
 
-const radius = 24;
 const rimWidth = 14;
 
 /** Red and green encode the inward sampling offset at the rounded edge. */
-function drawRim(width: number, height: number): string | undefined {
+function drawRim(width: number, height: number, radius: number): string | undefined {
   const canvas = document.createElement("canvas");
   canvas.width = Math.ceil(width / 2);
   canvas.height = Math.ceil(height / 2);
@@ -52,7 +51,8 @@ export function ApplicationAudioGlassRim({
     const observer = new ResizeObserver(([entry]) => {
       const size = entry?.borderBoxSize[0];
       if (!size || size.inlineSize < 48 || size.blockSize < 48) return;
-      const url = drawRim(size.inlineSize, size.blockSize);
+      const radius = Number.parseFloat(getComputedStyle(surface).borderTopLeftRadius);
+      const url = drawRim(size.inlineSize, size.blockSize, radius);
       if (!url) return;
       image.setAttribute("width", String(size.inlineSize));
       image.setAttribute("height", String(size.blockSize));

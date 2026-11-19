@@ -29,6 +29,7 @@ const messages: ChatMessage[] = [
 function RoomEffectsFixture() {
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [gain, setGain] = useState(0.72);
   const [sent, setSent] = useState("");
   return (
@@ -64,17 +65,20 @@ function RoomEffectsFixture() {
       />
       <ApplicationAudioPicker
         open={open}
-        sources={[]}
-        selectedId=""
+        sources={[{ id: "music-demo", name: "房间音乐", processName: "房间音乐.exe" }]}
+        selectedId="music-demo"
         loading={false}
         busy={false}
         error=""
-        sharingName="房间音乐"
+        sharingName={sharing ? "房间音乐" : undefined}
         gain={gain}
         onSelect={() => {}}
         onRefresh={() => {}}
-        onStart={() => {}}
-        onStop={() => setOpen(false)}
+        onStart={() => setSharing(true)}
+        onStop={() => {
+          setSharing(false);
+          setOpen(false);
+        }}
         onGain={setGain}
         onClose={() => setOpen(false)}
       />

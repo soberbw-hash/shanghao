@@ -40,22 +40,24 @@
   align-items: center;
   flex-shrink: 0;
   gap: 6px;
-  width: min(92%, 480px);
+  width: min(86%, 480px);
   max-width: 100%;
   margin: 2px auto 0;
   padding: 3px;
   border: 1px solid rgb(166 196 230 / 65%);
-  border-radius: 18px;
+  border-radius: 28px;
   background: rgb(248 252 255 / 88%);
   box-shadow: 0 3px 12px rgb(53 92 138 / 10%);
   transition:
     width var(--duration-fast) var(--ease-out),
+    border-radius var(--duration-fast) var(--ease-out),
     background-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out);
 }
 
 .temporary-chat-panel .chat-composer:is(:focus-within, [data-has-draft="true"]) {
   width: 100%;
+  border-radius: 16px;
   background: #f8fcff;
 }
 

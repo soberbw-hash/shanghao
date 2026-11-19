@@ -194,7 +194,7 @@ export function ApplicationAudioPicker(props: Props) {
           </>
         )}
       </footer>
-      {props.sharingName ? <ApplicationAudioGlassRim dialog={dialog} /> : null}
+      <ApplicationAudioGlassRim dialog={dialog} />
     </dialog>,
     document.body,
   );

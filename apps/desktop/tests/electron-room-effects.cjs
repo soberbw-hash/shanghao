@@ -32,6 +32,7 @@ app.whenReady().then(async () => {
       const edge = list.parentElement;
       const composerWidth = () => composer.getBoundingClientRect().width;
       const idleWidth = composerWidth();
+      const idleRadius = parseFloat(getComputedStyle(composer).borderTopLeftRadius);
       if (getComputedStyle(edge, '::before').backdropFilter !== 'blur(5px)' ||
           getComputedStyle(edge, '::after').backdropFilter !== 'blur(15px)' ||
           getComputedStyle(edge, '::after').pointerEvents !== 'none')
@@ -46,6 +47,8 @@ app.whenReady().then(async () => {
       input.focus();
       await pause(240);
       if (composerWidth() < idleWidth + 10) throw Error('focused composer does not expand');
+      if (parseFloat(getComputedStyle(composer).borderTopLeftRadius) >= idleRadius)
+        throw Error('focused composer does not change shape');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '发个测试');
       input.dispatchEvent(new Event('input', { bubbles: true }));
       await pause(40);
@@ -71,6 +74,15 @@ app.whenReady().then(async () => {
     await capture("room-chat-focused.png");
     await window.webContents.executeJavaScript(`(async () => {
       document.querySelector('[aria-label="打开音乐演示"]').click();
+      await new Promise((resolve) => setTimeout(resolve, 160));
+      const picker = document.querySelector('dialog:modal[data-sharing="false"]');
+      if (!picker || !getComputedStyle(picker).backdropFilter.includes('blur(12px)') ||
+          !picker.querySelector('feImage')?.getAttribute('href')?.startsWith('data:image/png'))
+        throw Error('the source picker should show glass before music starts');
+    })()`);
+    await capture("room-music-source-picker.png");
+    await window.webContents.executeJavaScript(`(async () => {
+      document.querySelector('dialog:modal footer button:last-child').click();
       await new Promise((resolve) => setTimeout(resolve, 160));
       const dialog = document.querySelector('dialog:modal');
       if (!dialog || !getComputedStyle(dialog).backdropFilter.includes('blur(12px)') ||

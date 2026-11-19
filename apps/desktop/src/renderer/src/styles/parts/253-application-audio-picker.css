@@ -5,10 +5,13 @@
   width: min(680px, calc(100vw - 36px));
   max-height: min(640px, calc(100dvh - 36px));
   padding: 0;
-  border: 0;
-  border-radius: 22px;
-  background: #f7fbff;
-  box-shadow: 0 24px 72px #18395342;
+  border: 1px solid rgb(239 249 255 / 85%);
+  border-radius: 24px;
+  background: linear-gradient(145deg, #f7fcff, #e3f2fb);
+  box-shadow:
+    0 18px 52px rgb(27 57 87 / 26%),
+    inset 0 2px 0 rgb(255 255 255 / 92%),
+    inset 0 -2px 0 rgb(88 155 182 / 24%);
   color: #29465d;
   font-family: inherit;
   font-size: 14px;
@@ -18,8 +21,13 @@
   flex-direction: column;
 }
 .application-audio-dialog::backdrop {
-  background: #182f4a52;
-  backdrop-filter: blur(3px);
+  background: rgb(25 52 78 / 22%);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .application-audio-dialog {
+    background: linear-gradient(145deg, rgb(250 253 255 / 89%), rgb(229 243 254 / 77%));
+    backdrop-filter: var(--audio-glass-rim,) blur(12px) saturate(1.12);
+  }
 }
 .application-audio-heading {
   display: flex;
@@ -211,23 +219,6 @@
 }
 .application-audio-dialog[data-sharing="true"] {
   width: min(460px, calc(100vw - 24px));
-  border: 1px solid rgb(239 249 255 / 85%);
-  border-radius: 24px;
-  background: linear-gradient(145deg, #f7fcff, #e3f2fb);
-  box-shadow:
-    0 18px 52px rgb(27 57 87 / 26%),
-    inset 0 2px 0 rgb(255 255 255 / 92%),
-    inset 0 -2px 0 rgb(88 155 182 / 24%);
-}
-.application-audio-dialog[data-sharing="true"]::backdrop {
-  background: rgb(25 52 78 / 22%);
-  backdrop-filter: none;
-}
-@supports (backdrop-filter: blur(1px)) {
-  .application-audio-dialog[data-sharing="true"] {
-    background: linear-gradient(145deg, rgb(250 253 255 / 89%), rgb(229 243 254 / 77%));
-    backdrop-filter: var(--audio-glass-rim,) blur(12px) saturate(1.12);
-  }
 }
 .application-audio-dialog[data-sharing="true"] .application-audio-heading {
   padding: 15px 18px 13px;
@@ -283,7 +274,7 @@
   text-align: left;
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-  .application-audio-dialog[data-sharing="true"],
+  .application-audio-dialog,
   .application-audio-sharing {
     background: #f7fbff;
     backdrop-filter: none;
