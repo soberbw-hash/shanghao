@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.21",
-  "published_at": "2026-11-18T06:22:56Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.21",
+  "tag_name": "v3.4.22",
+  "published_at": "2026-11-19T06:45:50Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.22",
   "highlights": [
-    "调整房间名称编辑按钮的布局，头像增加鼠标悬停和键盘聚焦提示。",
-    "精简房间纪事的状态、时间和排版，移除评价按钮；生成纪事时参考房间记忆中可确认的称呼。",
-    "改进成员状态浮窗、角色离场动画恢复和参与者自动加入纪事的处理。",
-    "修复开发过程中热更新可能导致房间连接引用丢失的问题，并区分屏幕分享的连接和采集错误。"
+    "屏幕分享 Windows 选源时先展示可选窗口和显示器，再加载缩略图。启动采集会等预览释放资源，并重新确认选中的窗口或显示器。Electron 升级至 45.3.4。",
+    "房间纪事 一人开启转录，成员自动参与，每条麦克风音轨按发言者处理。可以随时停止提供自己的语音。房间问答与纪事使用记忆中的明确称呼。",
+    "录音与设置 新设置默认开启录音库自动转录。已手动关闭的设置继续生效。移除了转录稿下方的词汇说明，统一了账号、通用、语音和 AI 页面的内容宽度。",
+    "更新和链接 更新卡片可拖动，下载期间可以继续聊天。单链接消息把文字和站点图标放到一张卡片里。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.21-Setup-x64.exe",
-      "size": 229495522,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.21/ShangHao-3.4.21-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.21/ShangHao-3.4.21-Setup-x64.exe",
-      "sha256": "115cbc54dd10f3a4708ee25f25776f3b63ef264c5801f03532e56dda6c49288f"
+      "name": "ShangHao-3.4.22-Setup-x64.exe",
+      "size": 231148787,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.22/ShangHao-3.4.22-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.22/ShangHao-3.4.22-Setup-x64.exe",
+      "sha256": "30ba6f81458bf22c098958caf01f407931dcaae7cfcdeddf2bba4b0207e43c84"
     }
   ]
 }
