@@ -71,7 +71,8 @@ app.whenReady().then(async () => {
       document.querySelector('[aria-label="打开音乐演示"]').click();
       await new Promise((resolve) => setTimeout(resolve, 160));
       const dialog = document.querySelector('dialog:modal');
-      if (!dialog || !getComputedStyle(dialog).backdropFilter.includes('blur(15px)'))
+      if (!dialog || !getComputedStyle(dialog).backdropFilter.includes('blur(7px)') ||
+          !dialog.querySelector('feImage')?.getAttribute('href')?.startsWith('data:image/png'))
         throw Error('the music dialog lacks translucent backdrop');
       const volume = dialog.querySelector('input[type=range]');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(volume, '.88');
@@ -80,6 +81,22 @@ app.whenReady().then(async () => {
       if (dialog.querySelector('output').textContent !== '88%') throw Error('music volume does not respond');
     })()`);
     await capture("room-music-glass.png");
+    const refracted = (await window.webContents.capturePage()).toBitmap();
+    const rimStyle = await window.webContents.executeJavaScript(`(() => {
+      const style = document.querySelector('dialog:modal').style;
+      const filter = style.getPropertyValue('--audio-glass-rim');
+      style.removeProperty('--audio-glass-rim');
+      return filter;
+    })()`);
+    await window.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+    const blurred = (await window.webContents.capturePage()).toBitmap();
+    if (!rimStyle || refracted.equals(blurred))
+      throw Error("glass rim leaves the rendered pixels unchanged");
+    await window.webContents.executeJavaScript(
+      `document.querySelector('dialog:modal').style.setProperty('--audio-glass-rim', ${JSON.stringify(rimStyle)})`,
+    );
     window.setContentSize(430, 620);
     const narrow = await window.webContents.executeJavaScript(`(async () => {
       await new Promise((resolve) => setTimeout(resolve, 80));
@@ -89,7 +106,14 @@ app.whenReady().then(async () => {
         bounds.top >= 0 && bounds.bottom <= innerHeight && dialog.scrollWidth <= dialog.clientWidth + 1;
     })()`);
     if (!narrow) throw Error("music dialog overflows at 430px");
-    console.log(JSON.stringify({ ...result, musicVolumeWorks: true, narrowMusicLayout: true }));
+    console.log(
+      JSON.stringify({
+        ...result,
+        refractionRendered: true,
+        musicVolumeWorks: true,
+        narrowMusicLayout: true,
+      }),
+    );
     clearTimeout(deadline);
     app.exit(0);
   } catch (error) {

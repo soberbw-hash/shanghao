@@ -14,6 +14,7 @@ import type { ApplicationAudioSource } from "@private-voice/shared";
 import { musicApplicationName } from "@private-voice/shared";
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
+import { ApplicationAudioGlassRim } from "./ApplicationAudioGlassRim";
 
 interface Props {
   open: boolean;
@@ -193,6 +194,7 @@ export function ApplicationAudioPicker(props: Props) {
           </>
         )}
       </footer>
+      {props.sharingName ? <ApplicationAudioGlassRim dialog={dialog} /> : null}
     </dialog>,
     document.body,
   );

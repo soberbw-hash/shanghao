@@ -226,7 +226,7 @@
 @supports (backdrop-filter: blur(1px)) {
   .application-audio-dialog[data-sharing="true"] {
     background: linear-gradient(145deg, rgb(248 253 255 / 81%), rgb(220 240 253 / 66%));
-    backdrop-filter: blur(15px) saturate(1.16);
+    backdrop-filter: var(--audio-glass-rim,) blur(7px) saturate(1.16);
   }
 }
 .application-audio-dialog[data-sharing="true"] .application-audio-footer {
