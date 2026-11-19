@@ -512,10 +512,7 @@ test("microphone processing lives in the room panel while about shows three rele
     readFileSync(path.resolve(process.cwd(), "package.json"), "utf8"),
   ) as { version: string };
   assert.equal(RELEASE_HISTORY[0]?.version, desktopPackage.version);
-  assert.deepEqual(
-    RECENT_RELEASE_HISTORY.map((release) => release.version),
-    [desktopPackage.version, "3.4.20", "3.4.18"],
-  );
+  assert.deepEqual(RECENT_RELEASE_HISTORY, RELEASE_HISTORY.slice(0, 3));
   assert.equal(RELEASE_HISTORY.at(-1)?.version, "0.1.1");
   assert.equal(
     new Set(RELEASE_HISTORY.map((release) => release.version)).size,
