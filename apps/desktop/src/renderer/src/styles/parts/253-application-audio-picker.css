@@ -209,42 +209,81 @@
   flex-shrink: 0;
   font-size: 14px;
 }
+.application-audio-dialog[data-sharing="true"] {
+  width: min(460px, calc(100vw - 24px));
+  border: 1px solid rgb(239 249 255 / 85%);
+  border-radius: 24px;
+  background: linear-gradient(145deg, #f7fcff, #e3f2fb);
+  box-shadow:
+    0 18px 52px rgb(27 57 87 / 26%),
+    inset 0 2px 0 rgb(255 255 255 / 92%),
+    inset 0 -2px 0 rgb(88 155 182 / 24%);
+}
+.application-audio-dialog[data-sharing="true"]::backdrop {
+  background: rgb(25 52 78 / 22%);
+  backdrop-filter: none;
+}
+@supports (backdrop-filter: blur(1px)) {
+  .application-audio-dialog[data-sharing="true"] {
+    background: linear-gradient(145deg, rgb(248 253 255 / 81%), rgb(220 240 253 / 66%));
+    backdrop-filter: blur(15px) saturate(1.16);
+  }
+}
+.application-audio-dialog[data-sharing="true"] .application-audio-footer {
+  border-top-color: rgb(255 255 255 / 54%);
+  background: rgb(242 250 255 / 46%);
+}
 .application-audio-sharing {
-  padding: 20px 24px 28px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
   align-items: center;
-  text-align: center;
+  gap: 12px;
+  margin: 0 16px 16px;
+  padding: 16px;
+  border: 1px solid rgb(254 255 255 / 62%);
+  border-radius: 18px;
+  background: linear-gradient(120deg, rgb(249 254 255 / 62%), rgb(218 241 248 / 40%));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 72%),
+    0 4px 12px rgb(41 81 119 / 8%);
   overflow: auto;
 }
 .application-audio-sharing-icon {
   display: grid;
   place-items: center;
-  width: 74px;
-  height: 74px;
-  color: #19767e;
-  background: #e1f3f1;
-  border-radius: 50%;
-  margin-bottom: 14px;
+  width: 54px;
+  height: 54px;
+  color: #115e67;
+  background: linear-gradient(150deg, rgb(255 255 255 / 90%), rgb(169 219 232 / 84%));
+  border-radius: 15px;
+  box-shadow:
+    inset 0 1px 1px #fff,
+    inset 0 -1px 1px #6fa4b891;
 }
-.application-audio-sharing-label {
-  color: #19767e;
-  font-size: 13px;
-  margin-bottom: 8px;
+.application-audio-sharing .application-audio-sharing-label {
+  color: #155c68;
+  font-size: 12px;
+  font-weight: 650;
+  margin: 0 0 3px;
 }
 .application-audio-sharing h3 {
-  font-size: 18px;
-  max-width: 100%;
+  font-size: 17px;
   overflow-wrap: anywhere;
 }
 .application-audio-gain {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 14px;
-  width: min(340px, 100%);
-  margin-top: 24px;
+  gap: 8px;
   text-align: left;
+}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .application-audio-dialog[data-sharing="true"],
+  .application-audio-sharing {
+    background: #f7fbff;
+    backdrop-filter: none;
+  }
 }
 .application-audio-gain output {
   font-variant-numeric: tabular-nums;

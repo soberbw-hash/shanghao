@@ -558,7 +558,7 @@ export const TemporaryChatPanel = ({
           reduceMotion={shouldReduceMotion}
           idPrefix={contentTabId}
         >
-          <div className="relative flex min-h-0 flex-1 flex-col">
+          <div className="room-list-viewport" data-room-list-edge={messages.length > 0}>
             <div
               ref={listRef}
               className="chat-message-list flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto pr-1"
@@ -792,13 +792,18 @@ export const TemporaryChatPanel = ({
             ) : null}
           </div>
 
-          <div className="chat-composer mt-2.5 flex items-center gap-2 border-t border-[rgba(220,230,242,0.6)] pt-2.5">
+          <div
+            className="chat-composer"
+            data-has-draft={chatInput.trim().length > 0}
+            data-reduce-motion={shouldReduceMotion}
+          >
             {isSendingImage ? (
               <span className="chat-image-sending" aria-live="polite" title="正在压缩图片">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
               </span>
             ) : null}
             <Input
+              aria-label="聊天消息"
               placeholder={canSend ? "发送消息…" : messages.length ? unavailableLabel : "发送消息"}
               title="最多保留最近 100 条消息"
               value={chatInput}

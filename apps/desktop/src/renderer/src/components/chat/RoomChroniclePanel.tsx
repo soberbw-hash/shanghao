@@ -150,38 +150,42 @@ export function RoomChroniclePanel({
                 : "纪事服务暂不可用，已有纪事仍保留")}
         </p>
       ) : null}
-      <div className="room-chronicle-entries" aria-live="polite" aria-relevant="additions">
-        {archive.entries.length ? (
-          <>
-            {archive.entries.length > shown ? (
-              <button
-                type="button"
-                className="chronicle-earlier"
-                onClick={() => setShown((count) => count + 60)}
-              >
-                查看更早的纪事（共{archive.entries.length}条）
-              </button>
-            ) : null}
-            {archive.entries.slice(-shown).map((entry) => (
-              <article key={entry.id}>
-                <time dateTime={new Date(entry.at).toISOString()}>
-                  {new Date(entry.at).toLocaleTimeString("zh-CN", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </time>
-                <div>
-                  <p>{applyRoomMemoryNames(entry.text, names)}</p>
-                </div>
-              </article>
-            ))}
-          </>
-        ) : (
-          <div className="room-chronicle-empty">
-            <BookOpen size={26} />
-            <p>{state ? "收到语音后，纪事会分段出现。" : "开始转录后，可以在这里查看房间纪事。"}</p>
-          </div>
-        )}
+      <div className="room-list-viewport" data-room-list-edge={archive.entries.length > 0}>
+        <div className="room-chronicle-entries" aria-live="polite" aria-relevant="additions">
+          {archive.entries.length ? (
+            <>
+              {archive.entries.length > shown ? (
+                <button
+                  type="button"
+                  className="chronicle-earlier"
+                  onClick={() => setShown((count) => count + 60)}
+                >
+                  查看更早的纪事（共{archive.entries.length}条）
+                </button>
+              ) : null}
+              {archive.entries.slice(-shown).map((entry) => (
+                <article key={entry.id}>
+                  <time dateTime={new Date(entry.at).toISOString()}>
+                    {new Date(entry.at).toLocaleTimeString("zh-CN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                  <div>
+                    <p>{applyRoomMemoryNames(entry.text, names)}</p>
+                  </div>
+                </article>
+              ))}
+            </>
+          ) : (
+            <div className="room-chronicle-empty">
+              <BookOpen size={26} />
+              <p>
+                {state ? "收到语音后，纪事会分段出现。" : "开始转录后，可以在这里查看房间纪事。"}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
       {status && state ? (
         <p className="room-chronicle-hint" role="status">
