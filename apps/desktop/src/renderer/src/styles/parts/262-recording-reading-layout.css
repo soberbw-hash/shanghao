@@ -188,6 +188,38 @@
     display: none;
   }
 }
+
+@media (max-height: 800px) {
+  .settings-page--recording-library {
+    padding-bottom: 12px;
+  }
+  .settings-recording-shell .settings-page-header {
+    min-height: 36px;
+  }
+  .settings-recording-shell .settings-page-eyebrow {
+    display: none;
+  }
+  .settings-recording-content .recording-library-page {
+    row-gap: 6px;
+  }
+  .settings-recording-content .recording-player-sticky {
+    padding-block: 6px;
+  }
+  .settings-recording-content .recording-marker-bar {
+    margin-top: 4px;
+    padding-top: 3px;
+  }
+  .settings-recording-content .voice-memory-detail {
+    padding-top: 4px;
+  }
+  .settings-recording-content .voice-memory-organization {
+    margin-block: 3px;
+  }
+  .settings-recording-content .recording-overview {
+    margin-block: 3px;
+  }
+}
+
 @media (min-width: 900px) and (max-width: 1180px) {
   .settings-page--recording-library {
     overflow: hidden;

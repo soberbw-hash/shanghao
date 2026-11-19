@@ -13,8 +13,8 @@ const check = (ok, reason) => {
 };
 app.whenReady().then(async () => {
   const window = new BrowserWindow({
-    width: 1440,
-    height: 1080,
+    width: Number(process.env.SHANGHAO_RECORDING_TEST_WIDTH ?? 1440),
+    height: Number(process.env.SHANGHAO_RECORDING_TEST_HEIGHT ?? 1080),
     useContentSize: true,
     show: false,
     webPreferences: { backgroundThrottling: false, offscreen: true },
@@ -46,7 +46,8 @@ app.whenReady().then(async () => {
       const text=rect('.voice-memory-detail'), panel=rect('.recording-library-panel');
       if(toolbar.height>40)throw Error('library toolbar height is '+toolbar.height+'px; expected at most 40px');
       if(first.top>panel.top+280)throw Error('transcript still pushed below controls: '+JSON.stringify({offset:first.top-panel.top,panelTop:panel.top,textHeight:text.height,detailChildren:Array.from(document.querySelector('.voice-memory-detail').children).map(child=>({className:child.className||child.tagName,top:child.getBoundingClientRect().top,height:child.getBoundingClientRect().height})),children:Array.from(document.querySelector('.recording-detail-swap').children).map(child=>({className:child.className||child.tagName,top:child.getBoundingClientRect().top,height:child.getBoundingClientRect().height}))}));
-      if(panel.bottom-first.top<innerHeight*.45)throw Error('transcript gets too little first-screen reading space');
+      const readingSpace=Math.min(panel.bottom, innerHeight)-first.top;
+      if(readingSpace<innerHeight*.45)throw Error('transcript gets too little first-screen reading space: '+JSON.stringify({viewport:[innerWidth,innerHeight],panelTop:panel.top,panelBottom:panel.bottom,firstParagraphTop:first.top,readingSpace}));
       const source=document.querySelector('.transcript-source-control');
       const timeline=document.querySelector('.voice-memory-timeline');
       if(timeline)throw Error('manual markers duplicated below text');
@@ -55,7 +56,7 @@ app.whenReady().then(async () => {
       if(!document.querySelector('[aria-label="录音库自动清理容量上限"]').checkVisibility())throw Error('storage controls cannot open');
       if(rect('.transcript-paragraph').top!==first.top)throw Error('storage settings displaced transcript');
       storage.querySelector('summary').click();
-      return {toolbarHeight:toolbar.height,firstParagraphTop:first.top,readingSpace:panel.bottom-first.top};
+      return {toolbarHeight:toolbar.height,firstParagraphTop:first.top,readingSpace};
     })()`);
     await pause(100);
     const version = require("../package.json").version;
