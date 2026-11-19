@@ -440,8 +440,12 @@ export const registerIpcHandlers = ({
     if (url.username || url.password) throw new Error("external_url_credentials_not_allowed");
     await shell.openExternal(url.toString());
   });
-  ipcMain.handle(IPC_CHANNELS.app.getChatLinkPreview, async (_event, rawUrl: string) =>
-    typeof rawUrl === "string" ? getChatLinkPreview(rawUrl) : {},
+  ipcMain.handle(
+    IPC_CHANNELS.app.getChatLinkPreview,
+    async (_event, rawUrl: string, image: unknown) =>
+      typeof rawUrl === "string"
+        ? getChatLinkPreview(rawUrl, image === "icon" ? image : undefined)
+        : {},
   );
   ipcMain.handle(
     IPC_CHANNELS.app.openSystemSettings,
@@ -511,7 +515,9 @@ export const registerIpcHandlers = ({
     exportQuickMessagePack(getMainWindow()),
   );
 
-  ipcMain.handle(IPC_CHANNELS.screenCapture.listSources, async () => listScreenCaptureSources());
+  ipcMain.handle(IPC_CHANNELS.screenCapture.listSources, async (_event, withPreviews: unknown) =>
+    listScreenCaptureSources(withPreviews !== false),
+  );
   ipcMain.handle(
     IPC_CHANNELS.screenCapture.selectSource,
     async (_event, sourceId: unknown): Promise<void> => {

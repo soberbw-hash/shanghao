@@ -177,7 +177,7 @@ export const RoomChatPanel = memo(
           await sendChatMessage(message.content, message.image, message.clientMessageId);
         }}
         canSend={canSend}
-        unavailableLabel="正在重连..."
+        unavailableLabel="连接恢复后可发送"
         reduceMotion={reduceMotion}
       />
     );

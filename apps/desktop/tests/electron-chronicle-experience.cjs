@@ -57,11 +57,10 @@ app.whenReady().then(async () => {
         if(details.open) throw Error('status details should be collapsed');
         details.querySelector('summary').click();
         if(!details.open) throw Error('status details cannot be opened');
-        const name=details.querySelector('#chronicle-display-name');
-        const setValue=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
-        setValue.call(name,'小尤'); name.dispatchEvent(new Event('input',{bubbles:true}));
-        name.form.requestSubmit(); await new Promise(r=>setTimeout(r,20));
-        if(localStorage.getItem('shanghao:chronicle-name:synthetic-profile')!=='小尤') throw Error('chronicle-only name not saved');
+        if(details.querySelector('input')) throw Error('extra nickname form is still present');
+        if(!details.textContent.includes('参与：林小川')) throw Error('room memory alias not applied to speaker');
+        if(!panel.querySelector('article p').textContent.startsWith('林小川说这把稳了'))
+          throw Error('room memory alias not applied to existing entry');
         details.querySelector('summary').click();
         if(panel.querySelector('.chronicle-reactions')) throw Error('obsolete reactions remain');
         const buttons=[...panel.querySelectorAll('.room-chronicle-toolbar > button')];
@@ -101,7 +100,7 @@ app.whenReady().then(async () => {
       `(async()=>{ document.querySelectorAll('[role="tab"]')[1].click(); await new Promise(r=>setTimeout(r,250)); })()`,
     );
     await fs.writeFile(
-      path.resolve(__dirname, "../../../artifacts/chronicle-experience-20261111.png"),
+      path.join(app.getPath("userData"), "chronicle-experience.png"),
       lastFrame.toPNG(),
     );
     await view.webContents.executeJavaScript("window.chronicleFixture.close()");

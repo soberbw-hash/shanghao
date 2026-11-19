@@ -4,10 +4,9 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  findFirstMessageUrl,
   formatCompactUrl,
   getMessageUrlDetails,
-  isMessageOnlyUrl,
+  messageLinkCard,
 } from "../src/renderer/src/features/chat/linkPreview";
 
 test("chat links use a compact visible label without exposing query details", () => {
@@ -21,19 +20,27 @@ test("chat links use a compact visible label without exposing query details", ()
   );
 });
 
-test("chat link previews select the first safe web link and trim punctuation", () => {
+test("a single link keeps the caption on its card and trims trailing URL punctuation", () => {
   assert.equal(
-    findFirstMessageUrl("攻略在这里：https://example.com/guide?q=1，晚点一起看"),
+    messageLinkCard("攻略在这里：https://example.com/guide?q=1，晚点一起看")?.url,
     "https://example.com/guide?q=1",
   );
-  assert.equal(findFirstMessageUrl("javascript:alert(1)"), undefined);
-  assert.equal(findFirstMessageUrl("没有链接"), undefined);
+  assert.equal(messageLinkCard("javascript:alert(1)"), undefined);
+  assert.equal(messageLinkCard("没有链接"), undefined);
+  assert.equal(messageLinkCard("https://example.com/ https://example.org/"), undefined);
 });
 
-test("a message containing only one URL uses the preview card without a duplicate bubble", () => {
-  assert.equal(isMessageOnlyUrl("https://chat.deepseek.com/"), true);
-  assert.equal(isMessageOnlyUrl(" https://example.com/guide。 "), true);
-  assert.equal(isMessageOnlyUrl("攻略：https://example.com/guide"), false);
+test("pasted Douyin shares show the caption and short link once", () => {
+  assert.deepEqual(
+    messageLinkCard(
+      "1.51 M@W.mD :3pm 12/07 cNw:/ 盘点英雄专属小曲 #英雄联盟 v.douyin.com/Pw0-3U7syPY 复制此链接，打开Dou音搜索，直接观看视频！",
+    ),
+    { url: "https://v.douyin.com/Pw0-3U7syPY", caption: "盘点英雄专属小曲 #英雄联盟" },
+  );
+  assert.deepEqual(messageLinkCard(" https://example.com/guide。 "), {
+    url: "https://example.com/guide",
+    caption: undefined,
+  });
 });
 
 test("chat link previews normalize the displayed hostname", () => {
@@ -42,10 +49,9 @@ test("chat link previews normalize the displayed hostname", () => {
 
 test("Douyin live-room links keep their room path and query instead of becoming the homepage", () => {
   const liveRoomUrl = "https://live.douyin.com/47199585587?from_search=true&is_aweme_tied=1";
-  assert.equal(findFirstMessageUrl(liveRoomUrl), liveRoomUrl);
+  assert.equal(messageLinkCard(liveRoomUrl)?.url, liveRoomUrl);
   assert.equal(getMessageUrlDetails(liveRoomUrl)?.hostname, "live.douyin.com");
   assert.equal(formatCompactUrl(liveRoomUrl), "live.douyin.com/47199585587");
-  assert.notEqual(findFirstMessageUrl(liveRoomUrl), "https://www.douyin.com/?recommend=1");
 });
 
 test("right-clicking a link preview copies immediately and reports success", () => {

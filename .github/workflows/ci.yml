@@ -72,6 +72,9 @@ jobs:
       - run: pnpm test:audio-worklet
       - run: pnpm test:temporary-room
       - run: pnpm test:screen-capture
+      - run: pnpm test:room-ui
+        env:
+          SHANGHAO_UI_TEST: recording-library-feedback
       - run: pnpm test:five-peer-audio
       - run: pnpm test:five-peer-media
       - run: pnpm build

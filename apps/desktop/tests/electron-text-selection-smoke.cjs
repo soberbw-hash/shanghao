@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* global require, __dirname, console, setTimeout, clearTimeout */
+/* global require, __dirname, console, process, setTimeout, clearTimeout */
 const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
 require("./electron-isolated-profile.cjs").configureIsolatedProfile(app, "text-selection");
@@ -19,7 +19,9 @@ app.whenReady().then(async () => {
     const fixture = path
       .join(__dirname, "fixtures/recording-model-sync.html")
       .replaceAll("\\", "/");
-    await view.loadURL(`http://127.0.0.1:5173/@fs/${fixture}`);
+    await view.loadURL(
+      `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5173"}/@fs/${fixture}`,
+    );
     const coords = await view.webContents.executeJavaScript(`(async()=>{
       for(let i=0;i<100&&!document.querySelector('#ai-model-management');i++)await new Promise(r=>setTimeout(r,50));
       if(!document.querySelector('#ai-model-management'))throw Error('settings fixture did not mount');
@@ -53,10 +55,10 @@ app.whenReady().then(async () => {
     const result = await view.webContents.executeJavaScript(`(()=>{
       const label=document.querySelector('#selection-label');
       const selectedText=String(getSelection());
-      if(getComputedStyle(label).userSelect!=='text'||!selectedText.includes('界面上的普通'))throw Error('ordinary UI text could not be selected by dragging: '+getComputedStyle(label).userSelect+'/'+JSON.stringify(selectedText));
-      if(getComputedStyle(document.querySelector('#ai-model-management summary')).userSelect!=='text')throw Error('production settings label is not selectable');
+      if(getComputedStyle(label).userSelect!=='none'||selectedText)throw Error('dragging unexpectedly selected ordinary UI text');
+      if(getComputedStyle(document.querySelector('#ai-model-management summary')).userSelect!=='none')throw Error('production settings label is selectable');
       for(const selector of ['#selection-input','#selection-textarea','#selection-editable span'])if(getComputedStyle(document.querySelector(selector)).userSelect!=='text')throw Error('editable text selection disabled: '+selector);
-      return {nativeDragSelectsText:true};
+      return {ordinaryTextSelectionBlocked:true};
     })()`);
     await view.webContents.sendInputEvent({
       type: "mouseDown",
@@ -81,7 +83,6 @@ app.whenReady().then(async () => {
     await view.webContents.executeJavaScript(
       `(()=>{const input=document.querySelector('#selection-input');if(input.selectionEnd<=input.selectionStart)throw Error('native input drag selection failed')})()`,
     );
-    result.ordinaryTextSelection = true;
     result.editableSelection = true;
     console.log(JSON.stringify(result));
     clearTimeout(deadline);

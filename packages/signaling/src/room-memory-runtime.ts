@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { isPrivateRoomId, roomMemoryContext } from "@private-voice/shared";
+import {
+  isPrivateRoomId,
+  roomAutomaticMemoryText,
+  roomMemoryContext,
+  roomMemoryNames,
+} from "@private-voice/shared";
 import type { AccountBackend } from "./account-service";
 import type { PrivateRoomDirectory } from "./private-room-directory";
 import { PrivateRoomError } from "./private-room-directory";
@@ -49,6 +54,12 @@ export class RoomMemoryRuntime {
     if (!isPrivateRoomId(roomId)) return "";
     (await this.directory).get(roomId);
     return roomMemoryContext((await this.store).get(roomId));
+  }
+  async speakerNames(roomId: string): Promise<Map<string, string>> {
+    if (!isPrivateRoomId(roomId)) return new Map();
+    (await this.directory).get(roomId);
+    const memory = (await this.store).get(roomId);
+    return roomMemoryNames(memory.manualText, roomAutomaticMemoryText(memory));
   }
   async observeRecap(message: PublishRecordingRecapMessage): Promise<void> {
     if (this.closed) throw new Error("room_memory_runtime_closed");

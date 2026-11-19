@@ -1,3 +1,5 @@
+import { AI_DRAMA_MUSIC_PACK } from "@private-voice/shared";
+
 /** Bundled AAC paths for local voice and music packs. IDs are shared with quick-messages.ts. */
 const QUICK_MESSAGE_SOUND_PATHS: Record<string, string> = {
   "default-voice-上个厕所": "默认语音/上个厕所.aac",
@@ -47,6 +49,12 @@ const QUICK_MESSAGE_SOUND_PATHS: Record<string, string> = {
   "music-csgo-预瞄小曲": "音乐/CSGO/预瞄小曲.aac",
   "music-valorant-霓虹小曲": "音乐/瓦罗兰特/霓虹小曲.aac",
   "music-valorant-颗秒小曲": "音乐/瓦罗兰特/颗秒小曲.aac",
+  ...Object.fromEntries(
+    AI_DRAMA_MUSIC_PACK.clips.map(({ id, title }) => [
+      id,
+      `音乐/${AI_DRAMA_MUSIC_PACK.name}/${title}.aac`,
+    ]),
+  ),
 };
 
 const toQuickMessageSoundUrl = (relativePath: string): string =>

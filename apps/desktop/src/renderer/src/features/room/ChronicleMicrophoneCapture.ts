@@ -9,6 +9,7 @@ export class ChronicleMicrophoneCapture {
   private captureRetry?: ReturnType<typeof setTimeout>;
   private stopped = false;
   private busy = false;
+  private missedAudio = false;
   private queue: Array<{ part: ChronicleAudioPart; expires: number }> = [];
   constructor(
     private readonly track: MediaStreamTrack,
@@ -18,6 +19,11 @@ export class ChronicleMicrophoneCapture {
     private readonly status: (message: string) => void,
     private readonly gameContext: () => ChronicleAudioPart["gameContext"] = () => undefined,
   ) {}
+
+  private reportStatus(message: string): void {
+    if (this.stopped) return;
+    this.status(this.missedAudio ? `${message}，本次纪事可能缺少部分发言` : message);
+  }
 
   start(): void {
     if (this.stopped || this.track.readyState !== "live") return;
@@ -143,7 +149,12 @@ export class ChronicleMicrophoneCapture {
     if (this.stopped) return;
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
-    if (this.queue.length >= 3) this.queue.shift();
+    if (this.queue.length >= 3) {
+      // The first entry may already have reached the server. Keep it until its ACK settles.
+      this.queue.splice(this.busy ? 1 : 0, 1);
+      this.missedAudio = true;
+      this.reportStatus("语音处理积压");
+    }
     this.queue.push({
       part: {
         sessionId: this.sessionId,
@@ -160,8 +171,12 @@ export class ChronicleMicrophoneCapture {
   }
 
   private async drain(): Promise<void> {
-    if (this.busy || this.stopped) return;
-    while (this.queue[0] && this.queue[0].expires < Date.now()) this.queue.shift();
+    if (this.busy || this.stopped || this.retry) return;
+    while (this.queue[0] && this.queue[0].expires < Date.now()) {
+      this.queue.shift();
+      this.missedAudio = true;
+      this.reportStatus("有语音片段等待超时");
+    }
     const next = this.queue[0];
     if (!next) return;
     this.busy = true;
@@ -170,17 +185,25 @@ export class ChronicleMicrophoneCapture {
     try {
       await this.send(next.part);
       if (this.queue[0] === next) this.queue.shift();
-      if (!this.stopped) this.status("正在记录，稍后汇总");
+      this.reportStatus("正在记录，稍后汇总");
     } catch (error) {
       retry = true;
-      const quota = error instanceof Error && error.message === "chronicle_speech_quota";
+      const code = error instanceof Error ? error.message : "";
+      const quota = code === "chronicle_speech_quota";
       if (quota) retryDelay = 60_000;
-      if (!this.stopped) this.status(quota ? "语音服务额度不足，等待恢复" : "连接恢复后自动继续");
+      this.reportStatus(
+        quota
+          ? "语音服务额度不足，等待恢复"
+          : code === "chronicle_busy"
+            ? "语音服务繁忙，稍后重试"
+            : "语音片段尚未送达，稍后重试",
+      );
     } finally {
       this.busy = false;
       if (!this.stopped)
         this.retry = setTimeout(
           () => {
+            this.retry = undefined;
             void this.drain();
           },
           retry ? retryDelay : 0,

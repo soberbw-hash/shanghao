@@ -31,6 +31,7 @@ export * from "./recording-clips";
 export * from "./recording-clip-range";
 export * from "./utils/roomInvite";
 export * from "./types/room-memory.types";
+export * from "./types/room-memory-names";
 export * from "./types/chronicle.types";
 export * from "./types/temporary-room.types";
 export * from "./utils/temporary-room-code";

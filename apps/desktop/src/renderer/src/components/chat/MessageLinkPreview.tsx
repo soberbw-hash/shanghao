@@ -6,22 +6,24 @@ import { writeRoomCollectionDragPayload } from "../../features/chat/collectionDr
 
 export const MessageLinkPreview = ({
   url,
+  caption,
   onCopy,
 }: {
   url: string;
+  caption?: string;
   onCopy: (url: string) => void;
 }) => {
   const details = getMessageUrlDetails(url);
   const music = identifyMusicLink(url);
-  const [preview, setPreview] = useState<{ title?: string; imageDataUrl?: string }>({});
+  const [result, setResult] = useState<{ url: string; title?: string; imageDataUrl?: string }>();
+  const preview = result?.url === url ? result : undefined;
 
   useEffect(() => {
     let active = true;
-    setPreview({});
     void window.desktopApi.app
-      .getChatLinkPreview(url)
+      .getChatLinkPreview(url, "icon")
       .then((result) => {
-        if (active) setPreview(result);
+        if (active) setResult({ url, ...result });
       })
       .catch(() => undefined);
     return () => {
@@ -39,8 +41,8 @@ export const MessageLinkPreview = ({
       draggable
       aria-label={
         music
-          ? `在 ${music.platform} 收听${preview.title ? ` ${preview.title}` : ""}`
-          : `在浏览器中打开 ${details.hostname}`
+          ? `在 ${music.platform} 收听${preview?.title ? ` ${preview.title}` : ""}`
+          : `在浏览器中打开 ${details.hostname}${caption ? `，${caption}` : ""}`
       }
       title={url}
       onClick={() => void window.desktopApi.app.openExternal(url)}
@@ -51,14 +53,19 @@ export const MessageLinkPreview = ({
       onDragStart={(event) => {
         writeRoomCollectionDragPayload(event.dataTransfer, {
           kind: "link",
-          title: preview.title ?? music?.platform ?? details.hostname,
+          title: caption ?? preview?.title ?? music?.platform ?? details.hostname,
           content: url,
         });
       }}
     >
       <span className="chat-link-preview-image" aria-hidden="true">
-        {preview.imageDataUrl ? (
-          <img src={preview.imageDataUrl} alt="" />
+        {preview?.imageDataUrl ? (
+          <img
+            src={preview.imageDataUrl}
+            alt=""
+            className="!h-6 !w-6 !object-contain"
+            onError={() => setResult({ url, title: preview.title })}
+          />
         ) : music ? (
           <Music2 />
         ) : (
@@ -66,8 +73,14 @@ export const MessageLinkPreview = ({
         )}
       </span>
       <span className="chat-link-preview-copy">
-        <strong>
-          {preview.title ?? (music ? `${music.platform} · 分享的音乐` : details.hostname)}
+        <strong
+          className={
+            caption ? "!whitespace-normal break-words [overflow-wrap:anywhere]" : undefined
+          }
+        >
+          {caption ??
+            preview?.title ??
+            (music ? `${music.platform} · 分享的音乐` : details.hostname)}
         </strong>
         <small>
           {music

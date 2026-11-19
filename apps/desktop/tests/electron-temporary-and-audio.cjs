@@ -70,15 +70,15 @@ app.whenReady().then(async () => {
       const wait=async (condition,label)=>{for(let i=0;i<150;i++){if(condition())return;await new Promise(r=>setTimeout(r,30));}throw Error(label);};
       await wait(()=>document.querySelector('.temporary-entry'),'fixture render');
       document.querySelector('.temporary-entry-back').click();
-      await wait(()=>document.querySelector('.temporary-entry input').value==='临时朋友','profile');
-      if(!document.querySelector('[alt="自定义临时头像"]'))throw Error('saved avatar not restored');
+      await wait(()=>document.querySelector('.temporary-entry input[autocomplete="nickname"]').value==='临时朋友','profile');
+      if(!document.querySelector('[alt="当前临时头像"]'))throw Error('saved avatar not restored');
       if(window.fixtureState.joined)throw Error('profile restoration auto joined');
       const upload=document.querySelector('[aria-label="上传临时头像"]');
       const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array([137,80,78,71])],'synthetic.png',{type:'image/png'}));upload.files=transfer.files;upload.dispatchEvent(new Event('change',{bubbles:true}));
       await wait(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='创建临时房间')?.disabled,'avatar preparation must block joining');
       if(window.fixtureState.joined)throw Error('joining raced avatar normalization');
       await wait(()=>window.fixtureState.preparedAvatars===1,'avatar Main preparation');
-      await wait(()=>document.querySelector('[alt="自定义临时头像"]'),'prepared preview');
+      await wait(()=>document.querySelector('[alt="当前临时头像"]'),'prepared preview');
       [...document.querySelectorAll('button')].find(b=>b.textContent==='创建临时房间').click();
       await wait(()=>window.fixtureState.joined,'guest create');
       document.querySelector('[aria-label="关闭临时联机"]').click();
@@ -118,7 +118,7 @@ app.whenReady().then(async () => {
         `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5173"}/@fs/${file}?${query}`,
       );
       await view.webContents.executeJavaScript(
-        `(async()=>{for(let i=0;i<150;i++){const trigger=document.querySelector('.temporary-entry-trigger');if(trigger){trigger.click();break;}await new Promise(r=>setTimeout(r,30));}for(let i=0;i<150;i++){if(document.querySelector('.temporary-entry input')?.value==='账号朋友'&&document.querySelector('[alt="自定义临时头像"]'))return;await new Promise(r=>setTimeout(r,30));}throw Error('signed-in identity not inherited')})()`,
+        `(async()=>{for(let i=0;i<150;i++){const trigger=document.querySelector('.temporary-entry-trigger');if(trigger){trigger.click();break;}await new Promise(r=>setTimeout(r,30));}for(let i=0;i<150;i++){if(document.querySelector('.temporary-entry input[autocomplete="nickname"]')?.value==='账号朋友'&&document.querySelector('[alt="当前临时头像"]'))return;await new Promise(r=>setTimeout(r,30));}throw Error('signed-in identity not inherited')})()`,
       );
     }
     if (process.env.SHANGHAO_TEST_SCREENSHOT)

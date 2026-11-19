@@ -85,17 +85,43 @@ export class ScreenShareManager {
     return () => this.listeners.delete(listener);
   }
 
-  async openSourcePicker(): Promise<ScreenCaptureSourceDescriptor[]> {
+  async openSourcePicker(
+    onPreviews?: (sources: ScreenCaptureSourceDescriptor[]) => void,
+  ): Promise<ScreenCaptureSourceDescriptor[]> {
     const operationId = ++this.operationId;
     this.patch({ status: "enumerating", error: undefined });
     try {
       await shanghaoCore.screenCapture.setContentProtection(false);
-      const sources = await shanghaoCore.screenCapture.listSources({ timeoutMs: 8_000 });
+      const sources = await shanghaoCore.screenCapture.listSources({
+        timeoutMs: 8_000,
+        withPreviews: !onPreviews,
+      });
       if (operationId !== this.operationId || this.isDisposed) {
         return [];
       }
       if (sources.length === 0) throw new Error("screen_source_missing");
       this.patch({ status: "source-ready", sources });
+      if (onPreviews) {
+        void shanghaoCore.screenCapture
+          .listSources({ timeoutMs: 8_000 })
+          .then((previews) => {
+            if (operationId !== this.operationId || this.isDisposed) return;
+            const byId = new Map(previews.map((source) => [source.id, source]));
+            const enriched = sources.map((source) => {
+              const preview = byId.get(source.id);
+              return preview
+                ? {
+                    ...source,
+                    thumbnailDataUrl: preview.thumbnailDataUrl,
+                    appIconDataUrl: preview.appIconDataUrl,
+                  }
+                : source;
+            });
+            this.patch({ sources: enriched });
+            onPreviews(enriched);
+          })
+          .catch(() => undefined);
+      }
       return sources;
     } catch (error) {
       if (operationId !== this.operationId || this.isDisposed) {

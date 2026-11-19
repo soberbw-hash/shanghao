@@ -405,9 +405,10 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
                     data-gsap-settings={isCurrentSection ? "content" : undefined}
                     hidden={!isCurrentSection}
                     aria-hidden={!isCurrentSection}
-                    className={`settings-section-motion min-w-0 ${
-                      id === "recordings" ? "settings-recording-content" : ""
-                    }`}
+                    className={cn(
+                      "settings-section-motion min-w-0",
+                      id === "recordings" && "settings-recording-content",
+                    )}
                   >
                     {content[id]}
                   </div>

@@ -76,8 +76,14 @@ const execute = async <Result>(
 };
 
 const createScreenCaptureCommands = (api: DesktopApi) => ({
-  listSources: (options?: CoreCommandOptions): Promise<ScreenCaptureSourceDescriptor[]> =>
-    execute("screenCapture.listSources", () => api.screenCapture.listSources(), options),
+  listSources: (
+    options?: CoreCommandOptions & { withPreviews?: boolean },
+  ): Promise<ScreenCaptureSourceDescriptor[]> =>
+    execute(
+      "screenCapture.listSources",
+      () => api.screenCapture.listSources(options?.withPreviews),
+      options,
+    ),
   selectSource: (sourceId: string, options?: CoreCommandOptions): Promise<void> =>
     execute("screenCapture.selectSource", () => api.screenCapture.selectSource(sourceId), options),
   setContentProtection: (enabled: boolean, options?: CoreCommandOptions): Promise<void> =>

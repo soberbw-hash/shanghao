@@ -200,8 +200,22 @@ for (const licenseName of [
 
 const quickMessageDirectory = path.join(resourcesDirectory, "quick-messages");
 const quickMessageFiles = await listFilesRecursively(quickMessageDirectory);
-if (quickMessageFiles.length !== 47) {
-  throw new Error(`Expected 47 quick-message AAC files, found ${quickMessageFiles.length}`);
+if (quickMessageFiles.length !== 55) {
+  throw new Error(`Expected 55 quick-message AAC files, found ${quickMessageFiles.length}`);
+}
+const studioAudioFiles = new Set(
+  studioManifest.audioPacks.flatMap(({ clips }) =>
+    clips.map(({ url }) => {
+      if (!url.startsWith("../quick-messages/")) throw new Error("Invalid studio audio URL");
+      return path.resolve(studioDirectory, decodeURIComponent(url));
+    }),
+  ),
+);
+if (
+  studioAudioFiles.size !== quickMessageFiles.length ||
+  quickMessageFiles.some((file) => !studioAudioFiles.has(file))
+) {
+  throw new Error("Studio audio catalog does not match the bundled quick-message audio");
 }
 for (const filePath of quickMessageFiles) {
   if (path.extname(filePath).toLowerCase() !== ".aac") {

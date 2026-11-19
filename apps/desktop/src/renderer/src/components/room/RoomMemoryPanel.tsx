@@ -106,6 +106,9 @@ const RoomMemoryEditor = ({ roomId }: { roomId: string }) => {
         setBase(saved);
         setDraft(saved);
         setNotice("记忆已保存");
+        window.dispatchEvent(
+          new CustomEvent("shanghao:room-memory-saved", { detail: saved.roomId }),
+        );
       }
     } catch (error) {
       if (active.current && sequence.current === id) setError(privateRoomErrorMessage(error));

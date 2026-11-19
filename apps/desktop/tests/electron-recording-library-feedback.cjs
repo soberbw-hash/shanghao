@@ -44,7 +44,7 @@ app.whenReady().then(async () => {
       const rect=selector=>document.querySelector(selector).getBoundingClientRect();
       const toolbar=rect('.recording-library-toolbar'), first=rect('.transcript-paragraph');
       const text=rect('.voice-memory-detail'), panel=rect('.recording-library-panel');
-      if(toolbar.height>40)throw Error('library storage header consumes a separate card');
+      if(toolbar.height>40)throw Error('library toolbar height is '+toolbar.height+'px; expected at most 40px');
       if(first.top>panel.top+280)throw Error('transcript still pushed below controls: '+JSON.stringify({offset:first.top-panel.top,panelTop:panel.top,textHeight:text.height,detailChildren:Array.from(document.querySelector('.voice-memory-detail').children).map(child=>({className:child.className||child.tagName,top:child.getBoundingClientRect().top,height:child.getBoundingClientRect().height})),children:Array.from(document.querySelector('.recording-detail-swap').children).map(child=>({className:child.className||child.tagName,top:child.getBoundingClientRect().top,height:child.getBoundingClientRect().height}))}));
       if(panel.bottom-first.top<innerHeight*.45)throw Error('transcript gets too little first-screen reading space');
       const source=document.querySelector('.transcript-source-control');
@@ -198,7 +198,7 @@ app.whenReady().then(async () => {
         if(first.top>panel.top+280)throw Error('summary state pushes transcript below first screen');
         if(document.querySelector('.voice-memory-audio-trajectory'))throw Error('decorative processing block restored');
         const details=document.querySelector('.recording-game-context');
-        if(!details||!(paragraph.compareDocumentPosition(details)&Node.DOCUMENT_POSITION_FOLLOWING))throw Error('game context controls precede transcript');
+        if(details)throw Error('game context controls occupy the transcript view');
         return {status:overview.textContent,firstParagraphTop:first.top};
       })()`),
       );

@@ -25,6 +25,67 @@
   font-size: 20px;
   font-weight: 650;
 }
+.temporary-entry .temporary-entry-trigger {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #cddff2;
+  border-radius: 12px;
+  background: #f3f8ff;
+  text-align: left;
+}
+.temporary-entry-trigger:hover {
+  border-color: #97bce7;
+  background: #e7f2ff;
+}
+.temporary-entry-trigger:focus-visible {
+  outline: 2px solid #3977c3;
+  outline-offset: 2px;
+}
+.temporary-entry-chevron {
+  margin-left: auto;
+}
+.temporary-connection-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.temporary-connection-options legend {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.temporary-entry .temporary-connection-options label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid #cddff2;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+.temporary-connection-options label:has(input:checked) {
+  border-color: #8eb8e8;
+  background: #eaf3ff;
+  color: #23578c;
+}
+.temporary-entry .temporary-connection-options input {
+  width: auto;
+  flex: none;
+  accent-color: #3977c3;
+}
+.temporary-connection-options small {
+  display: block;
+  color: #526c87;
+}
+.temporary-connection-options + .temporary-dialog-hint {
+  margin-top: 0;
+}
+@media (max-width: 420px) {
+  .temporary-connection-options {
+    grid-template-columns: 1fr;
+  }
+}
 .temporary-entry .temporary-dialog-hint,
 .temporary-management-body .temporary-invite-hint {
   margin-top: 12px;

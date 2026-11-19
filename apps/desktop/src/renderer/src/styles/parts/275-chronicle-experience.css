@@ -3,7 +3,7 @@
   padding: 6px 12px;
   border: 1px solid #dce9fa;
   border-radius: 12px;
-  background: linear-gradient(125deg, #f4f8ff, #eef6fc);
+  background: #f2f7fd;
   color: #405f7d;
   font-size: 12px;
   line-height: 1.6;
@@ -45,7 +45,7 @@
   padding: 9px 12px;
   border: 1px solid #e0eafb;
   border-radius: 12px;
-  background: linear-gradient(130deg, #fcfdff, #f3f8ff);
+  background: #f9fbff;
 }
 .room-chronicle-entries p {
   color: #293f5c;
@@ -53,6 +53,7 @@
   letter-spacing: normal;
 }
 .room-chronicle-entries time {
+  color: #43658d;
   font-variant-numeric: tabular-nums;
 }
 .chronicle-earlier {

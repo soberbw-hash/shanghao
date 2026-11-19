@@ -841,7 +841,6 @@ export const AiVoiceMemorySettingsCard = ({
 
   return (
     <SettingsSection title="AI 功能">
-      <CloudAiAdminPanel />
       <section className="ai-overview" aria-labelledby="ai-overview-title">
         <div className="ai-model-group-heading">
           <h3 id="ai-overview-title">当前使用</h3>
@@ -1232,6 +1231,7 @@ export const AiVoiceMemorySettingsCard = ({
         ) : null}
       </details>
 
+      <CloudAiAdminPanel />
       {pendingDeleteModel
         ? createPortal(
             <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center px-6">

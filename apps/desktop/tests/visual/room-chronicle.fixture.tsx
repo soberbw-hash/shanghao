@@ -12,16 +12,28 @@ import { useRoomStore } from "../../src/renderer/src/store/roomStore";
 import { useAccountStore } from "../../src/renderer/src/store/accountStore";
 import "../../src/renderer/src/styles/index.css";
 
+const roomId = `room_${"a".repeat(32)}`;
+window.desktopApi.roomMemory = {
+  ...window.desktopApi.roomMemory,
+  get: async () => ({
+    roomId,
+    revision: 1,
+    manualText: "River是林小川",
+    entries: [],
+    autoEnabled: true,
+  }),
+};
+
 const member = {
   id: "fixture-a",
   isLocal: true,
   displayName: "合成成员",
-  nickname: "合成成员",
+  nickname: "River",
   speakingState: MemberSpeakingState.Speaking,
 } as RoomMember;
 useRoomStore
   .getState()
-  .setRoom({ roomId: "main", members: [member], connectionState: RoomConnectionState.Connected });
+  .setRoom({ roomId, members: [member], connectionState: RoomConnectionState.Connected });
 const result = {
   audioParts: 0,
   decodedParts: 0,
@@ -45,13 +57,13 @@ let state = {
   entries: [] as { id: string; at: number; text: string }[],
 };
 const client = new RoomChronicleClient(
-  "main",
+  roomId,
   member.id,
   async (message) => {
     if (message.type === "chronicle_control") {
       if (message.action === "participate")
         state = { ...state, participants: message.enabled ? [member.id] : [] };
-      client.receive({ type: "chronicle_state", roomId: "main", state });
+      client.receive({ type: "chronicle_state", roomId, state });
     } else if (message.type === "chronicle_audio") {
       result.audioParts++;
       const audio = Uint8Array.from(atob(message.data), (value) => value.charCodeAt(0));
@@ -69,7 +81,7 @@ const client = new RoomChronicleClient(
           },
         ],
       };
-      client.receive({ type: "chronicle_state", roomId: "main", state, chunkId: message.chunkId });
+      client.receive({ type: "chronicle_state", roomId, state, chunkId: message.chunkId });
     }
   },
   (message) => useRoomStore.getState().setChronicle(message),
@@ -115,7 +127,7 @@ Object.assign(window, {
       });
       const friend = { ...member, id: "fixture-b", isLocal: false, nickname: "队友乙" };
       useRoomStore.getState().setRoom({
-        roomId: "main",
+        roomId,
         members: [
           member,
           friend,
@@ -130,7 +142,7 @@ Object.assign(window, {
           {
             id: "preview-one",
             at: Date.now() - 120000,
-            text: "甲刚宣布这把稳了，乙立刻提醒：先别急着给自己颁奖。一个负责把气氛抬到决赛现场，一个负责把领奖台拆成折叠凳，主打谁也别想体面下班。😆",
+            text: "River（林小川）说这把稳了，队友乙提醒先看下一波。",
           },
           {
             id: "preview-two",
@@ -142,7 +154,7 @@ Object.assign(window, {
       client.capability(true);
       client.receive({
         type: "chronicle_state",
-        roomId: "main",
+        roomId,
         state: { ...state, summaryIntervalMs: 120000 },
       });
     },

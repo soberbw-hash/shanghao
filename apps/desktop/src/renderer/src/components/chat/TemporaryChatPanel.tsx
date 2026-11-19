@@ -23,11 +23,7 @@ import { ChatAccountAvatar } from "./ChatAccountAvatar";
 import { MessageLinkPreview } from "./MessageLinkPreview";
 import { chatDisplayName, isGameAssistantMessage } from "../../features/chat/gameAssistantMessage";
 import { QuickMessageRow } from "./QuickMessageRow";
-import {
-  findFirstMessageUrl,
-  formatCompactUrl,
-  isMessageOnlyUrl,
-} from "../../features/chat/linkPreview";
+import { formatCompactUrl, messageLinkCard } from "../../features/chat/linkPreview";
 import { writeRoomCollectionDragPayload } from "../../features/chat/collectionDrag";
 import { preloadAdjacentChatImages, preloadChatImage } from "../../features/chat/chatImagePreload";
 import { quickMessageCooldownMs } from "../../features/chat/quickReplies";
@@ -574,8 +570,8 @@ export const TemporaryChatPanel = ({
               }}
             >
               {messages.length === 0 ? (
-                <div className="chat-empty-state grid h-full min-h-[100px] place-items-center px-4 text-center text-[13px] leading-5 text-[#71839a]">
-                  {emptyMessage}
+                <div className="chat-empty-state grid h-full min-h-[100px] place-items-center px-4 text-center text-[13px] leading-5 text-[#536c87]">
+                  {canSend ? emptyMessage : "连接恢复后可以发送消息。"}
                 </div>
               ) : (
                 messages.slice(-100).map((message, index, visibleMessages) => {
@@ -584,12 +580,11 @@ export const TemporaryChatPanel = ({
                     !previousMessage ||
                     formatMessageDate(previousMessage.createdAt) !==
                       formatMessageDate(message.createdAt);
-                  const linkPreviewUrl = message.content
-                    ? findFirstMessageUrl(message.content)
-                    : undefined;
-                  const shouldShowMessageBubble = Boolean(
-                    message.content && !(linkPreviewUrl && isMessageOnlyUrl(message.content)),
-                  );
+                  const linkCard =
+                    message.content && !isGameAssistantMessage(message)
+                      ? messageLinkCard(message.content)
+                      : undefined;
+                  const shouldShowMessageBubble = Boolean(message.content && !linkCard);
                   const previousCreatedAt = Date.parse(previousMessage?.createdAt ?? "");
                   const createdAt = Date.parse(message.createdAt);
                   const isGrouped = Boolean(
@@ -762,8 +757,8 @@ export const TemporaryChatPanel = ({
                                 )}
                               </span>
                             ) : null}
-                            {linkPreviewUrl ? (
-                              <MessageLinkPreview url={linkPreviewUrl} onCopy={copyLink} />
+                            {linkCard ? (
+                              <MessageLinkPreview {...linkCard} onCopy={copyLink} />
                             ) : null}
                             {message.isLocal && message.deliveryState === "failed" ? (
                               <button
@@ -804,7 +799,7 @@ export const TemporaryChatPanel = ({
               </span>
             ) : null}
             <Input
-              placeholder={canSend ? "发送消息…" : unavailableLabel}
+              placeholder={canSend ? "发送消息…" : messages.length ? unavailableLabel : "发送消息"}
               title="最多保留最近 100 条消息"
               value={chatInput}
               disabled={!canSend}

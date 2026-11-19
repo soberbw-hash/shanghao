@@ -13,6 +13,7 @@ type Log = (
 
 export class ScreenCaptureService {
   private pendingSourceId: string | undefined;
+  private enumerationSettled: Promise<unknown> = Promise.resolve();
   readonly remoteControl = new RemoteControlCapture(() =>
     screen.getAllDisplays().map((display) => ({
       id: String(display.id),
@@ -52,14 +53,9 @@ export class ScreenCaptureService {
     }
   }
 
-  async listSources(): Promise<ScreenCaptureSourceDescriptor[]> {
+  async listSources(withPreviews = true): Promise<ScreenCaptureSourceDescriptor[]> {
     if (!this.capabilities.supported) return [];
-    this.setContentProtection(false);
-    await new Promise<void>((resolve) => setImmediate(resolve));
-
-    // The renderer source picker is visual, so it needs the real Electron previews.
-    // Keep the thumbnail modest to avoid sending full-resolution frames over IPC.
-    const sources = await this.waitForSources(true, true);
+    const sources = await this.waitForSources(withPreviews);
 
     const screenSourceIds = sources
       .filter((source) => source.id.startsWith("screen:"))
@@ -98,17 +94,12 @@ export class ScreenCaptureService {
   }
 
   async resolveRequestedSource(
-    requestedSourceId?: string,
+    requestedSourceId: string,
   ): Promise<DesktopCapturerSource | undefined> {
     // Re-enumerate at capture time: HWNDs and display handles can disappear after the picker opens.
     // Retrying a failed capture must not keep returning the exact same stale native source object.
     const sources = await this.waitForSources(false);
-    const primaryDisplayId = requestedSourceId ? undefined : String(screen.getPrimaryDisplay().id);
-    const selected = requestedSourceId
-      ? sources.find((source) => source.id === requestedSourceId)
-      : (sources.find((source) => source.display_id === primaryDisplayId) ??
-        sources.find((source) => source.id.startsWith("screen:")) ??
-        sources[0]);
+    const selected = sources.find((source) => source.id === requestedSourceId);
 
     if (!selected) {
       this.log?.("error", "Requested screen share source is no longer available", {
@@ -120,11 +111,17 @@ export class ScreenCaptureService {
   }
 
   private enumerate(withThumbnails: boolean, fetchWindowIcons = withThumbnails) {
-    return this.getSources({
-      types: ["screen", "window"],
-      thumbnailSize: withThumbnails ? { width: 320, height: 180 } : { width: 0, height: 0 },
-      fetchWindowIcons,
-    });
+    // Windows preview enumeration starts temporary video capturers. Let them
+    // finish before resolving a live capture request for the selected display.
+    const pending = this.enumerationSettled.then(() =>
+      this.getSources({
+        types: ["screen", "window"],
+        thumbnailSize: withThumbnails ? { width: 320, height: 180 } : { width: 0, height: 0 },
+        fetchWindowIcons,
+      }),
+    );
+    this.enumerationSettled = pending.catch(() => undefined);
+    return pending;
   }
 
   private async waitForSources(

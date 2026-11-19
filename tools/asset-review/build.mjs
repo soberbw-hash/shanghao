@@ -158,6 +158,25 @@ for (const file of files) {
             : "当前 Renderer 未直接引用，保留图片供审核；不代表正在使用。",
   });
 }
+const audioRoot = path.join(root, "apps/desktop/resources/quick-messages");
+const audioPacks = new Map();
+for (const file of await readdir(audioRoot, { recursive: true, withFileTypes: true })) {
+  if (!file.isFile() || path.extname(file.name).toLowerCase() !== ".aac") continue;
+  const absolute = path.join(file.parentPath, file.name);
+  const relative = path.relative(audioRoot, absolute).replaceAll("\\", "/");
+  const group = path.posix.dirname(relative);
+  const url =
+    (bundled ? "../quick-messages/" : "./assets/audio/") +
+    relative.split("/").map(encodeURIComponent).join("/");
+  if (!bundled) {
+    const destination = path.join(output, "assets/audio", relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await copyFile(absolute, destination);
+  }
+  const items = audioPacks.get(group) ?? [];
+  items.push({ title: path.basename(file.name, ".aac"), url });
+  audioPacks.set(group, items);
+}
 const manifest = {
   kind: "shanghao-asset-review",
   version,
@@ -166,6 +185,12 @@ const manifest = {
   packaged: bundled,
   assets,
   games,
+  audioPacks: [...audioPacks]
+    .sort(([a], [b]) => a.localeCompare(b, "zh-CN"))
+    .map(([directory, clips]) => ({
+      name: directory === "." ? "其他音频" : directory.replaceAll("/", " · "),
+      clips: clips.sort((a, b) => a.title.localeCompare(b.title, "zh-CN")),
+    })),
 };
 await writeFile(path.join(output, "manifest.json"), JSON.stringify(manifest, null, 2));
 await esbuild.build({
@@ -247,7 +272,9 @@ await copyFile(
 );
 // Keep an independent runtime beside the review snapshot so it survives source cleanup.
 if (!bundled) {
-  const electronRuntime = path.dirname(req.resolve("electron/package.json")) + "/dist";
+  const electronRuntime =
+    process.env.ELECTRON_OVERRIDE_DIST_PATH ??
+    path.join(path.dirname(req.resolve("electron/package.json")), "dist");
   const runtimeVersion = (await readFile(path.join(electronRuntime, "version"), "utf8")).trim();
   const oldRuntime = path.join(output, "runtime");
   const oldVersion = await readFile(path.join(oldRuntime, "version"), "utf8").catch(() => "");
@@ -267,7 +294,9 @@ if (!bundled) {
     execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]);
   }
 }
-console.log(`Created ${assets.length} image previews: ${path.join(output, "index.html")}`);
+console.log(
+  `Created ${assets.length} image previews and ${audioPacks.size} audio packs: ${path.join(output, "index.html")}`,
+);
 if (process.argv.includes("--serve")) {
   const types = {
     ".html": "text/html; charset=utf-8",
@@ -280,6 +309,7 @@ if (process.argv.includes("--serve")) {
     ".ico": "image/x-icon",
     ".json": "application/json",
     ".woff2": "font/woff2",
+    ".aac": "audio/aac",
   };
   createServer(async (request, response) => {
     try {

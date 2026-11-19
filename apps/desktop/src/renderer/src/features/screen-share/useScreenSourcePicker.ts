@@ -3,7 +3,9 @@ import type { ScreenCaptureSourceDescriptor } from "@private-voice/shared";
 
 /** One picker request owns the visible list; closed and superseded requests cannot reopen it. */
 export const useScreenSourcePicker = (
-  prepare: () => Promise<ScreenCaptureSourceDescriptor[]>,
+  prepare: (
+    onPreviews: (sources: ScreenCaptureSourceDescriptor[]) => void,
+  ) => Promise<ScreenCaptureSourceDescriptor[]>,
   cancel: () => Promise<void>,
 ) => {
   const [isScreenSourcePickerOpen, setOpen] = useState(false);
@@ -35,7 +37,9 @@ export const useScreenSourcePicker = (
     setStatus("loading");
     setOpen(true);
     try {
-      const sources = await prepare();
+      const sources = await prepare((withPreviews) => {
+        if (id === request.current) setSources(withPreviews);
+      });
       if (id !== request.current) return;
       setSources(sources);
       setStatus(sources.length ? "ready" : "empty");

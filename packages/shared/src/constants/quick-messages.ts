@@ -270,7 +270,7 @@ const createLocalMusicPreset = (input: {
   id: string;
   name: string;
   soundId: string;
-  gameTags: string[];
+  gameTags?: string[];
 }): QuickMessagePreset => ({
   id: input.id,
   label: input.name,
@@ -280,6 +280,20 @@ const createLocalMusicPreset = (input: {
   soundId: input.soundId,
   gameTags: input.gameTags,
 });
+
+export const AI_DRAMA_MUSIC_PACK = {
+  name: "AI漫剧热门硬曲",
+  clips: [
+    { id: "music-ai-drama-xlowly", title: "XLOWLY" },
+    { id: "music-ai-drama-guanzhong", title: "关中王进行曲" },
+    { id: "music-ai-drama-sexy-back", title: "SEXY BACK" },
+    { id: "music-ai-drama-host", title: "宿主请进入" },
+    { id: "music-ai-drama-big-booty", title: "BIG BOOTY" },
+    { id: "music-ai-drama-pressure", title: "压迫感" },
+    { id: "music-ai-drama-may-way-eset", title: "MAY WAY ESET" },
+    { id: "music-ai-drama-panamira", title: "PANAMIRA" },
+  ],
+} as const;
 
 /** Short game-music clips keep their original song titles and carry game tags. */
 export const LOCAL_MUSIC_PRESETS: QuickMessagePreset[] = [
@@ -361,6 +375,9 @@ export const LOCAL_MUSIC_PRESETS: QuickMessagePreset[] = [
     soundId: "music-valorant-颗秒小曲",
     gameTags: ["瓦罗兰特"],
   }),
+  ...AI_DRAMA_MUSIC_PACK.clips.map(({ id, title }) =>
+    createLocalMusicPreset({ id, name: title, soundId: id }),
+  ),
 ];
 
 /** The first music clip is the initial choice for the dedicated music button. */

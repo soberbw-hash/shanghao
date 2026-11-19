@@ -11,6 +11,9 @@ app.whenReady().then(async () => {
     show: false,
     webPreferences: { backgroundThrottling: false, offscreen: true },
   });
+  view.webContents.on("console-message", (event) => {
+    if (event.level === "error") console.error(event.message);
+  });
   try {
     const fixture = path
       .join(__dirname, "fixtures/recording-model-sync.html")
@@ -134,15 +137,12 @@ app.whenReady().then(async () => {
       check(local?.getAttribute('aria-pressed')==='true','local model card did not follow library selection');
       check(library().value==='local:paraformer-zh','local source did not restore selected model');
       library().value='cloud';library().dispatchEvent(new Event('change',{bubbles:true}));await pause(70);
-      const gameContext=document.querySelector('.recording-game-context');check(gameContext,'manual game context missing');gameContext.open=true;
-      const setValue=(element,value,prototype)=>{Object.getOwnPropertyDescriptor(prototype,'value').set.call(element,value);element.dispatchEvent(new Event('input',{bubbles:true}));};
-      const automatic=gameContext.querySelector('input[type="checkbox"]');check(automatic&&!automatic.checked,'automatic context must default off');automatic.click();
-      setValue(gameContext.querySelector('input:not([type="checkbox"])'),'英雄联盟',HTMLInputElement.prototype);
-      setValue(gameContext.querySelector('textarea'),'嘉文，EZ',HTMLTextAreaElement.prototype);await pause(50);
+      const gameContext=document.querySelector('[aria-label="游戏词汇自动适配"]');
+      check(!gameContext,'automatic game context should stay out of the recording transcript');
       [...document.querySelectorAll('.voice-memory-header-actions button')].find(b=>b.textContent.includes('开始转录')).click();await pause(120);
       const manualRequest=JSON.parse(document.documentElement.dataset.lastProcessRequest);
       check(manualRequest.manual===true&&manualRequest.transcribe===true&&manualRequest.organize===true&&manualRequest.restartTranscription===true,'manual transcription must automatically organize even when legacy automatic organization is disabled');
-      check(manualRequest.localAsrContext?.gameName==='英雄联盟'&&manualRequest.localAsrContext.terms.join(',')==='嘉文,EZ'&&manualRequest.localAsrAutoGameContext===true,'local context choices missing from this recording request');
+      check(manualRequest.localAsrAutoGameContext===true&&!manualRequest.localAsrContext,'automatic game context should be requested without fabricating a manual override');
       check(document.querySelector('.voice-memory-working'),'queued acknowledgement hid newer processing event');
       check(document.querySelector('.voice-memory-working').textContent.includes('第 1/3 段'),'cloud stage detail missing');
       const pauseButton=[...document.querySelectorAll('.voice-memory-detail button')].find(b=>b.textContent.includes('暂停'));
@@ -159,9 +159,10 @@ app.whenReady().then(async () => {
       check(retryRequest.manual===true&&retryRequest.transcribe===true&&retryRequest.organize===true&&retryRequest.restartTranscription===true,'existing cloud recording did not request transcription with automatic organization');
       window.dispatchEvent(new Event('fixture-show-hybrid'));await pause(150);
       window.dispatchEvent(new Event('fixture-show-unexamined'));await pause(100);
-      check(document.body.textContent.includes('低音量区间无法确认是否有讲话'),'quiet audio uncertainty is hidden');
-      const quiet=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent.includes('低音量区间'));
-      check(quiet,'quiet range missing');quiet.querySelector('summary').click();quiet.querySelector('button').click();await pause(30);
+      const quiet=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent.includes('查看待复核区间'));
+      check(quiet,'uncertain audio review is missing');quiet.querySelector('summary').click();
+      const quietRange=[...quiet.querySelectorAll('button')].find(b=>b.textContent.includes('低音量，回听确认'));
+      check(quietRange,'quiet range missing');quietRange.click();await pause(30);
       check(document.documentElement.dataset.transcriptSeekMs==='0','quiet range lost its original offset');
       const gap=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent.includes('未检查区间'));
       check(gap && gap.textContent.includes('测试成员') && gap.textContent.includes('回听混音'),'unexamined member audio is not displayed');

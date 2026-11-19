@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   MemberSpeakingState,
   RoomConnectionState,
@@ -6,6 +6,7 @@ import {
   normalizeAsrGameLexicon,
 } from "@private-voice/shared";
 import { useSettingsStore } from "../../store/settingsStore";
+import { useAppStore } from "../../store/appStore";
 import { useRoomStore } from "../../store/roomStore";
 import type { RoomChronicleClient } from "./RoomChronicleClient";
 import { ChronicleMicrophoneCapture } from "./ChronicleMicrophoneCapture";
@@ -14,26 +15,45 @@ export function useRoomChronicleCapture(transport?: RoomChronicleClient): string
   const roomId = useRoomStore((state) => state.room.roomId);
   const localId = useRoomStore((state) => state.room.members.find((member) => member.isLocal)?.id);
   const connected = useRoomStore(
-    (state) => state.room.connectionState === RoomConnectionState.Connected,
+    (state) =>
+      state.room.connectionState === RoomConnectionState.Connected ||
+      state.room.connectionState === RoomConnectionState.WaitingPeer ||
+      state.room.connectionState === RoomConnectionState.Degraded,
   );
   const sessionId = useRoomStore((state) => state.chronicle?.state?.sessionId);
   const participants = useRoomStore((state) => state.chronicle?.state?.participants);
   const participating = !!localId && !!participants?.includes(localId);
   const stream = useRoomStore((state) => state.localStream);
+  const notifiedSession = useRef<string>(undefined);
   const [status, setStatus] = useState("");
   useEffect(() => {
-    if (!transport || !sessionId || !localId || !connected || participating || !stream) return;
+    if (!transport || !sessionId || !localId || !connected || participating) return;
+    let active = true;
     const join = () => {
-      void transport.joinAutomatically(sessionId).catch(() => setStatus("转录连接中，正在重试"));
+      if (!stream?.getAudioTracks().some((track) => track.readyState === "live")) return;
+      void transport.joinAutomatically(sessionId).catch(() => {
+        if (active) setStatus("转录连接中，正在重试");
+      });
     };
     join();
     const retry = window.setInterval(join, 10_000);
-    return () => window.clearInterval(retry);
+    return () => {
+      active = false;
+      window.clearInterval(retry);
+    };
   }, [transport, sessionId, localId, connected, participating, stream]);
   useEffect(() => {
     setStatus("");
-    const track = stream?.getAudioTracks()[0];
+    const track = stream?.getAudioTracks().find((item) => item.readyState === "live");
     if (!transport || !sessionId || !participating || !connected || !track) return;
+    if (notifiedSession.current !== sessionId) {
+      notifiedSession.current = sessionId;
+      useAppStore.getState().pushToast({
+        tone: "neutral",
+        title: "已参与房间转录",
+        description: "可在纪事里停止提供自己的语音。",
+      });
+    }
     const capture = new ChronicleMicrophoneCapture(
       track,
       sessionId,

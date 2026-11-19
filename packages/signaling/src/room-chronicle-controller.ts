@@ -18,6 +18,7 @@ export class RoomChronicleController {
     runtime: Pick<CloudAiRuntime, "speechService" | "textService">,
     changed: (roomId: string) => void,
     reports?: Promise<DailyRoomReportStore>,
+    speakerNames?: (roomId: string) => Promise<Map<string, string>>,
   ): void {
     this.processor = new RoomChronicleProcessor(
       this.sessions,
@@ -26,6 +27,7 @@ export class RoomChronicleController {
       changed,
       undefined,
       reports,
+      speakerNames,
     );
   }
 

@@ -222,9 +222,12 @@ test("quick-message voice and music packs keep one compact AAC copy", () => {
     "apps/desktop/src/renderer/src/assets/sounds/quick-messages",
   );
   const files = listFilesRecursively(sourceDirectory);
+  const newMusicDirectory = path.join(sourceDirectory, "音乐", "AI漫剧热门硬曲") + path.sep;
+  const newMusic = files.filter((filePath) => filePath.startsWith(newMusicDirectory));
   const totalBytes = files.reduce((sum, filePath) => sum + statSync(filePath).size, 0);
+  const newMusicBytes = newMusic.reduce((sum, filePath) => sum + statSync(filePath).size, 0);
 
-  assert.equal(files.length, 47);
+  assert.equal(files.length, 55);
   assert.equal(
     files.every((filePath) => path.extname(filePath).toLowerCase() === ".aac"),
     true,
@@ -234,7 +237,12 @@ test("quick-message voice and music packs keep one compact AAC copy", () => {
     assert.equal(header[0], 0xff, `not an ADTS AAC file: ${filePath}`);
     assert.equal((header[1] ?? 0) & 0xf0, 0xf0, `not an ADTS AAC file: ${filePath}`);
   }
-  assert.equal(totalBytes < 9_000_000, true, "quick-message packs should remain compact");
+  assert.equal(newMusic.length, 8);
+  assert.ok(newMusicBytes < 1_600_000, "the eight new tracks keep a compact footprint");
+  assert.ok(
+    totalBytes - newMusicBytes < 9_000_000,
+    "existing quick-message packs should remain compact",
+  );
   assert.equal(existsSync(rendererDuplicate), false, "renderer must not bundle a duplicate pack");
 
   const urlSource = readFileSync(

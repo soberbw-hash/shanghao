@@ -132,7 +132,8 @@ const desktopApi: DesktopApi = {
     saveDailyRoomReports: (reports) =>
       ipcRenderer.invoke(IPC_CHANNELS.app.saveDailyRoomReports, reports),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.openExternal, url),
-    getChatLinkPreview: (url) => ipcRenderer.invoke(IPC_CHANNELS.app.getChatLinkPreview, url),
+    getChatLinkPreview: (url, image) =>
+      ipcRenderer.invoke(IPC_CHANNELS.app.getChatLinkPreview, url, image),
     openSystemSettings: (page) => ipcRenderer.invoke(IPC_CHANNELS.app.openSystemSettings, page),
     consumeDeepLink: () => ipcRenderer.invoke(IPC_CHANNELS.app.consumeDeepLink),
     onDeepLink: (listener) => {
@@ -159,7 +160,8 @@ const desktopApi: DesktopApi = {
     export: () => ipcRenderer.invoke(IPC_CHANNELS.quickMessages.export),
   },
   screenCapture: {
-    listSources: () => ipcRenderer.invoke(IPC_CHANNELS.screenCapture.listSources),
+    listSources: (withPreviews) =>
+      ipcRenderer.invoke(IPC_CHANNELS.screenCapture.listSources, withPreviews),
     selectSource: (sourceId) =>
       ipcRenderer.invoke(IPC_CHANNELS.screenCapture.selectSource, sourceId),
     setContentProtection: (enabled) =>

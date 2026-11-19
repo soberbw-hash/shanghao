@@ -350,6 +350,36 @@ test("screen source enumeration can retry after a failure", async () => {
   assert.equal(manager.getSnapshot().status, "source-ready");
 });
 
+test("sources are available before thumbnails and closing discards late previews", async () => {
+  installCaptureEnvironment({ includeAudio: false });
+  const source = {
+    id: "screen:0:0",
+    name: "显示器",
+    kind: "screen" as const,
+    thumbnailDataUrl: "",
+  };
+  type Sources = Awaited<ReturnType<typeof window.desktopApi.screenCapture.listSources>>;
+  let completePreviews!: (sources: Sources) => void;
+  const previews = new Promise<Sources>((resolve) => {
+    completePreviews = resolve;
+  });
+  window.desktopApi.screenCapture.listSources = (withPreviews) =>
+    withPreviews === false ? Promise.resolve([source]) : previews;
+  const manager = new ScreenShareManager({
+    startPublishing: async () => undefined,
+    stopPublishing: async () => undefined,
+  });
+  const received: Sources[] = [];
+  assert.deepEqual(await manager.openSourcePicker((sources) => received.push(sources)), [source]);
+  assert.equal(manager.getSnapshot().status, "source-ready");
+  assert.equal(received.length, 0);
+  await manager.cancelSourcePicker();
+  completePreviews([{ ...source, thumbnailDataUrl: "data:image/png;base64,AA==" }]);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(received, []);
+  assert.deepEqual(manager.getSnapshot().sources, []);
+});
+
 test("viewer preload exposes only the screen-share viewer bridge", () => {
   const preload = readFileSync(
     new URL("../src/preload/screen-share-viewer.ts", import.meta.url),
