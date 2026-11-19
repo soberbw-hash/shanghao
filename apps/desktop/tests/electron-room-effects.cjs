@@ -32,10 +32,12 @@ app.whenReady().then(async () => {
       const edge = list.parentElement;
       const composerWidth = () => composer.getBoundingClientRect().width;
       const idleWidth = composerWidth();
-      if (getComputedStyle(edge, '::before').backdropFilter !== 'blur(4px)' ||
-          getComputedStyle(edge, '::after').backdropFilter !== 'blur(11px)' ||
+      if (getComputedStyle(edge, '::before').backdropFilter !== 'blur(5px)' ||
+          getComputedStyle(edge, '::after').backdropFilter !== 'blur(15px)' ||
           getComputedStyle(edge, '::after').pointerEvents !== 'none')
         throw Error('the progressive edge should blur only the visible list');
+      if (getComputedStyle(list.closest('.temporary-chat-panel'), '::after').filter !== 'blur(20px)')
+        throw Error('the chat sidebar lacks a softened room background');
       list.scrollTop = list.scrollHeight;
       const last = list.querySelector('.chat-message-row:last-child').getBoundingClientRect();
       if (last.bottom > list.getBoundingClientRect().bottom - 34)
@@ -71,7 +73,7 @@ app.whenReady().then(async () => {
       document.querySelector('[aria-label="打开音乐演示"]').click();
       await new Promise((resolve) => setTimeout(resolve, 160));
       const dialog = document.querySelector('dialog:modal');
-      if (!dialog || !getComputedStyle(dialog).backdropFilter.includes('blur(7px)') ||
+      if (!dialog || !getComputedStyle(dialog).backdropFilter.includes('blur(12px)') ||
           !dialog.querySelector('feImage')?.getAttribute('href')?.startsWith('data:image/png'))
         throw Error('the music dialog lacks translucent backdrop');
       const volume = dialog.querySelector('input[type=range]');
@@ -97,6 +99,12 @@ app.whenReady().then(async () => {
     await window.webContents.executeJavaScript(
       `document.querySelector('dialog:modal').style.setProperty('--audio-glass-rim', ${JSON.stringify(rimStyle)})`,
     );
+    await window.webContents.executeJavaScript(`(async () => {
+      const room = document.querySelector('main');
+      room.style.backgroundImage = 'linear-gradient(rgb(6 24 66 / 65%), rgb(26 19 58 / 65%)), var(--room-wallpaper)';
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    })()`);
+    await capture("room-music-glass-dark-background.png");
     window.setContentSize(430, 620);
     const narrow = await window.webContents.executeJavaScript(`(async () => {
       await new Promise((resolve) => setTimeout(resolve, 80));

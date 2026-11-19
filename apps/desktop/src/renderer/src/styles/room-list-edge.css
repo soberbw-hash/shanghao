@@ -23,8 +23,8 @@
   inset-inline: 0 8px;
   bottom: 0;
   height: var(--room-list-edge-depth);
-  background: linear-gradient(transparent, rgb(228 240 255 / 25%));
-  backdrop-filter: blur(4px);
+  background: linear-gradient(transparent, rgb(228 240 255 / 16%));
+  backdrop-filter: blur(5px);
   mask-image: linear-gradient(transparent 6%, black);
   pointer-events: none;
   content: "";
@@ -32,7 +32,7 @@
 
 .room-list-viewport[data-room-list-edge="true"]::after {
   height: calc(var(--room-list-edge-depth) * 0.62);
-  backdrop-filter: blur(11px);
+  backdrop-filter: blur(15px);
 }
 
 .temporary-chat-panel .chat-composer {

@@ -141,9 +141,9 @@
     radial-gradient(ellipse at 92% 80%, rgba(119, 174, 245, 0.1), transparent 50%),
     linear-gradient(
       115deg,
-      rgba(255, 255, 255, 0.4) 0%,
-      rgba(245, 250, 255, 0.3) 42%,
-      rgba(220, 237, 255, 0.26) 100%
+      rgba(250, 253, 255, 0.68) 0%,
+      rgba(242, 249, 255, 0.65) 48%,
+      rgba(225, 240, 254, 0.62) 100%
     ) !important;
   box-shadow:
     -8px 0 21px rgba(48, 80, 123, 0.075),
@@ -183,11 +183,21 @@
   background-image: var(--room-wallpaper);
   background-position: 76% 50%;
   background-size: 210% 150%;
-  filter: blur(13px);
-  opacity: 0.2;
+  filter: blur(20px);
+  opacity: 0.27;
   clip-path: inset(0 round var(--sg-radius-xl));
   pointer-events: none;
   content: "";
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .room-page .temporary-chat-panel {
+    background: #f3f8ff !important;
+  }
+  .room-page .temporary-chat-panel::before,
+  .room-page .temporary-chat-panel::after {
+    display: none;
+  }
 }
 
 .room-page .chat-panel-header,

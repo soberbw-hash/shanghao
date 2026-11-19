@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 import { Music2 } from "lucide-react";
 import type { ChatMessage } from "@private-voice/shared";
@@ -35,14 +35,17 @@ function RoomEffectsFixture() {
     <main
       className="room-page"
       data-sent={sent}
-      style={{
-        height: "100dvh",
-        display: "grid",
-        gridTemplateColumns: "minmax(0,1fr) minmax(280px,360px)",
-        gap: 12,
-        padding: 12,
-        background: `url(${roomArt}) center / cover`,
-      }}
+      style={
+        {
+          "--room-wallpaper": `url(${roomArt})`,
+          height: "100dvh",
+          display: "grid",
+          gridTemplateColumns: "minmax(0,1fr) minmax(280px,360px)",
+          gap: 12,
+          padding: 12,
+          background: `url(${roomArt}) center / cover`,
+        } as CSSProperties
+      }
     >
       <div style={{ display: "flex", alignItems: "end" }}>
         <Button variant="secondary" onClick={() => setOpen(true)} aria-label="打开音乐演示">
