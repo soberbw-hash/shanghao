@@ -31,11 +31,13 @@ export const applyRoomMemoryNames = (text: string, names: ReadonlyMap<string, st
     /https?:\/\/[^\s，。！？；]+|[A-Za-z0-9_@.-]+/gu,
   )) {
     if (index < cursor) continue;
-    const nickname = token.replace(/\.+$/, "");
+    let nicknameLength = token.length;
+    while (nicknameLength > 0 && token[nicknameLength - 1] === ".") nicknameLength--;
+    const nickname = token.slice(0, nicknameLength);
     const name = names.get(nickname.toLowerCase());
     if (!name) continue;
     const end = index + token.length;
-    const suffix = token.slice(nickname.length);
+    const suffix = token.slice(nicknameLength);
     const duplicate = text.slice(end).match(/^[ \t]*[（(]([\p{Script=Han}·]{2,16})[）)]/u);
     result += text.slice(cursor, index) + name + suffix;
     cursor = !suffix && duplicate?.[1] === name ? end + duplicate[0].length : end;
