@@ -6,7 +6,7 @@
   min-height: 36px;
   position: relative;
   z-index: 4;
-  padding-inline: 4px;
+  padding: 1px 4px;
 }
 .recording-library-toolbar h2 {
   display: flex;

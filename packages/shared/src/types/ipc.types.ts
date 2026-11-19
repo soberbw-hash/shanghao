@@ -353,7 +353,10 @@ export interface DesktopApi {
       reports: Record<string, import("./room.types").DailyRoomReport[]>,
     ) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
-    getChatLinkPreview: (url: string) => Promise<{
+    getChatLinkPreview: (
+      url: string,
+      image?: "icon",
+    ) => Promise<{
       title?: string;
       description?: string;
       siteName?: string;
@@ -383,7 +386,7 @@ export interface DesktopApi {
     export: () => Promise<string | undefined>;
   };
   screenCapture: {
-    listSources: () => Promise<ScreenCaptureSourceDescriptor[]>;
+    listSources: (withPreviews?: boolean) => Promise<ScreenCaptureSourceDescriptor[]>;
     selectSource: (sourceId: string) => Promise<void>;
     setContentProtection: (enabled: boolean) => Promise<void>;
   };

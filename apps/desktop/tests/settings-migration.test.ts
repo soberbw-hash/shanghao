@@ -19,7 +19,7 @@ test("cloud assistance defaults on and preserves explicit choices across provide
   assert.equal(fresh.aiTranscriptionProvider, "cloud");
   assert.equal(fresh.isAiCloudLocalAssistEnabled, true);
   assert.equal(fresh.aiCloudLocalAsrModel, "qwen3-asr-0.6b-force");
-  assert.equal(fresh.isAiAutoTranscribeEnabled, false);
+  assert.equal(fresh.isAiAutoTranscribeEnabled, true);
   const chosen = migrateSettings({
     ...defaultSettings,
     isAiCloudLocalAssistEnabled: true,
@@ -265,8 +265,8 @@ test("friend loudness balance is on by default and explicit choices survive migr
 test("voice transcription defaults to resource-safe automation and preserves saved modes", () => {
   assert.equal(defaultSettings.aiProcessingMode, "low_resource");
   assert.equal(migrateSettings({}).settings.aiProcessingMode, "low_resource");
-  assert.equal(defaultSettings.isAiAutoTranscribeEnabled, false);
-  assert.equal(migrateSettings({}).settings.isAiAutoTranscribeEnabled, false);
+  assert.equal(defaultSettings.isAiAutoTranscribeEnabled, true);
+  assert.equal(migrateSettings({}).settings.isAiAutoTranscribeEnabled, true);
   assert.equal(
     migrateSettings({ isAiAutoTranscribeEnabled: true }).settings.isAiAutoTranscribeEnabled,
     true,

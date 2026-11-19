@@ -4,10 +4,23 @@ import type { AppSettings } from "@private-voice/shared";
 import { AiVoiceMemorySettingsCard } from "../../src/renderer/src/components/settings/AiVoiceMemorySettingsCard";
 import { MuteButton } from "../../src/renderer/src/components/audio/MuteButton";
 import { RecordingMarkerCue } from "../../src/renderer/src/components/settings/RecordingMarkerCue";
+import { UpdateModal } from "../../src/renderer/src/components/status/UpdateModal";
+import { useSettingsStore } from "../../src/renderer/src/store/settingsStore";
 import "../../src/renderer/src/styles/index.css";
 
 const unconfigured = new URLSearchParams(window.location.search).has("unconfigured");
 const readError = new URLSearchParams(window.location.search).has("read-error");
+const showUpdate = new URLSearchParams(window.location.search).has("update");
+if (showUpdate)
+  useSettingsStore.setState({
+    updateStatus: {
+      phase: "downloading",
+      latestVersion: "9.0.0",
+      message: "下载中",
+      percent: 42,
+      forceUpdate: true,
+    },
+  });
 let providerReadFault = readError;
 window.addEventListener("fixture:provider-recovered", () => {
   providerReadFault = false;
@@ -54,6 +67,12 @@ const Fixture = () => {
   const [muted, setMuted] = useState(false);
   return (
     <main className="room-page" style={{ padding: 20 }}>
+      {showUpdate ? (
+        <>
+          <input aria-label="聊天消息" style={{ position: "fixed", bottom: 20, right: 20 }} />
+          <UpdateModal />
+        </>
+      ) : null}
       <div style={{ position: "relative", height: 70 }}>
         <MuteButton isMuted={muted} onClick={() => setMuted(!muted)} />
         <RecordingMarkerCue

@@ -73,6 +73,7 @@ declare global {
       packaged?: boolean;
       assets: ReviewAsset[];
       games: GameSource[];
+      audioPacks: { name: string; clips: { title: string; url: string }[] }[];
     };
     assetStudio?: AssetStudio;
   }
@@ -294,6 +295,7 @@ function ReviewApp() {
   const dialog = useRef<HTMLDialogElement>(null);
   const preview = useRef<HTMLDivElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
+  const playingClip = useRef<HTMLAudioElement>(null);
   const [reviewFilter, setReviewFilter] = useState("全部状态");
   const [phase, setPhase] = useState<WeatherDayPhase>("day");
   const [action, setAction] = useState("idle");
@@ -340,6 +342,15 @@ function ReviewApp() {
       (reviewFilter === "全部状态" || (notes[item.id]?.status || "待审核") === reviewFilter) &&
       `${item.name} ${item.path} ${item.note}`.toLowerCase().includes(query.toLowerCase()),
   );
+  const audioQuery = query.trim().toLowerCase();
+  const audioPacks = manifest.audioPacks
+    .map(({ name, clips }) => ({
+      name,
+      clips: name.toLowerCase().includes(audioQuery)
+        ? clips
+        : clips.filter(({ title }) => title.toLowerCase().includes(audioQuery)),
+    }))
+    .filter(({ clips }) => clips.length > 0);
   const open = (item: Card) => {
     setSelected(item);
     setComment(notes[item.id]?.comment || "");
@@ -583,12 +594,14 @@ function ReviewApp() {
             ["characters", "角色动作"],
             ["games", "游戏显示器"],
             ["avatars", "账号头像"],
+            ["audio", "音频包"],
             ["assets", "原始素材"],
           ].map(([id = "widgets", label]) => (
             <button
               key={id}
               aria-pressed={tab === id}
               onClick={() => {
+                playingClip.current?.pause();
                 setTab(id);
                 setQuery("");
               }}
@@ -603,8 +616,13 @@ function ReviewApp() {
             <input
               type="search"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="例如：时钟、英雄联盟、窗户、fox"
+              onChange={(e) => {
+                if (tab === "audio") playingClip.current?.pause();
+                setQuery(e.target.value);
+              }}
+              placeholder={
+                tab === "audio" ? "按歌名或音频包搜索" : "例如：时钟、英雄联盟、窗户、fox"
+              }
             />
           </label>
           {tab === "assets" && (
@@ -617,68 +635,122 @@ function ReviewApp() {
               </select>
             </label>
           )}
-          <label>
-            审核进度
-            <select value={reviewFilter} onChange={(e) => setReviewFilter(e.target.value)}>
-              {["全部状态", "待审核", "需要修改", "通过"].map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            预览底色
-            <select value={background} onChange={(e) => setBackground(e.target.value)}>
-              <option value="light">浅色</option>
-              <option value="dark">深色</option>
-              <option value="grid">透明格</option>
-            </select>
-          </label>
+          {tab !== "audio" && (
+            <label>
+              审核进度
+              <select value={reviewFilter} onChange={(e) => setReviewFilter(e.target.value)}>
+                {["全部状态", "待审核", "需要修改", "通过"].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {tab !== "audio" && (
+            <label>
+              预览底色
+              <select value={background} onChange={(e) => setBackground(e.target.value)}>
+                <option value="light">浅色</option>
+                <option value="dark">深色</option>
+                <option value="grid">透明格</option>
+              </select>
+            </label>
+          )}
           {motionControls(tab)}
-          <span>{filtered.length} 项</span>
+          <span>
+            {tab === "audio"
+              ? audioPacks.reduce((total, pack) => total + pack.clips.length, 0)
+              : filtered.length}{" "}
+            项
+          </span>
         </div>
-        <p className="review-info">
-          {tab === "games"
-            ? "每款游戏都有独立画面。点击卡片查看放大效果与房间实际小屏尺寸；来源链接、原图和审核意见都在详情里。"
-            : "点击卡片放大审核，可复制图片或下载原图。时钟、日历等组合组件也能导出当前效果。"}
-        </p>
+        {tab !== "audio" && (
+          <p className="review-info">
+            {tab === "games"
+              ? "每款游戏都有独立画面。点击卡片查看放大效果与房间实际小屏尺寸；来源链接、原图和审核意见都在详情里。"
+              : "点击卡片放大审核，可复制图片或下载原图。时钟、日历等组合组件也能导出当前效果。"}
+          </p>
+        )}
         <p role="status" className="review-status">
           {message}
         </p>
-        <section className="review-grid">
-          {filtered.map((item) => (
-            <article className="review-card" key={item.id}>
-              <button
-                className="review-preview"
-                aria-label={`放大并审核${item.name}`}
-                onClick={() => open(item)}
+        {tab === "audio" ? (
+          <section className="review-audio-packs" aria-label="音频包">
+            {audioPacks.map(({ name, clips }) => (
+              <details
+                key={name}
+                className="review-card"
+                open={Boolean(audioQuery) || undefined}
+                onToggle={(event) => {
+                  if (
+                    !event.currentTarget.open &&
+                    event.currentTarget.contains(playingClip.current)
+                  )
+                    playingClip.current?.pause();
+                }}
               >
-                {item.content}
-              </button>
-              <div className="review-card-body">
-                <div className="review-kind">
-                  {item.kind}
-                  <span>{notes[item.id]?.status || "待审核"}</span>
+                <summary>
+                  <strong>{name}</strong>
+                  <span>{clips.length} 段</span>
+                </summary>
+                <ul>
+                  {clips.map(({ title, url }) => (
+                    <li key={url}>
+                      <span>{title}</span>
+                      <audio
+                        controls
+                        preload="none"
+                        src={url}
+                        aria-label={`试听 ${title}`}
+                        onPlay={(event) => {
+                          if (playingClip.current !== event.currentTarget)
+                            playingClip.current?.pause();
+                          playingClip.current = event.currentTarget;
+                        }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ))}
+            {!audioPacks.length && <p>没有匹配的音频，请换一个关键词。</p>}
+          </section>
+        ) : (
+          <section className="review-grid">
+            {filtered.map((item) => (
+              <article className="review-card" key={item.id}>
+                <button
+                  className="review-preview"
+                  aria-label={`放大并审核${item.name}`}
+                  onClick={() => open(item)}
+                >
+                  {item.content}
+                </button>
+                <div className="review-card-body">
+                  <div className="review-kind">
+                    {item.kind}
+                    <span>{notes[item.id]?.status || "待审核"}</span>
+                  </div>
+                  <h2>{item.name}</h2>
+                  <p>{item.note}</p>
+                  <div className="review-card-actions">
+                    <button onClick={() => open(item)}>查看 / 审核</button>
+                    {item.url && (
+                      <>
+                        <button disabled={busy} onClick={() => void copy(item)}>
+                          复制
+                        </button>
+                        <button disabled={busy} onClick={() => void download(item)}>
+                          下载
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <h2>{item.name}</h2>
-                <p>{item.note}</p>
-                <div className="review-card-actions">
-                  <button onClick={() => open(item)}>查看 / 审核</button>
-                  {item.url && (
-                    <>
-                      <button disabled={busy} onClick={() => void copy(item)}>
-                        复制
-                      </button>
-                      <button disabled={busy} onClick={() => void download(item)}>
-                        下载
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </article>
-          ))}
-        </section>
-        {!filtered.length && <p>没有匹配的素材，请换一个关键词。</p>}
+              </article>
+            ))}
+          </section>
+        )}
+        {tab !== "audio" && !filtered.length && <p>没有匹配的素材，请换一个关键词。</p>}
         <dialog ref={dialog} className="review-dialog" onCancel={() => setSelected(undefined)}>
           <div className="review-dialog-head">
             <h2>{selected?.name}</h2>

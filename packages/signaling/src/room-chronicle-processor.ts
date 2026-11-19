@@ -5,6 +5,7 @@ import type { ChronicleAudioMessage } from "./protocol";
 import { RoomChronicleSessions } from "./room-chronicle-sessions";
 import { CHRONICLE_SUMMARY_INTERVAL_MS, roomChroniclePrompt } from "./room-chronicle-prompt";
 import type { DailyRoomReportStore } from "./daily-room-report-store";
+import { applyRoomMemoryNames } from "@private-voice/shared";
 
 type Speech = Pick<CloudAsrService, "isConfigured" | "transcribe">;
 type Text = Pick<CloudAiService, "isConfigured" | "execute">;
@@ -37,6 +38,7 @@ export class RoomChronicleProcessor {
     private readonly changed: (roomId: string) => void,
     private readonly batchMs = CHRONICLE_SUMMARY_INTERVAL_MS,
     private readonly reports?: Promise<DailyRoomReportStore>,
+    private readonly speakerNames?: (roomId: string) => Promise<Map<string, string>>,
   ) {}
 
   configured(): boolean {
@@ -140,6 +142,8 @@ export class RoomChronicleProcessor {
     this.summaries.set(roomId, controller);
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]);
     try {
+      const names = await this.speakerNames?.(roomId).catch(() => new Map<string, string>());
+      signal.throwIfAborted();
       const content = await this.text.execute(
         {
           type: "cloud_ai_request",
@@ -149,7 +153,14 @@ export class RoomChronicleProcessor {
           purpose: "organize",
           responseFormat: "json",
           useWebSearch: false,
-          prompt: roomChroniclePrompt(segments),
+          prompt: roomChroniclePrompt(
+            names?.size
+              ? segments.map((segment) => ({
+                  ...segment,
+                  name: names.get(segment.name.toLowerCase()) ?? segment.name,
+                }))
+              : segments,
+          ),
         },
         signal,
       );
@@ -173,7 +184,7 @@ export class RoomChronicleProcessor {
       const summary = {
         id: randomUUID(),
         at: Math.min(...segments.map((part) => part.at)),
-        text: text.trim(),
+        text: names?.size ? applyRoomMemoryNames(text.trim(), names) : text.trim(),
       };
       let reportStore: DailyRoomReportStore | undefined;
       if (this.reports) {

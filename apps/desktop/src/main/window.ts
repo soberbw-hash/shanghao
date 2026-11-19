@@ -81,8 +81,10 @@ const applyBrandIdentity = (window: BrowserWindow, windowIcon = getWindowIcon())
 let screenShareViewerWindow: BrowserWindow | null = null;
 let screenShareViewerSessionId: string | undefined;
 
-export const listScreenCaptureSources = async (): Promise<ScreenCaptureSourceDescriptor[]> => {
-  return screenCaptureService.listSources();
+export const listScreenCaptureSources = async (
+  withPreviews = true,
+): Promise<ScreenCaptureSourceDescriptor[]> => {
+  return screenCaptureService.listSources(withPreviews);
 };
 
 export const selectScreenCaptureSource = (sourceId: string): void => {
@@ -472,6 +474,10 @@ export const createMainWindow = ({
       }
 
       const requestedSourceId = screenCaptureService.consumeSelectedSourceId();
+      if (!requestedSourceId) {
+        callback({});
+        return;
+      }
       const selectedSource = await screenCaptureService.resolveRequestedSource(requestedSourceId);
 
       if (!selectedSource) {

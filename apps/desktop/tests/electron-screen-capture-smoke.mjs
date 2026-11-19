@@ -13,6 +13,16 @@ const timeout = setTimeout(() => {
 }, 30_000);
 
 app.whenReady().then(async () => {
+  const listingStartedAt = Date.now();
+  const listedSources = await desktopCapturer.getSources({
+    types: ["screen", "window"],
+    thumbnailSize: { width: 0, height: 0 },
+    fetchWindowIcons: false,
+  });
+  const sourceListingMs = Date.now() - listingStartedAt;
+  if (!listedSources.some((source) => source.id.startsWith("screen:"))) {
+    throw new Error("screen_source_metadata_missing");
+  }
   const enumerationStartedAt = Date.now();
   const pickerSources = await desktopCapturer.getSources({
     types: ["screen", "window"],
@@ -23,6 +33,7 @@ app.whenReady().then(async () => {
   console.log(
     JSON.stringify({
       pickerSourceCount: pickerSources.length,
+      sourceListingMs,
       pickerEnumerationMs: Date.now() - enumerationStartedAt,
       pickerPreviewCount: pickerSources.filter((source) => !source.thumbnail.isEmpty()).length,
     }),

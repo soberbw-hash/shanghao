@@ -1,4 +1,4 @@
-const urlPattern = /https?:\/\/[^\s<，。！？；：）】》」]+/gi;
+const urlPattern = /(?:https?:\/\/[^\s<，。！？；：）】》」]+|\bv\.douyin\.com\/[\w-]+\/?)/gi;
 const trailingUrlPunctuation = /[.,!?，。！？;；:：)\]}>》」】]+$/;
 
 const parseMessageUrl = (value: string) => {
@@ -10,17 +10,23 @@ const parseMessageUrl = (value: string) => {
   }
 };
 
-export const findFirstMessageUrl = (content: string) => {
-  const rawValue = content.match(urlPattern)?.[0];
-  if (!rawValue) return undefined;
-  const value = rawValue.replace(trailingUrlPunctuation, "");
-  return parseMessageUrl(value) ? value : undefined;
-};
-
-export const isMessageOnlyUrl = (content: string) => {
-  const url = findFirstMessageUrl(content);
-  if (!url) return false;
-  return content.trim().replace(trailingUrlPunctuation, "") === url;
+export const messageLinkCard = (content: string) => {
+  const matches = content.match(urlPattern);
+  if (matches?.length !== 1) return undefined;
+  const address = matches[0]!.replace(trailingUrlPunctuation, "");
+  const url = parseMessageUrl(address.includes("://") ? address : `https://${address}`);
+  if (!url) return undefined;
+  let caption = content.replace(matches[0]!, "").trim();
+  if (url.hostname === "v.douyin.com" && caption.includes("复制此链接")) {
+    caption = caption
+      .replace(/复制此链接[\s\S]*$/, "")
+      .replace(/^\d+\.\d+\s+[^\n]{0,65}?:\/\s*/, "")
+      .trim();
+  }
+  return {
+    url: url.href,
+    caption: caption.replace(trailingUrlPunctuation, "").trim() ? caption : undefined,
+  };
 };
 
 export const formatCompactUrl = (value: string) => {

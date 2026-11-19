@@ -29,6 +29,42 @@ test("a failed audio blob does not reject or block the next segment", async () =
   capture.stop();
 });
 
+test("transcript backlog keeps the in-flight segment and reports dropped speech", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let rejectFirst!: (error: Error) => void;
+  const first = new Promise<void>((_resolve, reject) => {
+    rejectFirst = reject;
+  });
+  const sent: number[] = [];
+  const statuses: string[] = [];
+  const capture = new ChronicleMicrophoneCapture(
+    { readyState: "live", enabled: true } as MediaStreamTrack,
+    "synthetic",
+    () => true,
+    async (part) => {
+      sent.push(part.startedAt);
+      if (sent.length === 1) await first;
+    },
+    (status) => statuses.push(status),
+  );
+  t.after(() => capture.stop());
+  const enqueue = (
+    capture as unknown as { enqueue(blob: Blob, duration: number, start: number): Promise<void> }
+  ).enqueue.bind(capture);
+  for (const start of [1, 2, 3, 4]) await enqueue(new Blob(["speech"]), 30_000, start);
+  assert.deepEqual(sent, [1]);
+  assert.match(statuses.at(-1) ?? "", /可能缺少部分发言/);
+  rejectFirst(Error("chronicle_busy"));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.match(statuses.at(-1) ?? "", /语音服务繁忙/);
+  await enqueue(new Blob(["next speech"]), 30_000, 5);
+  assert.deepEqual(sent, [1], "new speech must respect the retry delay");
+  t.mock.timers.tick(10_000);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(sent, [1, 3], "during backoff only the oldest queued segment is evicted");
+  assert.match(statuses.at(-1) ?? "", /可能缺少部分发言/);
+});
+
 test("chronicle encoding retries initialization and errors with a cooldown, and withdrawal cancels recovery", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
   const originalRecorder = Object.getOwnPropertyDescriptor(globalThis, "MediaRecorder");

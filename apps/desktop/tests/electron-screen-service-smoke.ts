@@ -32,7 +32,24 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === "media" || permission === "display-capture");
   });
-  const service = new ScreenCaptureService();
+  let busy = false;
+  let overlappingNativeEnumeration = false;
+  const service = new ScreenCaptureService(undefined, async (options) => {
+    if (busy) overlappingNativeEnumeration = true;
+    busy = true;
+    try {
+      return await desktopCapturer.getSources(options);
+    } finally {
+      busy = false;
+    }
+  });
+  if (!selectedSource) throw new Error("capture_source_missing");
+  const [previews, resolved] = await Promise.all([
+    service.listSources(true),
+    service.resolveRequestedSource(selectedSource.id),
+  ]);
+  if (!previews.length || resolved?.id !== selectedSource.id || overlappingNativeEnumeration)
+    throw new Error("capture_source_preview_overlap");
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     const source = selectedSource
       ? await service.resolveRequestedSource(selectedSource.id)

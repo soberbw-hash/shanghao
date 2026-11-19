@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Copy, MonitorOff, RefreshCw } from "lucide-react";
+import { AppWindow, Copy, Monitor, MonitorOff, RefreshCw } from "lucide-react";
 import type { ScreenCaptureSourceDescriptor } from "@private-voice/shared";
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
@@ -177,7 +177,13 @@ export const ScreenSourcePicker = ({
                   {source.thumbnailDataUrl ? (
                     <img src={source.thumbnailDataUrl} alt="" decoding="async" draggable={false} />
                   ) : (
-                    <MonitorOff size={25} aria-hidden="true" />
+                    <>
+                      {source.kind === "screen" ? (
+                        <Monitor size={25} aria-hidden="true" />
+                      ) : (
+                        <AppWindow size={25} aria-hidden="true" />
+                      )}
+                    </>
                   )}
                 </span>
                 <span className="screen-source-name">
@@ -205,10 +211,10 @@ export const ScreenSourcePicker = ({
                   draggable={false}
                 />
               ) : (
-                <MonitorOff size={30} aria-hidden="true" />
+                <Monitor size={30} aria-hidden="true" />
               )}
             </div>
-            <strong>{selected?.name ?? "选择一个画面"}</strong>
+            <strong>{selected?.displayLabel ?? selected?.name ?? "选择一个画面"}</strong>
             <div className="screen-source-quality" aria-label="分享清晰度">
               {(["720p", "1080p", "1440p"] as const).map((value) => (
                 <button

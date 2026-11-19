@@ -61,19 +61,27 @@ const readPublicResource = async (
   };
 };
 
-const loadPreview = async (raw: string): Promise<ChatLinkPreview> => {
-  const page = await readPublicResource(raw, MAX_HTML_BYTES);
-  const html = page.contentType === "text/html" ? page.body.toString("utf8") : "";
+const loadPreview = async (url: URL, imagePreference?: "icon"): Promise<ChatLinkPreview> => {
+  const page = await readPublicResource(url.href, MAX_HTML_BYTES).catch(() => undefined);
+  if (!page && url.hostname !== "v.douyin.com") return {};
+  const base = page?.finalUrl ?? url;
+  const html = page?.contentType === "text/html" ? page.body.toString("utf8") : "";
   const { image: rawImage, ...metadata } = readChatLinkMetadata(html);
-  const icon = html.match(/<link\s+[^>]*rel=["'][^"']*icon[^"']*["'][^>]*>/i)?.[0];
+  const icon = html.match(/<link\s+[^>]*rel\s*=\s*["'][^"']*\bicon\b[^"']*["'][^>]*>/i)?.[0];
   const iconHref = icon?.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
-  const candidates = [rawImage, iconHref, "/favicon.ico"].filter((value): value is string =>
-    Boolean(value),
-  );
-  for (const candidate of candidates) {
+  const hasDouyinIcon = url.hostname === "v.douyin.com" || base.hostname === "www.douyin.com";
+  const candidates = [
+    ...(imagePreference !== "icon" && rawImage ? [{ href: rawImage, kind: "cover" as const }] : []),
+    ...(iconHref ? [{ href: iconHref, kind: "icon" as const }] : []),
+    {
+      href: hasDouyinIcon ? "https://www.douyin.com/favicon.ico" : "/favicon.ico",
+      kind: "icon" as const,
+    },
+  ];
+  for (const { href, kind } of candidates) {
     try {
       const image = await readPublicResource(
-        new URL(candidate.replace(/&amp;/g, "&"), page.finalUrl).href,
+        new URL(href.replace(/&amp;/g, "&"), base).href,
         MAX_IMAGE_BYTES,
       );
       if (
@@ -90,17 +98,20 @@ const loadPreview = async (raw: string): Promise<ChatLinkPreview> => {
         continue;
       return {
         ...metadata,
-        imageKind: candidate === rawImage ? "cover" : "icon",
+        imageKind: kind,
         imageDataUrl: `data:${image.contentType};base64,${image.body.toString("base64")}`,
       };
     } catch {
       // A missing Open Graph image can still have a normal site icon.
     }
   }
-  return metadata;
+  return page ? metadata : {};
 };
 
-export const getChatLinkPreview = (raw: string): Promise<ChatLinkPreview> => {
+export const getChatLinkPreview = (
+  raw: string,
+  imagePreference?: "icon",
+): Promise<ChatLinkPreview> => {
   if (raw.length > 2_048) return Promise.resolve({});
   let url: URL;
   try {
@@ -108,10 +119,10 @@ export const getChatLinkPreview = (raw: string): Promise<ChatLinkPreview> => {
   } catch {
     return Promise.resolve({});
   }
-  const key = url.href;
+  const key = `${imagePreference ?? "cover"}:${url.href}`;
   const existing = cache.get(key);
   if (existing) return existing;
-  const task = loadPreview(key).catch(() => ({}));
+  const task = loadPreview(url, imagePreference).catch(() => ({}));
   cache.set(key, task);
   if (cache.size > 40) cache.delete(cache.keys().next().value!);
   return task;

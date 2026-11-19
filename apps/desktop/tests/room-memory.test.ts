@@ -7,6 +7,8 @@ import path from "node:path";
 import { WebSocket } from "ws";
 import {
   roomMemoryContext,
+  roomMemoryNames,
+  applyRoomMemoryNames,
   roomAutomaticMemoryText,
   isRoomMemorySnapshot,
   isRoomAiScopeAllowed,
@@ -15,6 +17,27 @@ import {
   type AccountSnapshot,
   type RoomMemorySnapshot,
 } from "@private-voice/shared";
+
+test("room memory names apply to known mentions and preserve URLs and ambiguous names", () => {
+  const names = roomMemoryNames(
+    "River是林小川，Maple是顾北，Alex是陈雷，Alex是张凯",
+    "River是李佳",
+  );
+  assert.deepEqual(
+    [...names],
+    [
+      ["river", "林小川"],
+      ["maple", "顾北"],
+    ],
+  );
+  assert.equal(
+    applyRoomMemoryNames(
+      "River （林小川）说了几句。接着是 Maple. Alex 发了 https://example.com/River",
+      names,
+    ),
+    "林小川说了几句。接着是 顾北. Alex 发了 https://example.com/River",
+  );
+});
 import { RoomMemoryStore } from "../../../packages/signaling/src/room-memory-store";
 import { RoomMemoryHttpController } from "../../../packages/signaling/src/room-memory-http-controller";
 import { RoomMemoryRuntime } from "../../../packages/signaling/src/room-memory-runtime";

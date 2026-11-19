@@ -1,10 +1,17 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  applyRoomMemoryNames,
+  isPrivateRoomId,
+  roomAutomaticMemoryText,
+  roomMemoryNames,
+} from "@private-voice/shared";
 import { BookOpen, Download, Mic, MicOff } from "lucide-react";
 import { useRoomStore } from "../../store/roomStore";
 import type { RoomChronicleClient } from "../../features/room/RoomChronicleClient";
 import { useChronicleArchive } from "../../features/room/useChronicleArchive";
 
 const EMPTY_ENTRIES: [] = [];
+const EMPTY_NAMES = new Map<string, string>();
 
 export function RoomChroniclePanel({
   transport,
@@ -25,6 +32,38 @@ export function RoomChroniclePanel({
   const pendingRef = useRef(false);
   const [shown, setShown] = useState(60);
   const archive = useChronicleArchive(room.roomId, message?.state?.entries ?? EMPTY_ENTRIES);
+  const [memoryNames, setMemoryNames] = useState<{ roomId: string; names: Map<string, string> }>();
+  useEffect(() => {
+    const roomId = room.roomId;
+    const api = window.desktopApi?.roomMemory;
+    if (!api || !isPrivateRoomId(roomId)) return;
+    let active = true;
+    let generation = 0;
+    const load = () => {
+      const request = ++generation;
+      void api
+        .get(roomId)
+        .then((memory) => {
+          if (active && request === generation) {
+            setMemoryNames({
+              roomId,
+              names: roomMemoryNames(memory.manualText, roomAutomaticMemoryText(memory)),
+            });
+          }
+        })
+        .catch(() => undefined);
+    };
+    const refresh = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === roomId) load();
+    };
+    load();
+    window.addEventListener("shanghao:room-memory-saved", refresh);
+    return () => {
+      active = false;
+      window.removeEventListener("shanghao:room-memory-saved", refresh);
+    };
+  }, [room.roomId]);
+  const names = memoryNames?.roomId === room.roomId ? memoryNames.names : EMPTY_NAMES;
   const members = room.members.filter((member) => !member.isEmptySlot);
   const heard = members.filter((member) => state?.participants.includes(member.id));
   const act = async () => {
@@ -85,20 +124,16 @@ export function RoomChroniclePanel({
       </div>
       <details className="chronicle-source-status">
         <summary>
-          转录状态{" "}
-          <span>
-            {heard.length}/{members.length} 人参与转录
-          </span>
+          {state ? "房间转录中" : "转录未开启"}
+          <span>{state ? `${heard.length}/${members.length} 人参与转录` : "查看说明"}</span>
         </summary>
-        {heard.length ? <p>参与：{heard.map((member) => member.nickname).join("、")}</p> : null}
-        {state ? <p>语音发送至云端转录，不保存原始转录。</p> : null}
-        <small>
-          {archive.stored
-            ? "纪事保存在本机，并同步至房间回顾。"
-            : archive.available
-              ? "本机纪事加载中"
-              : "仅查看本次纪事"}
-        </small>
+        {heard.length ? (
+          <p>
+            参与：
+            {heard.map(({ nickname }) => names.get(nickname.toLowerCase()) ?? nickname).join("、")}
+          </p>
+        ) : null}
+        <small>一人开启，成员语音发送至云端转录，可随时停止参与。</small>
       </details>
       {archive.error ? (
         <p className="room-chronicle-hint" role="status">
@@ -136,7 +171,7 @@ export function RoomChroniclePanel({
                   })}
                 </time>
                 <div>
-                  <p>{entry.text}</p>
+                  <p>{applyRoomMemoryNames(entry.text, names)}</p>
                 </div>
               </article>
             ))}
@@ -144,11 +179,11 @@ export function RoomChroniclePanel({
         ) : (
           <div className="room-chronicle-empty">
             <BookOpen size={26} />
-            <p>{state ? "正在整理房间里的趣事。" : "开始转录后，趣事会显示在这里。"}</p>
+            <p>{state ? "收到语音后，纪事会分段出现。" : "开始转录后，可以在这里查看房间纪事。"}</p>
           </div>
         )}
       </div>
-      {status && participating ? (
+      {status && state ? (
         <p className="room-chronicle-hint" role="status">
           {status}
         </p>

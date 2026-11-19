@@ -347,7 +347,7 @@ function AdminGate() {
     };
   }, []);
   return (
-    <section className="mb-4 rounded-2xl border border-[#cfdff4] bg-[#f5f9ff] p-4">
+    <section className="mt-3 rounded-2xl border border-[#cfdff4] bg-[#f5f9ff] p-4">
       <button
         type="button"
         className="flex w-full items-center justify-between text-left font-semibold text-[#344d6c]"

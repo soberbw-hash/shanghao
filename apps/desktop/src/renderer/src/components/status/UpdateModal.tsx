@@ -1,20 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
-import { Download, RefreshCcw } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useCallback, useRef, useState } from "react";
+import { Download, GripHorizontal, RefreshCcw } from "lucide-react";
+import { AnimatePresence, motion, useDragControls } from "framer-motion";
 
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { useSettingsStore } from "../../store/settingsStore";
-import {
-  dialogSurfaceVariants,
-  overlayScrimVariants,
-  popoverSurfaceVariants,
-  reducedFadeVariants,
-} from "../../features/motion/motionPresets";
+import { popoverSurfaceVariants, reducedFadeVariants } from "../../features/motion/motionPresets";
 import { usePrefersReducedMotion as useReducedMotion } from "../../hooks/usePrefersReducedMotion";
 
 export const UpdateModal = () => {
   const shouldReduceMotion = useReducedMotion();
+  const dragControls = useDragControls();
+  const dragBounds = useRef<HTMLDivElement>(null);
   const updateInfo = useSettingsStore((state) => state.updateInfo);
   const status = useSettingsStore((state) => state.updateStatus);
   const downloadUpdate = useSettingsStore((state) => state.downloadUpdate);
@@ -23,7 +20,7 @@ export const UpdateModal = () => {
   const [dismissedVersion, setDismissedVersion] = useState(() =>
     window.localStorage.getItem("shanghao:dismissed-update-version"),
   );
-  const [hiddenPhase, setHiddenPhase] = useState<string>();
+  const [hiddenStatus, setHiddenStatus] = useState<typeof status>();
 
   const latestVersion = updateInfo?.latestVersion ?? status.latestVersion ?? "";
   const isForced = Boolean(updateInfo?.forceUpdate || status.forceUpdate);
@@ -32,67 +29,54 @@ export const UpdateModal = () => {
 
   const isVisible = Boolean(
     (updateInfo?.hasUpdate || isDownloading || isDownloaded) &&
-    hiddenPhase !== status.phase &&
+    hiddenStatus !== status &&
     (isForced || isDownloaded || dismissedVersion !== latestVersion),
   );
 
   const dismissOptionalUpdate = useCallback(() => {
     if (isForced) return;
-    setHiddenPhase(status.phase);
+    setHiddenStatus(status);
     if (latestVersion) {
       window.localStorage.setItem("shanghao:dismissed-update-version", latestVersion);
       setDismissedVersion(latestVersion);
     }
     window.dispatchEvent(new Event("shanghao:update-dismissed"));
-  }, [isForced, latestVersion, status.phase]);
-
-  useEffect(() => {
-    setHiddenPhase(undefined);
-  }, [status.phase]);
-
-  useEffect(() => {
-    if (!isVisible || isForced) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") dismissOptionalUpdate();
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [dismissOptionalUpdate, isForced, isVisible]);
+  }, [isForced, latestVersion, status]);
 
   return (
     <AnimatePresence>
       {isVisible ? (
-        <motion.div
-          key={isForced ? "forced-update" : "optional-update"}
-          variants={shouldReduceMotion ? reducedFadeVariants : overlayScrimVariants}
-          initial="initial"
-          animate="open"
-          exit="closed"
-          className={`update-modal-backdrop fixed z-[90] grid ${
-            isForced
-              ? "is-forced-update inset-0 place-items-center p-6"
-              : "is-optional-update bottom-6 right-6 w-[min(430px,calc(100vw-48px))] pointer-events-none"
-          }`}
+        <div
+          key={latestVersion}
+          ref={dragBounds}
+          className="update-modal-backdrop pointer-events-none fixed inset-0 z-[90] grid items-end justify-items-end p-4 pb-24"
         >
           <motion.div
-            variants={
-              shouldReduceMotion
-                ? reducedFadeVariants
-                : isForced
-                  ? dialogSurfaceVariants
-                  : popoverSurfaceVariants
-            }
+            variants={shouldReduceMotion ? reducedFadeVariants : popoverSurfaceVariants}
             initial="initial"
             animate="open"
             exit="closed"
-            role={isForced ? "alertdialog" : "status"}
-            aria-modal={isForced ? "true" : undefined}
+            drag
+            dragControls={dragControls}
+            dragListener={false}
+            dragConstraints={dragBounds}
+            dragMomentum={false}
+            dragElastic={0}
+            role="region"
             aria-labelledby="update-modal-title"
-            className="update-modal-surface modal-surface pointer-events-auto w-full min-w-0 max-w-[430px] rounded-[30px] p-6"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") dismissOptionalUpdate();
+            }}
+            className="update-modal-surface modal-surface pointer-events-auto w-full min-w-0 max-w-[360px] rounded-[24px] p-5"
           >
-            <div className="flex items-start justify-between gap-4">
-              <div className="text-xs font-semibold tracking-[0.18em] text-[#7990ad]">
-                {isForced ? "需要更新" : "发现新版"}
+            <div className="flex items-center justify-between gap-3">
+              <div
+                className="flex min-h-8 flex-1 touch-none select-none items-center gap-2 font-semibold text-[#546d89] cursor-grab active:cursor-grabbing"
+                onPointerDown={(event) => dragControls.start(event)}
+                title="拖动更新窗口"
+              >
+                <GripHorizontal className="h-4 w-4" aria-hidden="true" />
+                <span className="text-xs">{isForced ? "需要更新" : "发现新版"}</span>
               </div>
               {!isForced ? (
                 <DialogCloseButton label="稍后提醒" onClick={dismissOptionalUpdate} />
@@ -118,7 +102,12 @@ export const UpdateModal = () => {
                   <span>{status.message}</span>
                   <span>{Math.round(status.percent ?? 0)}%</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-[#edf2f8]">
+                <div
+                  role="progressbar"
+                  aria-label="更新下载进度"
+                  aria-valuenow={Math.round(status.percent ?? 0)}
+                  className="h-2 overflow-hidden rounded-full bg-[#edf2f8]"
+                >
                   <div
                     className="h-full w-full origin-left rounded-full bg-[#4f7df7] transition-transform duration-300"
                     style={{
@@ -168,7 +157,7 @@ export const UpdateModal = () => {
               ) : null}
             </div>
           </motion.div>
-        </motion.div>
+        </div>
       ) : null}
     </AnimatePresence>
   );

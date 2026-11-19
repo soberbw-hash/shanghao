@@ -206,6 +206,8 @@ export class SignalingServer extends EventEmitter {
         this.broadcastSnapshot(roomId),
       ),
     );
+    const isSecureRequest = (request: IncomingMessage) =>
+      this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection;
     const privateRoomFile = stores.privateRoomFile;
     this.roomDirectory = PrivateRoomDirectory.open(privateRoomFile).then((directory) => {
       this.directory = directory;
@@ -221,8 +223,7 @@ export class SignalingServer extends EventEmitter {
           .getRoom(roomId)
           ?.peers.listConnectedPeers()
           .some((peer) => peer.userId === userId) ?? false,
-      (request) =>
-        this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
+      isSecureRequest,
       privateRoomFile ? `${privateRoomFile}.memory.json` : undefined,
       {
         isConfigured: () => this.cloudAi?.textService.isConfigured() ?? false,
@@ -238,15 +239,12 @@ export class SignalingServer extends EventEmitter {
         : process.env.CLOUD_AI_CONFIG_FILE ||
             (privateRoomFile ? `${privateRoomFile}.ai-providers.json` : undefined),
     );
-    this.cloudAi.configureHttp(
-      this.accountBackend,
-      (request) =>
-        this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
-    );
+    this.cloudAi.configureHttp(this.accountBackend, isSecureRequest);
     this.chronicle.configure(
       options.chronicleServices ?? this.cloudAi,
       (roomId) => this.broadcastSnapshot(roomId),
       this.dailyRoomReports,
+      (roomId) => this.roomMemories.speakerNames(roomId),
     );
     this.privateRoomHttp = new PrivateRoomHttpController(
       this.roomDirectory,
@@ -275,8 +273,7 @@ export class SignalingServer extends EventEmitter {
             if (peer.userId === userId) this.evictPeer(roomId, peer.id, "room_banned");
         },
       },
-      (request) =>
-        this.accountHttp.isSecure(request) || this.accountHttp.insecureDevelopmentConnection,
+      isSecureRequest,
     );
     this.httpServer = options.httpServer ?? createServer();
     this.httpServer.on(

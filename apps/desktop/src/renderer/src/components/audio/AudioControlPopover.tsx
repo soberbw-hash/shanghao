@@ -117,10 +117,10 @@ export const AudioControlPopover = ({
     if (microphoneTest.phase === "playing_processed") return "正在播放处理后声音";
     if (microphoneTest.phase !== "recording")
       return `录制 ${MIC_TEST_DURATION_SECONDS} 秒，听听处理前后的区别`;
-    if (microphoneTest.isClipping) return "输入过高，已经出现削波";
+    if (microphoneTest.isClipping) return "声音破了，请调低系统麦克风输入音量";
     if (microphoneTest.level > 0.18) return "麦克风正常";
-    if (microphoneTest.level > 0.035) return "声音有点小";
-    return "听不到你";
+    if (microphoneTest.level > 0.035) return "声音偏小，试着靠近麦克风";
+    return "没收到声音，请检查静音和输入设备";
   })();
   const deviceSelect = (
     <select

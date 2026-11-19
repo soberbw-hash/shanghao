@@ -698,7 +698,7 @@ test("screen sharing is wired through the room page and WebRTC peer layer", () =
   assert.equal(screenPanelSource.includes("screen-share-drag-handle"), true);
   assert.equal(mainWindowSource.includes("setDisplayMediaRequestHandler"), true);
   assert.equal(screenCaptureServiceSource.includes("desktopCapturer.getSources"), true);
-  assert.equal(screenCaptureServiceSource.includes("this.waitForSources(true, true)"), true);
+  assert.equal(screenCaptureServiceSource.includes("this.waitForSources(withPreviews)"), true);
   assert.equal(
     screenCaptureServiceSource.includes(
       "thumbnailSize: withThumbnails ? { width: 320, height: 180 }",

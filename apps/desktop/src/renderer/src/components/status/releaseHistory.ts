@@ -89,6 +89,17 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
   {
+    version: "3.4.22",
+    date: "2026-11-19",
+    title: "屏幕分享与房间转录",
+    summary: "优化分享启动、房间转录和设置交互，新增 8 段快捷音乐。",
+    highlights: [
+      "一人开启转录，成员自动参与。纪事按房间记忆显示称呼。",
+      "可拖动更新卡片，下载时可以继续聊天。",
+    ],
+    details: [{ title: "快捷音乐", items: ["在快捷消息添加歌曲，在上号素材按包试听。"] }],
+  },
+  {
     version: "3.4.21",
     date: "2026-11-18",
     title: "房间纪事与操作优化",

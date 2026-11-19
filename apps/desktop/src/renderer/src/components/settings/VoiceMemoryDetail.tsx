@@ -12,8 +12,6 @@ import {
   type AiAsrModelId,
   type RecordingLibraryItem,
   type VoiceMemoryRecord,
-  findAsrGameLexicon,
-  resolveAsrGameLexicon,
 } from "@private-voice/shared";
 
 import { voiceMemoryTranscriptionPercent } from "../../features/ai/voiceMemoryPresentation";
@@ -22,7 +20,6 @@ import { TranscriptionTimingNotice } from "./TranscriptionTimingNotice";
 import { transcriptionProviderError } from "../../features/ai/transcriptionProviderError";
 import { useSettingsStore } from "../../store/settingsStore";
 import { RecordingTranscriptionModelSelect } from "./RecordingTranscriptionModelSelect";
-import { RecordingGameContext, parseRecordingGameContext } from "./RecordingGameContext";
 import { TranscriptSourceControl } from "./TranscriptSourceControl";
 import { RecordingOverview } from "./RecordingOverview";
 import {
@@ -213,15 +210,7 @@ export const VoiceMemoryDetail = ({
   const autoTranscribe = useSettingsStore(
     (state) => state.settings?.isAiAutoTranscribeEnabled ?? false,
   );
-  const gameLexicon = useSettingsStore((state) => state.settings?.aiAsrGameLexicon ?? []);
-  const saveSettings = useSettingsStore((state) => state.saveSettings);
   const [record, setRecordState] = useState<VoiceMemoryRecord>();
-  const [contextGame, setContextGame] = useState("");
-  const [contextTerms, setContextTerms] = useState("");
-  const [contextAutomatic, setContextAutomatic] = useState(true);
-  const [dictionarySaved, setDictionarySaved] = useState(false);
-  const contextDirty = useRef(false);
-  const contextHydratedFor = useRef<string | undefined>(undefined);
   const [viewChoice, setViewChoice] = useState<{ id: string; choice: TranscriptViewChoice }>();
   const activeViewChoice = viewChoice?.id === recording.recordingId ? viewChoice.choice : "auto";
   const textView = useMemo(
@@ -241,11 +230,6 @@ export const VoiceMemoryDetail = ({
 
   useEffect(() => {
     let active = true;
-    contextDirty.current = false;
-    contextHydratedFor.current = undefined;
-    setContextGame("");
-    setContextTerms("");
-    setContextAutomatic(true);
     setRecord(undefined);
     setQueuedAction(undefined);
     previousPhaseRef.current = undefined;
@@ -288,52 +272,9 @@ export const VoiceMemoryDetail = ({
     };
   }, [recording.filePath, recording.recordingId, setRecord]);
 
-  useEffect(() => {
-    if (
-      !record ||
-      record.recordingId !== recording.recordingId ||
-      contextHydratedFor.current === recording.recordingId
-    )
-      return;
-    contextHydratedFor.current = recording.recordingId;
-    if (!contextDirty.current) {
-      setContextGame(record.localAsrContext?.gameName ?? "");
-      setContextTerms(record.localAsrContext?.terms.join("，") ?? "");
-      setContextAutomatic(true);
-    }
-  }, [record, recording.recordingId]);
-
   const effectiveSelectedAsrModel = isKnownAsrModelId(selectedAsrModel)
     ? selectedAsrModel
     : DEFAULT_ASR_MODEL_ID;
-  const matchedGameLexicon = resolveAsrGameLexicon(gameLexicon, contextGame);
-  const saveGameLexicon = async () => {
-    setError(undefined);
-    setDictionarySaved(false);
-    try {
-      const parsed = parseRecordingGameContext(contextGame, contextTerms);
-      if (!parsed?.gameName || !parsed.terms.length) throw new Error("invalid_asr_context");
-      const key = parsed.gameName.normalize("NFKC").toLocaleLowerCase();
-      const currentLexicon = useSettingsStore.getState().settings?.aiAsrGameLexicon ?? [];
-      const merged = Array.from(
-        new Map(
-          [
-            ...parsed.terms,
-            ...(findAsrGameLexicon(currentLexicon, parsed.gameName)?.terms ?? []),
-          ].map((term) => [term.normalize("NFKC").toLocaleLowerCase(), term]),
-        ).values(),
-      ).slice(0, 16);
-      const next = currentLexicon.filter(
-        (entry) => entry.gameName.normalize("NFKC").toLocaleLowerCase() !== key,
-      );
-      if (next.length >= 50) throw new Error("asr_game_lexicon_limit");
-      next.push({ gameName: parsed.gameName, terms: merged });
-      await saveSettings({ aiAsrGameLexicon: next });
-      setDictionarySaved(true);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "个人词典保存失败");
-    }
-  };
 
   const process = async (action: "transcribe" | "organize" | "fuse", retryUnitIds?: string[]) => {
     setBusy(true);
@@ -351,26 +292,7 @@ export const VoiceMemoryDetail = ({
         fuse: action === "fuse",
         restartTranscription: action === "transcribe" && !retryUnitIds,
         retryUnitIds,
-        localAsrContext:
-          action === "transcribe"
-            ? retryUnitIds
-              ? record?.localAsrContext
-              : (() => {
-                  const context = parseRecordingGameContext(contextGame, contextTerms);
-                  if (!context || transcriptionProvider !== "local") return context;
-                  const saved = resolveAsrGameLexicon(gameLexicon, context.gameName ?? "");
-                  if (!saved?.terms.length) return context;
-                  const terms = Array.from(
-                    new Map(
-                      [...context.terms, ...saved.terms].map((term) => [
-                        term.normalize("NFKC").toLocaleLowerCase(),
-                        term,
-                      ]),
-                    ).values(),
-                  ).slice(0, 16);
-                  return { ...context, terms };
-                })()
-            : undefined,
+        localAsrContext: action === "transcribe" ? record?.localAsrContext : undefined,
         localAsrAutoGameContext: action === "transcribe" ? true : undefined,
         asrModelId:
           action === "transcribe" && transcriptionProvider === "local"
@@ -480,27 +402,6 @@ export const VoiceMemoryDetail = ({
           disabled={busy || Boolean(queuedAction)}
           onError={setError}
         />
-        <RecordingGameContext
-          game={contextGame}
-          terms={contextTerms}
-          automatic={contextAutomatic}
-          disabled={busy || Boolean(queuedAction)}
-          onGame={(value) => {
-            contextDirty.current = true;
-            setContextGame(value);
-          }}
-          onTerms={(value) => {
-            contextDirty.current = true;
-            setContextTerms(value);
-          }}
-          onAutomatic={(value) => {
-            contextDirty.current = true;
-            setContextAutomatic(value);
-          }}
-          onSaveDictionary={() => void saveGameLexicon()}
-          savedTermCount={matchedGameLexicon?.terms.length ?? 0}
-        />
-        {dictionarySaved ? <p role="status">已保存到个人游戏词典</p> : null}
         {error ? <p role="alert">{describeError(error, false)}</p> : null}
       </section>
     );
@@ -808,35 +709,6 @@ export const VoiceMemoryDetail = ({
             </div>
           ))}
         </div>
-      ) : null}
-
-      <RecordingGameContext
-        game={contextGame}
-        terms={contextTerms}
-        automatic={contextAutomatic}
-        disabled={busy || Boolean(queuedAction) || processing || comparisonOwnsTask}
-        onGame={(value) => {
-          contextDirty.current = true;
-          setContextGame(value);
-        }}
-        onTerms={(value) => {
-          contextDirty.current = true;
-          setContextTerms(value);
-        }}
-        onAutomatic={(value) => {
-          contextDirty.current = true;
-          setContextAutomatic(value);
-        }}
-        onSaveDictionary={() => void saveGameLexicon()}
-        savedTermCount={matchedGameLexicon?.terms.length ?? 0}
-      />
-      {dictionarySaved ? <p role="status">已保存到个人游戏词典</p> : null}
-      {record.localAsrContext || record.localAsrAutoGameContext ? (
-        <p role="status" className="text-xs text-[#718096]">
-          {record.transcriptionUnits?.some((unit) => unit.contextApplied === true)
-            ? "模型记录显示部分音频曾接收语境信息；实际效果尚待对比。"
-            : "这条录音已设置本地语境；当前没有模型使用记录。"}
-        </p>
       ) : null}
 
       {!invalidTranscript && record.highlights.length ? (

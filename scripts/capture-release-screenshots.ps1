@@ -1,6 +1,7 @@
 param(
   [string]$OutputDirectory = "docs/assets",
-  [int]$RendererPort = 5173
+  [int]$RendererPort = 5173,
+  [switch]$IncludeRoom
 )
 
 Set-StrictMode -Version Latest
@@ -8,7 +9,12 @@ $ErrorActionPreference = "Stop"
 
 $workspaceRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $desktopDirectory = Join-Path $workspaceRoot "apps/desktop"
-$electronCommand = Join-Path $desktopDirectory "node_modules/electron/dist/electron.exe"
+$electronDirectory = if ($env:ELECTRON_OVERRIDE_DIST_PATH) {
+  $env:ELECTRON_OVERRIDE_DIST_PATH
+} else {
+  Join-Path $desktopDirectory "node_modules/electron/dist"
+}
+$electronCommand = Join-Path $electronDirectory "electron.exe"
 $viteCommand = Join-Path $desktopDirectory "node_modules/.bin/vite.cmd"
 $rendererUrl = "http://127.0.0.1:$RendererPort"
 
@@ -55,6 +61,10 @@ $captures = @(
   @{ Mode = "home"; File = "release-home.png" },
   @{ Mode = "settings"; File = "release-settings.png" }
 )
+$previousFixture = $env:SHANGHAO_CAPTURE_RELEASE_FIXTURE
+if ($IncludeRoom) {
+  $captures += @{ Mode = "room"; File = "release-room.png" }
+}
 
 $viteProcess = $null
 $captureWorkspace = Join-Path $env:TEMP ("shanghao-release-capture-" + [guid]::NewGuid().ToString("N"))
@@ -86,6 +96,9 @@ try {
   }
 
   foreach ($capture in $captures) {
+    if ($IncludeRoom) {
+      $env:SHANGHAO_CAPTURE_RELEASE_FIXTURE = if ($capture.Mode -eq "home") { "0" } else { "1" }
+    }
     # The application also places its isolated profile beside SHANGHAO_CAPTURE_PATH.
     # Keep that cache outside the repository and export only the curated PNG.
     $target = Join-Path $captureWorkspace $capture.File
@@ -134,6 +147,7 @@ try {
     Copy-Item -LiteralPath $target -Destination (Join-Path $resolvedOutput $capture.File) -Force
   }
 } finally {
+  $env:SHANGHAO_CAPTURE_RELEASE_FIXTURE = $previousFixture
   Remove-Item Env:SHANGHAO_CAPTURE_MODE -ErrorAction SilentlyContinue
   Remove-Item Env:SHANGHAO_CAPTURE_PATH -ErrorAction SilentlyContinue
   Remove-Item Env:SHANGHAO_CAPTURE_EXIT -ErrorAction SilentlyContinue

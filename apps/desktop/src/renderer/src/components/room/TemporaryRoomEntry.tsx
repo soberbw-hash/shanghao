@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import "./TemporaryRoomDialogs.css";
-import { UsersRound } from "lucide-react";
+import { ChevronRight, Globe2, Network, UsersRound } from "lucide-react";
 import type { TemporaryRoomDescriptor, BuiltInAvatarId } from "@private-voice/shared";
 import { useSettingsStore } from "../../store/settingsStore";
 import { useAppStore } from "../../store/appStore";
@@ -127,15 +127,16 @@ export function TemporaryRoomEntry({
       <button
         type="button"
         className="temporary-entry-trigger"
-        title="无需账号，优先点对点连接；跨网络可能需要发现或中继服务。"
+        aria-haspopup="dialog"
         onClick={() => {
           setOpened(true);
           setJoining(false);
           setError("");
         }}
       >
-        <UsersRound size={17} />
+        <UsersRound size={17} aria-hidden="true" />
         <strong>临时联机</strong>
+        <ChevronRight className="temporary-entry-chevron" size={16} aria-hidden="true" />
       </button>
       {opened && (
         <dialog
@@ -155,23 +156,41 @@ export function TemporaryRoomEntry({
               label="关闭临时联机"
             />
           </header>
-          <p className="temporary-dialog-hint">
-            无需账号。创建后把房间码发给朋友，或输入朋友的房间码加入。
-          </p>
+          <p className="temporary-dialog-hint">无需登录。创建房间，或用好友发来的房间码加入。</p>
           <div className="temporary-entry-body">
-            <label>
-              连接方式
-              <select
-                value={mode}
-                disabled={blocked}
-                onChange={(event) => setMode(event.target.value as "direct" | "server")}
-              >
-                <option value="server">服务器房间（无需账号）</option>
-                <option value="direct">直接连接（局域网 / P2P）</option>
-              </select>
-            </label>
+            <fieldset className="temporary-connection-options" disabled={blocked}>
+              <legend>连接方式</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="temporary-connection"
+                  checked={mode === "server"}
+                  onChange={() => setMode("server")}
+                />
+                <Globe2 size={16} aria-hidden="true" />
+                <span>
+                  <strong>服务器房间</strong>
+                  <small>适合跨网络联机</small>
+                </span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="temporary-connection"
+                  checked={mode === "direct"}
+                  onChange={() => setMode("direct")}
+                />
+                <Network size={16} aria-hidden="true" />
+                <span>
+                  <strong>直接连接</strong>
+                  <small>同一局域网优先</small>
+                </span>
+              </label>
+            </fieldset>
             <p className="temporary-dialog-hint">
-              双方需选择相同方式。服务器房间需要服务器在线；直接连接在同一局域网可用，跨网络需要发现或中继服务。
+              {mode === "server"
+                ? "请让好友也选服务器房间。此方式需要房间服务器在线。"
+                : "请让好友也选直接连接。跨网络时可能需要发现或中继服务。"}
             </p>
             <label>
               临时昵称

@@ -108,6 +108,34 @@ app.whenReady().then(async () => {
       check(!document.body.textContent.includes('这不代表密钥已丢失'),'stale read error remained after recovery');
       return true;
     })()`);
+    await view.loadURL(
+      `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5173"}/@fs/${file}?update`,
+    );
+    const geometry = await view.webContents.executeJavaScript(`(async()=>{
+      const find=(selector)=>document.querySelector(selector);
+      for(let i=0;i<80&&!find('.update-modal-surface');i++)await new Promise(r=>setTimeout(r,50));
+      await new Promise(r=>setTimeout(r,300));
+      const center=(node)=>{const r=node.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};};
+      const composer=find('input[aria-label="聊天消息"]'), point=center(composer);
+      if(document.elementFromPoint(point.x,point.y)!==composer)throw Error('required download blocks the composer');
+      return { composer:point, handle:center(find('[title="拖动更新窗口"]')), card:center(find('.update-modal-surface')) };
+    })()`);
+    view.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...geometry.composer });
+    view.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...geometry.composer });
+    view.webContents.sendInputEvent({ type: "char", keyCode: "x" });
+    const { x, y } = geometry.handle;
+    view.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
+    for (let i = 1; i <= 5; i++) {
+      view.webContents.sendInputEvent({ type: "mouseMove", x: x - 20 * i, y: y - 14 * i });
+      await new Promise((resolve) => setTimeout(resolve, 24));
+    }
+    view.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x: x - 100, y: y - 70 });
+    result.updateDuringChat = await view.webContents.executeJavaScript(`(()=>{
+      const box=document.querySelector('.update-modal-surface').getBoundingClientRect();
+      if(document.querySelector('input[aria-label="聊天消息"]').value!=='x')throw Error('typing during update failed');
+      if(box.x+box.width/2>${geometry.card.x - 60})throw Error('header did not drag the update card');
+      return true;
+    })()`);
     console.log(JSON.stringify(result));
     clearTimeout(deadline);
     view.destroy();

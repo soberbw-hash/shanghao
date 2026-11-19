@@ -377,7 +377,9 @@ test("dialogs use interruptible compositor motion without full-screen blur anima
 
   const updateSource = dialogSources[2];
   assert.equal(updateSource.includes("backdrop-blur-xl"), false);
-  assert.equal(updateSource.includes('role={isForced ? "alertdialog" : "status"}'), true);
+  assert.equal(updateSource.includes('role="region"'), true);
+  assert.equal(updateSource.includes("aria-modal"), false);
+  assert.equal(updateSource.includes("dragConstraints={dragBounds}"), true);
   assert.equal(updateSource.includes("update-modal-backdrop"), true);
   assert.equal(updateSource.includes("update-modal-surface"), true);
   assert.equal(stylesSource.includes("blur(28px) saturate(132%)"), true);

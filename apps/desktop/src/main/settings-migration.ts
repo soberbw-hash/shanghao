@@ -76,7 +76,7 @@ export const defaultSettings: AppSettings = {
   aiRoomAskProvider: "cloud",
   aiTextModelPreset: "cloud",
   aiProcessingMode: "low_resource",
-  isAiAutoTranscribeEnabled: false,
+  isAiAutoTranscribeEnabled: true,
   isAiAutoOrganizeEnabled: true,
   isAiAutoUploadEnabled: false,
   isNoiseSuppressionEnabled: true,
@@ -389,7 +389,10 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
             raw.aiProcessingMode === "manual"
           ? raw.aiProcessingMode
           : defaultSettings.aiProcessingMode,
-    isAiAutoTranscribeEnabled: normalizeBoolean(raw.isAiAutoTranscribeEnabled, false),
+    isAiAutoTranscribeEnabled: normalizeBoolean(
+      raw.isAiAutoTranscribeEnabled,
+      defaultSettings.isAiAutoTranscribeEnabled,
+    ),
     isAiAutoOrganizeEnabled: true,
     isAiAutoUploadEnabled: false,
     relayServerUrl:
