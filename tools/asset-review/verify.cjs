@@ -151,6 +151,7 @@ app
         "角色动作",
         "游戏显示器",
         "账号头像",
+        "音频包",
         "原始素材",
       ].indexOf(label);
       assert.ok(index >= 0, "only known review categories may be selected");
@@ -171,8 +172,17 @@ app
       );
       await delay();
     };
-    assert.equal(await run("document.querySelectorAll('.review-tabs button').length"), 7);
-    checks++;
+    assert.equal(await run("document.querySelectorAll('.review-tabs button').length"), 8);
+    await tab("音频包");
+    assert.equal(
+      await run("document.querySelectorAll('.review-audio-packs details').length"),
+      manifest.audioPacks.length,
+    );
+    assert.equal(
+      await run("document.querySelectorAll('.review-audio-packs audio').length"),
+      manifest.audioPacks.reduce((count, pack) => count + pack.clips.length, 0),
+    );
+    checks += 3;
     await tab("品牌图标");
     assert.equal(await run("document.querySelectorAll('.review-card').length"), 4);
     checks++;
