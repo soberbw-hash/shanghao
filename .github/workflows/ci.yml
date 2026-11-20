@@ -28,6 +28,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: node apps/desktop/node_modules/electron/install.js
       - run: bash -n scripts/deploy-relay-ubuntu.sh
       - run: bash -n deploy/install-phone-mic-sidecar.sh
       - run: pnpm typecheck
@@ -59,6 +60,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: node apps/desktop/node_modules/electron/install.js
       - run: pnpm typecheck
       - run: pnpm exec tsc -p tools/asset-review/tsconfig.json --noEmit
       - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check

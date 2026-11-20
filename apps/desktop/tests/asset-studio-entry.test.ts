@@ -127,7 +127,11 @@ test("shortcut failures and unsupported platforms remain visible", async () => {
   await assert.rejects(fixture({ platform: "darwin" }).shortcut(), /Windows/);
 });
 test("early entry loads only the requested application's services", () => {
-  for (const studio of [true, false]) {
+  for (const variant of [
+    { args: ["--asset-studio"], entry: "desktop.cjs", studio: true },
+    { args: ["--verify-screen-capture"], entry: "screen-capture-probe.cjs", studio: false },
+    { args: [], entry: "app.cjs", studio: false },
+  ]) {
     const loaded: string[] = [];
     let starts = 0;
     runInNewContext(compile("entry"), {
@@ -135,7 +139,8 @@ test("early entry loads only the requested application's services", () => {
       __filename: "C:/fixture/index.cjs",
       __dirname: "C:/fixture/main",
       process: {
-        argv: studio ? ["app", "--asset-studio"] : ["app"],
+        argv: ["app", ...variant.args],
+        env: { SHANGHAO_SCREEN_CAPTURE_PROBE_DIR: "C:/fixture/probe" },
         resourcesPath: "C:/fixture/resources",
       },
       require: (id: string) => {
@@ -148,12 +153,13 @@ test("early entry loads only the requested application's services", () => {
             },
           };
         if (id === "electron") return { app: { isPackaged: true }, dialog: {} };
+        if (id === "./platform/PlatformService") return { platformService: { isWindows: true } };
         throw Error(id);
       },
     });
     assert.equal(loaded.length, 1);
-    assert.ok(loaded[0].endsWith(studio ? "desktop.cjs" : "app.cjs"));
-    assert.equal(starts, studio ? 1 : 0);
+    assert.ok(loaded[0].endsWith(variant.entry));
+    assert.equal(starts, variant.studio ? 1 : 0);
   }
 });
 test("installer sends graceful quit to both independent profiles", () => {

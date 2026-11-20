@@ -39,6 +39,7 @@ jobs:
         env:
           ARCHITECTURE_BASE: HEAD^
       - run: pnpm install --frozen-lockfile
+      - run: node apps/desktop/node_modules/electron/install.js
       - shell: bash
         run: bash -n scripts/deploy-relay-ubuntu.sh
       - shell: bash
