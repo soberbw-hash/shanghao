@@ -109,6 +109,32 @@ app.whenReady().then(async () => {
       return true;
     })()`);
     await view.loadURL(
+      `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5173"}/@fs/${file}?cold-ai-open`,
+    );
+    result.coldAiLayout = await view.webContents.executeJavaScript(`(async()=>{
+      const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+      const until=async(predicate,message)=>{
+        for(let i=0;i<80;i++){if(predicate())return;await pause(50);}
+        throw Error(message);
+      };
+      const overview=()=>document.querySelector('.ai-overview-grid');
+      await until(overview,'cold AI open did not paint the overview before loading data');
+      await document.fonts.ready;
+      const selectors=['.ai-overview-grid','#transcription-settings-title','.cloud-local-assist','#ai-model-management'];
+      const positions=()=>selectors.map(s=>document.querySelector(s).getBoundingClientRect().top);
+      const initial=positions();
+      const checkPosition=(step)=>{
+        if(positions().some((top,i)=>Math.abs(top-initial[i])>1))throw Error('cold AI layout shifted: '+step);
+      };
+      window.dispatchEvent(new Event('fixture:ai-snapshot-ready'));
+      await until(()=>overview().textContent.includes('0 个转录'),'model state never arrived');
+      checkPosition('model state');
+      window.dispatchEvent(new Event('fixture:ai-providers-ready'));
+      await until(()=>overview().textContent.includes('glm-4-flash-250414')&&document.body.textContent.includes('使用所选模型自动转录。'),'provider state never arrived');
+      checkPosition('provider state');
+      return true;
+    })()`);
+    await view.loadURL(
       `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5173"}/@fs/${file}?update`,
     );
     const geometry = await view.webContents.executeJavaScript(`(async()=>{

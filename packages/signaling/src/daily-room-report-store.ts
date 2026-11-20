@@ -1,7 +1,12 @@
 import { copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, parse } from "node:path";
 
-import { isStoredRoomId } from "@private-voice/shared";
+import {
+  getRoomChronicleDate,
+  isStoredRoomId,
+  MAX_DAILY_CHRONICLE_ENTRIES,
+} from "@private-voice/shared";
+import type { RoomChronicleDay } from "@private-voice/shared";
 import type {
   DailyRoomParticipantSummary,
   DailyRoomRecordingRecap,
@@ -50,13 +55,7 @@ const EMPTY_REPORTS: PersistedDailyRoomReports = {
 };
 const RETAIN_DAYS = 14;
 
-export const getShanghaiDate = (timestamp = Date.now()): string =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(timestamp);
+export const getShanghaiDate = getRoomChronicleDate;
 
 export const shiftShanghaiDate = (date: string, days: number): string => {
   const base = Date.parse(`${date}T12:00:00+08:00`);
@@ -126,9 +125,6 @@ const normalizeCommentary = (value: string): string | undefined => {
   if (!lines.length) return undefined;
   return [...lines.join("\n")].slice(0, 180).join("");
 };
-
-const isRichCommentary = (value: string | undefined): boolean =>
-  Boolean(value && value.split(/\r?\n/).filter((line) => line.trim()).length >= 2);
 
 const sanitizeRecordingRecap = (value: unknown): DailyRoomRecordingRecap | undefined => {
   if (!value || typeof value !== "object") return undefined;
@@ -257,7 +253,7 @@ const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): Dail
             createdAt: entry.createdAt,
             text: entry.text.trim().slice(0, 800),
           }))
-          .slice(-60)
+          .slice(-MAX_DAILY_CHRONICLE_ENTRIES)
       : [],
     peakConcurrentAt:
       typeof source.peakConcurrentAt === "string" ? source.peakConcurrentAt : undefined,
@@ -303,7 +299,35 @@ export class DailyRoomReportStore {
     const today = getShanghaiDate(now);
     return Array.from({ length: RETAIN_DAYS }, (_, index) => shiftShanghaiDate(today, -(index + 1)))
       .map((date) => sanitizeReport(this.reports.rooms[roomId]?.[date], roomId, date))
+      .map((report) => ({ ...report, chronicleRecaps: report.chronicleRecaps?.slice(-60) }))
       .filter((report) => report.hadActivity);
+  }
+
+  getChronicleDay(roomId: string, now = Date.now()): RoomChronicleDay {
+    const date = getShanghaiDate(now);
+    const recaps = isRoomId(roomId)
+      ? this.reports.rooms[roomId]?.[date]?.chronicleRecaps
+      : undefined;
+    const entries = (recaps ?? [])
+      .map(({ id, text, createdAt }) => ({ id, text, at: Date.parse(createdAt) }))
+      .filter(({ at }) => Number.isFinite(at) && getShanghaiDate(at) === date)
+      .sort((a, b) => a.at - b.at);
+    return { date, entries };
+  }
+
+  // Previous days only keep the existing bounded material for the separate daily review.
+  compactChronicleHistory(now = Date.now()): void {
+    const today = getShanghaiDate(now);
+    let changed = false;
+    for (const days of Object.values(this.reports.rooms)) {
+      for (const report of Object.values(days ?? {})) {
+        const entries = report.chronicleRecaps ?? [];
+        if (report.date >= today || entries.length <= 60) continue;
+        report.chronicleRecaps = entries.slice(-60);
+        changed = true;
+      }
+    }
+    if (changed) this.queueWrite();
   }
 
   setCommentary(
@@ -316,7 +340,7 @@ export class DailyRoomReportStore {
     const report = this.reports.rooms[roomId]?.[date];
     if (
       !report ||
-      isRichCommentary(report.commentary) ||
+      report.commentary?.trim() ||
       (expectedRevision !== undefined && report.revision !== expectedRevision)
     )
       return false;
@@ -379,7 +403,7 @@ export class DailyRoomReportStore {
     report.chronicleRecaps = [
       ...entries,
       { id, createdAt: new Date(sourceAt).toISOString(), text },
-    ].slice(-60);
+    ].slice(ageDays === 0 ? -MAX_DAILY_CHRONICLE_ENTRIES : -60);
     report.commentary = undefined;
     report.hadActivity = true;
     this.touch(report, now);

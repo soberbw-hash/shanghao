@@ -8,6 +8,7 @@ import { RELEASE_3416 } from "./release3416";
 import { RELEASE_3417 } from "./release3417";
 import { RELEASE_3418 } from "./release3418";
 import { RELEASE_3420 } from "./release3420";
+import { RELEASE_3423 } from "./release3423";
 import { RELEASE_343 } from "./release343";
 import { RELEASE_344 } from "./release344";
 import { RELEASE_345 } from "./release345";
@@ -88,6 +89,7 @@ const HISTORICAL_RELEASE_EVIDENCE: readonly HistoricalReleaseEvidence[] = [
 ];
 
 export const RELEASE_HISTORY: readonly ReleaseHistoryEntry[] = [
+  RELEASE_3423,
   {
     version: "3.4.22",
     date: "2026-11-19",

@@ -10,17 +10,14 @@ import type {
   SceneReaction,
   SignalingEventPayload,
 } from "@private-voice/shared";
-import type {
-  ChronicleStateMessage,
-  ReplayStateMessage,
-  ChannelCountsMessage,
-} from "@private-voice/signaling";
+import type { ReplayStateMessage, ChannelCountsMessage } from "@private-voice/signaling";
 import type { PeerAudioStats } from "@private-voice/webrtc";
 import type { QuickMessageControlEvent } from "../chat/quickReplies";
 import type { RemoteScreenFrame } from "./roomClient";
+import type { RoomChronicleViewState } from "./RoomChronicleClient";
 
 export interface RoomClientOptions {
-  onChronicleState?: (message: ChronicleStateMessage) => void;
+  onChronicleState?: (message: RoomChronicleViewState) => void;
   onReplayState?: (message: ReplayStateMessage) => void;
   signalingUrl: string;
   roomId: string;

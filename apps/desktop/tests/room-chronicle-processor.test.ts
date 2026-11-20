@@ -3,6 +3,7 @@ import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { RoomChronicleProcessor } from "../../../packages/signaling/src/room-chronicle-processor";
 import { RoomChronicleSessions } from "../../../packages/signaling/src/room-chronicle-sessions";
+import { selectChronicleGameHint } from "../../../packages/signaling/src/room-chronicle-game-hint";
 import {
   isSignalEnvelope,
   type ChronicleAudioMessage,
@@ -81,6 +82,56 @@ test("independent member chunks form one bounded shared summary and deduplicate 
     assert.match(prompt, /不为凑频率硬写/);
     assert.doesNotMatch(prompt, /不能重复/);
     assert.deepEqual(sessions.read("main", id, "a"), sessions.read("main", id, "b"));
+  } finally {
+    processor.dispose();
+  }
+});
+
+test("a chunk keeps the game phase taken before recognition, without extra recognition or text requests", async () => {
+  const { sessions, id } = setup();
+  let phase: "champ-select" | "in-game" = "champ-select";
+  let recognitionCalls = 0;
+  let textCalls = 0;
+  let prompt = "";
+  const processor = new RoomChronicleProcessor(
+    sessions,
+    {
+      isConfigured: () => true,
+      transcribe: async () => {
+        recognitionCalls++;
+        phase = "in-game";
+        return { text: "你先锁亚索，我来补位。", modelName: "fixture" };
+      },
+    },
+    {
+      isConfigured: () => true,
+      execute: async (request) => {
+        textCalls++;
+        prompt = request.prompt;
+        return '{"text":"甲让队友先锁亚索，自己补位。"}';
+      },
+    },
+    () => undefined,
+    5,
+    undefined,
+    undefined,
+    (message) =>
+      selectChronicleGameHint(
+        { gameName: "英雄联盟", gameSession: { source: "league", phase } },
+        [],
+        message.gameContext,
+      ),
+  );
+  try {
+    await processor.submit(
+      { ...part(id), gameContext: { gameName: "LOL", terms: ["亚索"] } },
+      "甲",
+    );
+    await until(() => sessions.read("main", id, "a").length === 1);
+    assert.match(prompt, /"phase":"champ-select"/);
+    assert.match(prompt, /"terms":\["亚索","禁用","选人","换位"/);
+    assert.doesNotMatch(prompt, /"phase":"in-game"/);
+    assert.deepEqual([recognitionCalls, textCalls], [1, 1]);
   } finally {
     processor.dispose();
   }

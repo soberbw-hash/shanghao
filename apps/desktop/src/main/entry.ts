@@ -1,6 +1,7 @@
 import path from "node:path";
 import { createRequire } from "node:module";
 import { app, dialog } from "electron";
+import { platformService } from "./platform/PlatformService";
 
 const load = createRequire(__filename);
 if (process.argv.includes("--asset-studio")) {
@@ -19,6 +20,13 @@ if (process.argv.includes("--asset-studio")) {
       app.exit(1);
     });
   }
+} else if (
+  app.isPackaged &&
+  platformService.isWindows &&
+  process.env.SHANGHAO_SCREEN_CAPTURE_PROBE_DIR &&
+  process.argv.includes("--verify-screen-capture")
+) {
+  load(path.join(__dirname, "screen-capture-probe.cjs"));
 } else {
   load(path.join(__dirname, "app.cjs"));
 }

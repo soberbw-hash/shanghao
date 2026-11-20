@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getRoomChronicleDate } from "@private-voice/shared";
 import { CHRONICLE_SUMMARY_INTERVAL_MS } from "./room-chronicle-prompt";
 
 export interface ChronicleEntry {
@@ -31,13 +32,21 @@ export class RoomChronicleSessions {
     const session = this.rooms.get(roomId);
     if (!session) return undefined;
     this.require(roomId, session.id, memberId);
+    const date = getRoomChronicleDate();
     return {
       summaryIntervalMs: CHRONICLE_SUMMARY_INTERVAL_MS,
       sessionId: session.id,
       participants: [...session.participants],
-      entries: this.read(roomId, session.id, memberId),
+      entries: this.read(roomId, session.id, memberId).filter(
+        (entry) => getRoomChronicleDate(entry.at) === date,
+      ),
       notice: session.notice,
     };
+  }
+
+  clearExpiredEntries(date: string): void {
+    for (const session of this.rooms.values())
+      session.entries = session.entries.filter((entry) => getRoomChronicleDate(entry.at) === date);
   }
 
   notice(roomId: string, sessionId: string, value: ChronicleSnapshot["notice"]): void {

@@ -271,143 +271,47 @@
   letter-spacing: normal;
 }
 
-.daily-report-narrative {
-  display: grid;
-  gap: 10px;
-  margin-top: 18px;
+.daily-report-moments {
+  margin-top: 16px;
+  padding: 14px 16px 2px;
+  border: 1px solid #d9e8f8;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 55%);
   color: var(--sg-ink-1);
-  font-size: 15px;
-  font-weight: 400;
-  line-height: 1.9;
-  letter-spacing: 0.01em;
   overflow-wrap: anywhere;
 }
 
-.daily-report-narrative p {
-  margin: 0;
+.daily-report-moments h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #3e6998;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.daily-report-moments li {
+  padding: 10px 0;
+  font-size: 15px;
+  line-height: 1.65;
   text-wrap: pretty;
 }
 
-.daily-report-highlights {
-  margin-top: 20px;
+.daily-report-moments li + li {
+  border-top: 1px solid #e0ecf7;
 }
 
-.daily-report-highlight {
-  min-width: 0;
-  overflow-wrap: anywhere;
+.daily-report-moments strong + p {
+  margin-top: 3px;
 }
 
-.daily-report-highlight:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
-.daily-report-stat {
-  display: grid;
-  min-height: 104px;
-  place-items: center;
-  align-content: center;
-  gap: 3px;
-  border: 1px solid rgba(181, 205, 233, 0.64);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #74849a;
-}
-
-.daily-report-stat svg {
-  width: 17px;
-  height: 17px;
-  color: #4c91e5;
-}
-
-.daily-report-stat strong {
-  color: #243852;
-  font-size: 22px;
-  line-height: 1.2;
-}
-
-.daily-report-stat span {
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.daily-report-games {
-  margin-top: 14px;
-  border: 1px solid rgba(181, 205, 233, 0.64);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.58);
-  padding: 12px 14px;
-}
-
-.daily-report-games-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #405c7e;
-  font-size: 12px;
-}
-
-.daily-report-games-title svg {
-  width: 16px;
-  height: 16px;
-  color: #4c91e5;
-}
-
-.daily-report-game-list {
+.daily-report-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 9px;
-}
-
-.daily-report-game-list > span {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  gap: 7px;
-  border: 1px solid rgba(162, 195, 232, 0.56);
-  border-radius: 10px;
-  background: rgba(239, 247, 255, 0.78);
-  padding: 4px 9px;
-  color: #345879;
+  gap: 6px 14px;
+  margin-top: 14px;
+  color: #516985;
   font-size: 12px;
-  font-weight: 650;
-}
-
-.daily-report-game-list small {
-  color: #7290ae;
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.daily-report-game-activity {
-  display: grid;
-  grid-template-columns: minmax(72px, auto) minmax(0, 1fr) auto;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid rgba(162, 195, 232, 0.56);
-  border-radius: 12px;
-  background: rgba(239, 247, 255, 0.72);
-  padding: 8px 10px;
-  color: #526b86;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.daily-report-game-activity strong {
-  min-width: 0;
-  color: #286ebd;
-  font-weight: 750;
-  overflow-wrap: anywhere;
-}
-
-.daily-report-game-activity > span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.daily-report-game-activity small {
-  color: #476d96;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }

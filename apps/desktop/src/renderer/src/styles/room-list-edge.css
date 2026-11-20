@@ -14,6 +14,12 @@
 .room-list-viewport[data-room-list-edge="true"] > :is(.chat-message-list, .room-chronicle-entries) {
   padding-block-end: var(--room-list-edge-depth);
   scroll-padding-block-end: var(--room-list-edge-depth);
+  /* Fade the messages themselves before the scroll clip, including on a busy background. */
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--room-list-edge-depth) * 0.65),
+    transparent
+  );
 }
 
 .room-list-viewport[data-room-list-edge="true"]::before,
@@ -23,9 +29,12 @@
   inset-inline: 0 8px;
   bottom: 0;
   height: var(--room-list-edge-depth);
-  background: linear-gradient(transparent, rgb(228 240 255 / 16%));
   backdrop-filter: blur(5px);
-  mask-image: linear-gradient(transparent 6%, black);
+  /* Taper the blur back to the real room background before the composer. */
+  mask-image:
+    linear-gradient(to bottom, transparent, #000 58%, transparent),
+    linear-gradient(to right, transparent, #000 8px calc(100% - 8px), transparent);
+  mask-composite: intersect;
   pointer-events: none;
   content: "";
 }
@@ -113,8 +122,18 @@
     --room-list-edge-depth: 8px;
   }
 
+  .room-list-viewport[data-room-list-edge="true"]
+    > :is(.chat-message-list, .room-chronicle-entries) {
+    mask-image: none;
+  }
+
   .room-list-viewport[data-room-list-edge="true"]::before,
   .room-list-viewport[data-room-list-edge="true"]::after {
     display: none;
   }
+}
+
+.room-page .chat-message-name,
+.room-page .chat-link-preview-copy small {
+  color: #526880;
 }

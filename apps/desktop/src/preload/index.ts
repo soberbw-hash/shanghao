@@ -8,7 +8,7 @@ import { IPC_CHANNELS, type DesktopApi } from "@private-voice/shared";
 
 const desktopApi: DesktopApi = {
   chronicleArchive: {
-    export: (roomId) => ipcRenderer.invoke(IPC_CHANNELS.chronicleArchive.export, roomId),
+    export: (roomId, day) => ipcRenderer.invoke(IPC_CHANNELS.chronicleArchive.export, roomId, day),
     read: (roomId) => ipcRenderer.invoke(IPC_CHANNELS.chronicleArchive.read, roomId),
     append: (roomId, entries) =>
       ipcRenderer.invoke(IPC_CHANNELS.chronicleArchive.append, roomId, entries),

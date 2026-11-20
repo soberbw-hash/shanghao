@@ -117,7 +117,7 @@ test("window visibility diagnostics are bounded and only contain window state", 
   assert.equal(logs.length, 33);
 });
 
-const startupHarness = () => {
+const startupHarness = (reveal = true) => {
   const calls: string[] = [];
   const events = new Map<string, () => void>();
   let destroyed = false;
@@ -131,7 +131,7 @@ const startupHarness = () => {
     `${mainSource.slice(mainSource.indexOf("  let canRevealAtStartup"), mainSource.indexOf("  const loadFallback"))}\nexport { revealAtStartup };`,
     { compilerOptions: { module: ts.ModuleKind.CommonJS } },
   ).outputText;
-  runInNewContext(source, { exports: module.exports, window });
+  runInNewContext(source, { exports: module.exports, window, reveal });
   return {
     ...module.exports,
     calls,
@@ -143,6 +143,9 @@ const startupHarness = () => {
 };
 
 test("late startup readiness and timeout cannot reopen a hidden or minimized window", () => {
+  const probe = startupHarness(false);
+  probe.revealAtStartup();
+  assert.deepEqual(probe.calls, []);
   for (const event of ["hide", "minimize"]) {
     const state = startupHarness();
     state.events.get(event)!();

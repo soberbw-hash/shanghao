@@ -4,8 +4,8 @@ import test from "node:test";
 import type { DailyRoomReport } from "@private-voice/shared";
 
 import {
+  buildDailyRoomReportFacts,
   buildDailyRoomReportHighlights,
-  buildDailyRoomReportNarrative,
 } from "../src/renderer/src/features/daily-report/dailyRoomReportHighlights";
 
 const base: DailyRoomReport = {
@@ -22,38 +22,13 @@ const base: DailyRoomReport = {
   gameActivities: [],
 };
 
-test("daily highlights are emitted only when backed by a positive metric", () => {
-  assert.deepEqual(
-    buildDailyRoomReportHighlights(base).map((highlight) => highlight.id),
-    ["room-title"],
-  );
-  const highlights = buildDailyRoomReportHighlights({
-    ...base,
-    peakConcurrent: 3,
-    peakConcurrentAt: "2026-08-19T13:15:00.000Z",
-    gameActivities: [{ nickname: "小明", gameName: "三角洲行动", durationMs: 3_600_000 }],
-    participants: [
-      {
-        identityId: "profile-a",
-        nickname: "小明",
-        presenceDurationMs: 7_200_000,
-        joinSessions: 1,
-        gameDurationMs: 3_600_000,
-        messageCount: 12,
-        screenShareCount: 1,
-        screenShareDurationMs: 600_000,
-        firstSeenAt: "2026-08-19T12:00:00.000Z",
-      },
-    ],
-  });
-  assert.deepEqual(
-    highlights.map((highlight) => highlight.id),
-    ["room-title"],
-  );
+test("a stats-only report has verifiable facts and no invented highlights", () => {
+  assert.deepEqual(buildDailyRoomReportHighlights(base), []);
+  assert.deepEqual(buildDailyRoomReportFacts(base), ["1 人来过"]);
 });
 
-test("daily narrative uses measured values instead of saved generated commentary", () => {
-  const narrative = buildDailyRoomReportNarrative({
+test("room activity facts use measured values and ignore saved prose", () => {
+  const facts = buildDailyRoomReportFacts({
     ...base,
     participantCount: 3,
     activeDurationMs: 23 * 60 * 60_000 + 9 * 60_000,
@@ -62,10 +37,7 @@ test("daily narrative uses measured values instead of saved generated commentary
     commentary: "一号房三人三小时，这句话与统计冲突。\n不应该继续显示。",
     gameActivities: [{ nickname: "小明", gameName: "英雄联盟", durationMs: 7 * 60 * 60_000 }],
   });
-  assert.match(narrative, /英雄联盟/);
-  assert.match(narrative, /3 位朋友/);
-  assert.doesNotMatch(narrative, /小时|08:44/);
-  assert.doesNotMatch(narrative, /三人三小时/);
+  assert.deepEqual(facts, ["3 人来过", "检测到《英雄联盟》"]);
 });
 
 test("a tiny legacy game fragment is not promoted as the main game of an all-day room", () => {
@@ -76,14 +48,10 @@ test("a tiny legacy game fragment is not promoted as the main game of an all-day
     peakConcurrent: 3,
     gameActivities: [{ nickname: "小明", gameName: "KK 对战平台", durationMs: 42 * 60_000 }],
   };
-  assert.equal(
-    buildDailyRoomReportHighlights(report).some((highlight) => highlight.id === "main-game"),
-    false,
-  );
-  assert.doesNotMatch(buildDailyRoomReportNarrative(report), /KK 对战平台/);
+  assert.deepEqual(buildDailyRoomReportFacts(report), ["3 人来过"]);
 });
 
-test("daily recap prioritizes real anecdotes, merges duplicate moments and retains an actual next plan", () => {
+test("daily recap prioritizes distinct recording moments over generic saved prose", () => {
   const moment = {
     title: "开团先开麦",
     description: "阿南发现自己一直静音",
@@ -100,13 +68,29 @@ test("daily recap prioritizes real anecdotes, merges duplicate moments and retai
     participantNicknames: ["阿南"],
     keywords: [],
   };
-  const report = { ...base, recordingRecaps: [recap, { ...recap, recordingId: "new" }] };
+  const report = {
+    ...base,
+    commentary: "昨晚大家聊了不少。",
+    recordingRecaps: [recap, { ...recap, recordingId: "new" }],
+  };
   const highlights = buildDailyRoomReportHighlights(report);
-  assert.equal(highlights.filter((item) => item.value === moment.title).length, 1);
-  assert.equal(highlights.find((item) => item.id === "next-plan")?.value, "约好周五继续开黑");
-  assert.equal(
-    highlights.some((item) => ["main-game", "peak", "room-title"].includes(item.id)),
-    false,
+  assert.deepEqual(
+    highlights.map(({ value, detail }) => [value, detail]),
+    [[moment.title, moment.description]],
   );
-  assert.match(buildDailyRoomReportNarrative(report), /约好周五/);
+});
+
+test("room chronicle provides a fallback even without a published recording or AI response", () => {
+  const text = "小明提议下次也许可以试试双排。";
+  const report = {
+    ...base,
+    chronicleRecaps: [
+      { id: "scene-1", createdAt: "2026-08-19T13:00:00.000Z", text },
+      { id: "scene-2", createdAt: "2026-08-19T13:01:00.000Z", text },
+    ],
+  };
+  assert.deepEqual(
+    buildDailyRoomReportHighlights(report).map((item) => item.value),
+    [text],
+  );
 });

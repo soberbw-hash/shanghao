@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Link2, Music2 } from "lucide-react";
+import { ExternalLink, Github, Link2, Music2 } from "lucide-react";
 import { identifyMusicLink } from "../../features/chat/musicLink";
 import { getMessageUrlDetails, formatCompactUrl } from "../../features/chat/linkPreview";
 import { writeRoomCollectionDragPayload } from "../../features/chat/collectionDrag";
@@ -33,6 +33,8 @@ export const MessageLinkPreview = ({
 
   if (!details) return null;
   const compactUrl = formatCompactUrl(url);
+  const label = caption ?? preview?.title;
+  const displayTitle = label ?? (music ? `${music.platform} · 分享的音乐` : details.hostname);
 
   return (
     <button
@@ -41,10 +43,10 @@ export const MessageLinkPreview = ({
       draggable
       aria-label={
         music
-          ? `在 ${music.platform} 收听${preview?.title ? ` ${preview.title}` : ""}`
-          : `在浏览器中打开 ${details.hostname}${caption ? `，${caption}` : ""}`
+          ? `在 ${music.platform} 收听${label ? ` ${label}` : ""}`
+          : `在浏览器中打开 ${details.hostname}${label ? `，${label}` : ""}`
       }
-      title={url}
+      title={label ? `${label}\n${url}` : url}
       onClick={() => void window.desktopApi.app.openExternal(url)}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -59,7 +61,9 @@ export const MessageLinkPreview = ({
       }}
     >
       <span className="chat-link-preview-image" aria-hidden="true">
-        {preview?.imageDataUrl ? (
+        {details.hostname === "github.com" ? (
+          <Github className="text-[#24292f]" />
+        ) : preview?.imageDataUrl ? (
           <img
             src={preview.imageDataUrl}
             alt=""
@@ -73,15 +77,7 @@ export const MessageLinkPreview = ({
         )}
       </span>
       <span className="chat-link-preview-copy">
-        <strong
-          className={
-            caption ? "!whitespace-normal break-words [overflow-wrap:anywhere]" : undefined
-          }
-        >
-          {caption ??
-            preview?.title ??
-            (music ? `${music.platform} · 分享的音乐` : details.hostname)}
-        </strong>
+        <strong>{displayTitle}</strong>
         <small>
           {music
             ? `${music.platform} · 打开收听`

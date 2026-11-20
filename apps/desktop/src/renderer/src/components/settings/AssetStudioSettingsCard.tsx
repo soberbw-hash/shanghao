@@ -30,7 +30,7 @@ export const AssetStudioSettingsCard = () => {
       </span>
       <div className="about-info-copy">
         <h4>上号素材</h4>
-        <p>预览、复制和下载素材，保存审核意见。</p>
+        <p>预览和下载房间图片、角色与声音。</p>
       </div>
       <div className="about-card-actions">
         <Button variant="secondary" disabled={busy} onClick={() => void run(false)}>

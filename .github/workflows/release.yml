@@ -65,6 +65,7 @@ jobs:
       - run: pnpm build
       - run: pnpm dist:win
       - run: pnpm release:verify-package
+      - run: node scripts/verify-packaged-screen-capture.mjs
       - run: pnpm --dir apps/desktop exec electron ../../tools/asset-review/verify.cjs
         env:
           ASSET_STUDIO_TEST_ROOT: ${{ github.workspace }}/apps/desktop/release/win-unpacked/resources/asset-studio

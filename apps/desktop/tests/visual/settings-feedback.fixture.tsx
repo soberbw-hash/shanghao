@@ -11,6 +11,13 @@ import "../../src/renderer/src/styles/index.css";
 const unconfigured = new URLSearchParams(window.location.search).has("unconfigured");
 const readError = new URLSearchParams(window.location.search).has("read-error");
 const showUpdate = new URLSearchParams(window.location.search).has("update");
+const coldAiOpen = new URLSearchParams(window.location.search).has("cold-ai-open");
+const waitForFixture = (name: string) =>
+  coldAiOpen
+    ? new Promise<void>((resolve) => window.addEventListener(name, () => resolve(), { once: true }))
+    : Promise.resolve();
+const snapshotReady = waitForFixture("fixture:ai-snapshot-ready");
+const providersReady = waitForFixture("fixture:ai-providers-ready");
 if (showUpdate)
   useSettingsStore.setState({
     updateStatus: {
@@ -35,20 +42,21 @@ window.desktopApi = {
   app: { writeLog: async () => {} },
   ai: {
     getCustomProvider: async () => {
+      await providersReady;
       if (providerReadFault) throw Error("custom_ai_config_unreadable");
       return saved;
     },
     saveCustomProvider: async (input: { baseUrl: string; model: string }) =>
       (saved = { ...saved, ...input }),
     getTranscriptionProvider: async () => {
+      await providersReady;
       if (providerReadFault) throw Error("custom_asr_config_unreadable");
       return { cloudConfigured: !unconfigured, customConfigured: !unconfigured };
     },
-    getSnapshot: async () => ({
-      models: [],
-      scheduler: { gameActive: false },
-      checkedAt: "fixture",
-    }),
+    getSnapshot: async () => {
+      await snapshotReady;
+      return { models: [], scheduler: { gameActive: false }, checkedAt: "fixture" };
+    },
     onStatus: () => () => {},
   },
 } as unknown as typeof window.desktopApi;

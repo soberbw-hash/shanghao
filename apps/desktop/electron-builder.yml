@@ -110,7 +110,7 @@ win:
   electronLanguages:
     - zh-CN
     - en-US
-  requestedExecutionLevel: requireAdministrator
+  requestedExecutionLevel: asInvoker
   signAndEditExecutable: true
   target:
     - nsis

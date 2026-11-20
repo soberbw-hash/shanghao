@@ -8,6 +8,7 @@ import type {
   DailyRoomReport,
   DailyRoomRecordingRecap,
   SceneZoneId,
+  RoomChronicleDay,
 } from "@private-voice/shared";
 import {
   isAllowedNickname,
@@ -40,6 +41,7 @@ export type SignalEnvelope =
   | ChronicleControlMessage
   | ChronicleAudioMessage
   | ChronicleStateMessage
+  | ChronicleHistoryMessage
   | JoinChannelMessage
   | LeaveChannelMessage
   | HeartbeatMessage
@@ -103,6 +105,13 @@ export interface ChronicleStateMessage extends BaseMessage {
   state?: import("./room-chronicle-sessions").ChronicleSnapshot;
   error?:
     "chronicle_forbidden" | "chronicle_unavailable" | "chronicle_busy" | "chronicle_speech_quota";
+}
+
+export interface ChronicleHistoryMessage extends BaseMessage, RoomChronicleDay {
+  type: "chronicle_history";
+  roomId: string;
+  /** First page after joining, or a reset at the server's midnight boundary. */
+  replace?: true;
 }
 export interface ChronicleAudioMessage extends BaseMessage {
   type: "chronicle_audio";
@@ -179,6 +188,7 @@ export interface PongMessage extends BaseMessage {
 }
 
 export interface JoinAckMessage extends BaseMessage, VersionedMessage {
+  chronicleDay?: string;
   replaySupported?: boolean;
   chronicleSupported?: boolean;
   type: "join_ack";

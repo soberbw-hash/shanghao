@@ -5,6 +5,7 @@ import {
   type RoomMember,
   type AccountSnapshot,
   type LocalChronicleEntry,
+  type RoomChronicleDay,
 } from "@private-voice/shared";
 import { RoomChatPanel } from "../../src/renderer/src/components/chat/RoomChatPanel";
 import { RoomChronicleClient } from "../../src/renderer/src/features/room/RoomChronicleClient";
@@ -42,6 +43,7 @@ const result = {
   inputStillLive: false,
   reactionWrites: 0,
   exportRequests: 0,
+  exportedDay: undefined as RoomChronicleDay | undefined,
 };
 let archive: LocalChronicleEntry[] = [];
 const context = new AudioContext();
@@ -92,8 +94,9 @@ Object.assign(window, {
     result,
     preview() {
       window.desktopApi.chronicleArchive = {
-        export: async () => {
+        export: async (_roomId, day) => {
           result.exportRequests++;
+          result.exportedDay = day;
           return { saved: true };
         },
         read: async () => archive,
@@ -157,6 +160,10 @@ Object.assign(window, {
         roomId,
         state: { ...state, summaryIntervalMs: 120000 },
       });
+    },
+    setServerDay(date: string, entries: LocalChronicleEntry[]) {
+      if (!entries.length) client.capability(true, date);
+      client.receiveHistory({ type: "chronicle_history", roomId, date, replace: true, entries });
     },
     supported: (enabled: boolean) => client.capability(enabled),
     async close() {

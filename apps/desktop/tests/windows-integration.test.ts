@@ -6,14 +6,14 @@ import { ensureWindowsFirewallRulesWithOutcome } from "../src/main/windows-integ
 
 const read = (path: string) => readFile(new URL(path, import.meta.url), "utf8");
 
-test("Windows testing build requests administrator startup without uiAccess", async () => {
+test("Windows production build runs with the launching user's privileges", async () => {
   const builder = await read("../electron-builder.yml");
   const verifier = await read("../../../scripts/verify-windows-execution-level.mjs");
-  assert.match(builder, /requestedExecutionLevel:\s*requireAdministrator/);
+  assert.match(builder, /requestedExecutionLevel:\s*asInvoker/);
   assert.match(builder, /signAndEditExecutable:\s*true/);
   assert.match(verifier, /uiAccess\\s\*=/);
   assert.match(verifier, /false/);
-  assert.match(verifier, /requireAdministrator/);
+  assert.match(verifier, /asInvoker/);
 });
 
 test("legacy startup task support only removes the old auto-login task", async () => {

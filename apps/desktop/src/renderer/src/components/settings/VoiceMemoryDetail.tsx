@@ -8,7 +8,6 @@ import {
   AI_ASR_MODEL_NAMES,
   buildReadableTranscriptParagraphs,
   hasInvalidVoiceMemoryResult,
-  reviewTranscriptionUnit,
   type AiAsrModelId,
   type RecordingLibraryItem,
   type VoiceMemoryRecord,
@@ -276,7 +275,7 @@ export const VoiceMemoryDetail = ({
     ? selectedAsrModel
     : DEFAULT_ASR_MODEL_ID;
 
-  const process = async (action: "transcribe" | "organize" | "fuse", retryUnitIds?: string[]) => {
+  const process = async (action: "transcribe" | "organize" | "fuse") => {
     setBusy(true);
     setQueuedAction(action);
     setError(undefined);
@@ -288,10 +287,9 @@ export const VoiceMemoryDetail = ({
         roomName,
         manual: true,
         transcribe: action === "transcribe",
-        organize: retryUnitIds ? false : true,
+        organize: true,
         fuse: action === "fuse",
-        restartTranscription: action === "transcribe" && !retryUnitIds,
-        retryUnitIds,
+        restartTranscription: action === "transcribe",
         localAsrContext: action === "transcribe" ? record?.localAsrContext : undefined,
         localAsrAutoGameContext: action === "transcribe" ? true : undefined,
         asrModelId:
@@ -431,91 +429,8 @@ export const VoiceMemoryDetail = ({
     (record.transcriptionStats || record.phase === "transcribing" || record.phase === "paused")
       ? voiceMemoryTranscriptionPercent(record)
       : record.progress;
-  const reviewUnits = (record.transcriptionUnits ?? [])
-    .filter((unit) => unit.status === "completed" || unit.status === "failed")
-    .map((unit) => ({ unit, decision: reviewTranscriptionUnit(record, unit) }))
-    .filter(({ decision }) => decision.action !== "accept")
-    .slice(0, 128);
   return (
     <section className="voice-memory-detail" aria-label="AI 语音记忆">
-      {reviewUnits.length > 0 && (
-        <div className="text-sm text-[#718096]">
-          <p role="status">部分音频区间需要复核；活动检测和模型异常是线索，不代表已确认漏字。</p>
-          <details>
-            <summary>查看待复核区间</summary>
-            {reviewUnits.map(({ unit, decision }) => {
-              const canRetryExactlyThisLocalUnit =
-                transcriptionProvider === "local" &&
-                record.transcriptionModel?.id === unit.modelId &&
-                decision.action === "retry_candidate" &&
-                decision.retriesRemaining > 0;
-              return (
-                <div key={unit.unitId} className="flex flex-wrap items-center gap-2 py-1">
-                  <button type="button" onClick={() => onSeek(unit.startMs)}>
-                    {clock(unit.startMs)}–{clock(unit.endMs)}（
-                    {decision.action === "retry_candidate"
-                      ? `异常结果，剩余 ${decision.retriesRemaining} 次尝试`
-                      : decision.reasonCodes.includes("quiet_audio_uncertain")
-                        ? "低音量，回听确认"
-                        : decision.reasonCodes.includes("source_identity_unknown")
-                          ? "说话人来源待核对"
-                          : decision.reasonCodes.includes("transcript_sources_conflict")
-                            ? "两份原稿不一致"
-                            : decision.reasonCodes.includes("timeline_invalid")
-                              ? "时间轴待核对"
-                              : decision.reasonCodes.includes("asr_output_anomaly")
-                                ? "异常输出，回听确认"
-                                : "处理未完成，回听确认"}
-                    ）
-                  </button>
-                  {canRetryExactlyThisLocalUnit ? (
-                    <button
-                      type="button"
-                      disabled={busy || Boolean(queuedAction) || processing}
-                      onClick={() => void process("transcribe", [unit.unitId])}
-                    >
-                      只补转此段
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-            {(record.transcriptionUnits?.filter(
-              (unit) => unit.status === "completed" || unit.status === "failed",
-            ).length ?? 0) > 128 && <p>区间较多，仅显示前 128 条。</p>}
-          </details>
-        </div>
-      )}
-      {(record.transcriptionStats?.unexaminedParticipantAudioMs ?? 0) > 0 && (
-        <div className="text-sm text-[#718096]">
-          <p role="status">部分成员连续音轨未纳入识别，可能包含静音；如需确认，请回听原录音。</p>
-          {Array.isArray(record.transcriptionStats?.unexaminedParticipantAudioRanges) && (
-            <details>
-              <summary>查看未检查区间</summary>
-              {record.transcriptionStats.unexaminedParticipantAudioRanges
-                .slice(0, 128)
-                .map((range, index) =>
-                  range &&
-                  typeof range.displayName === "string" &&
-                  Number.isFinite(range.startMs) &&
-                  Number.isFinite(range.endMs) &&
-                  range.endMs > range.startMs ? (
-                    <button
-                      type="button"
-                      key={`${index}:${range.startMs}`}
-                      onClick={() => onSeek(range.startMs)}
-                    >
-                      {range.displayName} · {clock(range.startMs)}–{clock(range.endMs)}（回听混音）
-                    </button>
-                  ) : null,
-                )}
-              {record.transcriptionStats.unexaminedRangesTruncated && (
-                <p>区间较多，仅显示前 128 条。</p>
-              )}
-            </details>
-          )}
-        </div>
-      )}
       {record.errorMessage?.startsWith("deferred:") &&
       /(?:_key_required|_not_configured|_not_installed|_runtime_not_ready)$/.test(
         record.errorMessage,

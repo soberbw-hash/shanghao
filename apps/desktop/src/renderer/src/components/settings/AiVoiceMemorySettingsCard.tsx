@@ -22,7 +22,11 @@ import type {
   AiVoiceMemorySnapshot,
   AppSettings,
 } from "@private-voice/shared";
-import { AI_ASR_MODEL_GROUPS, DEFAULT_AI_ASR_MODEL_ID } from "@private-voice/shared";
+import {
+  AI_ASR_MODEL_GROUPS,
+  AI_ASR_MODEL_NAMES,
+  DEFAULT_AI_ASR_MODEL_ID,
+} from "@private-voice/shared";
 
 import { modelPhaseLabel, modelProgressPercent } from "../../features/ai/modelDownloadPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
@@ -49,6 +53,7 @@ interface AiVoiceMemorySettingsCardProps {
 
 let cachedAiVoiceMemorySnapshot: AiVoiceMemorySnapshot | undefined;
 let aiVoiceMemorySnapshotRequest: Promise<AiVoiceMemorySnapshot> | undefined;
+const EMPTY_MODELS: AiModelStatus[] = [];
 
 export const preloadAiVoiceMemorySnapshot = (): Promise<AiVoiceMemorySnapshot> => {
   if (cachedAiVoiceMemorySnapshot) return Promise.resolve(cachedAiVoiceMemorySnapshot);
@@ -243,6 +248,7 @@ export const AiVoiceMemorySettingsCard = ({
   const [snapshot, setSnapshot] = useState<AiVoiceMemorySnapshot | undefined>(
     cachedAiVoiceMemorySnapshot,
   );
+  const [snapshotUnavailable, setSnapshotUnavailable] = useState(false);
   const [busyModel, setBusyModel] = useState<AiModelId>();
   const modelInUse = !snapshot || Boolean(snapshot.modelConfigurationBusy);
   const [pendingDeleteModel, setPendingDeleteModel] = useState<AiModelStatus>();
@@ -319,7 +325,6 @@ export const AiVoiceMemorySettingsCard = ({
   useEffect(() => {
     if (!isActive) return;
     let active = true;
-    setTranscriptionConfigState("loading");
     void window.desktopApi.ai
       .getTranscriptionProvider()
       .then((status) => {
@@ -479,13 +484,15 @@ export const AiVoiceMemorySettingsCard = ({
     let observedStatus = false;
     void preloadAiVoiceMemorySnapshot()
       .then((next) => active && !observedStatus && setSnapshot(next))
-      .catch(() =>
+      .catch(() => {
+        if (!active || observedStatus) return;
+        setSnapshotUnavailable(true);
         pushToast({
           tone: "danger",
           title: "模型状态读取失败",
           description: "请完全退出并重新打开上号。",
-        }),
-      );
+        });
+      });
     const unsubscribe = aiApi.onStatus((next) => {
       observedStatus = true;
       cachedAiVoiceMemorySnapshot = next;
@@ -534,7 +541,7 @@ export const AiVoiceMemorySettingsCard = ({
     };
   }, [isActive]);
 
-  const models = snapshot?.models ?? [];
+  const models = snapshot?.models ?? EMPTY_MODELS;
 
   useEffect(() => {
     if (!snapshot) return;
@@ -595,7 +602,7 @@ export const AiVoiceMemorySettingsCard = ({
       ? "内置云端转录"
       : transcriptionProvider === "custom"
         ? (transcriptionStatus?.customModel ?? "自定义转录 API")
-        : (selectedAsr?.name ?? "未选择");
+        : (selectedAsr?.name ?? AI_ASR_MODEL_NAMES[settings.aiAsrModel] ?? "未选择");
   const textModelName =
     settings.aiOrganizerProvider === "custom"
       ? textConfigError
@@ -604,6 +611,17 @@ export const AiVoiceMemorySettingsCard = ({
           ? (customProvider.model ?? "自定义 API（未配置）")
           : "正在读取配置…"
       : "内置云端模型";
+  const autoTranscriptionDescription = activeTranscriptionReady
+    ? "使用所选模型自动转录。"
+    : transcriptionProvider === "local"
+      ? snapshot
+        ? "当前本地转录模型未就绪。"
+        : "正在读取本地模型状态…"
+      : transcriptionConfigState === "loading"
+        ? "正在读取本机密钥配置…"
+        : transcriptionConfigState === "error"
+          ? "配置读取失败，可在下方重试。"
+          : "请先配置当前转录 API 密钥。";
 
   const chooseAsrModel = (model: AiModelStatus) => {
     if (settings.aiTranscriptionProvider === "local" && model.id === settings.aiAsrModel) return;
@@ -828,17 +846,6 @@ export const AiVoiceMemorySettingsCard = ({
     );
   };
 
-  if (!snapshot) {
-    return (
-      <SettingsSection title="AI 功能">
-        <div className="ai-settings-loading" role="status" aria-label="正在准备 AI 功能">
-          <span className="ai-settings-loading-spinner" aria-hidden="true" />
-          <strong>正在准备 AI 功能…</strong>
-        </div>
-      </SettingsSection>
-    );
-  }
-
   return (
     <SettingsSection title="AI 功能">
       <section className="ai-overview" aria-labelledby="ai-overview-title">
@@ -860,7 +867,13 @@ export const AiVoiceMemorySettingsCard = ({
           </article>
           <article>
             <small>已安装</small>
-            <strong>{installedAsrCount} 个转录</strong>
+            <strong>
+              {snapshot
+                ? `${installedAsrCount} 个转录`
+                : snapshotUnavailable
+                  ? "暂不可用"
+                  : "读取中…"}
+            </strong>
           </article>
         </div>
       </section>
@@ -874,12 +887,13 @@ export const AiVoiceMemorySettingsCard = ({
             <SettingsItemRow
               label="转录时机"
               description={
-                snapshot?.scheduler.gameActive ? "游戏中将自动降低后台占用。" : undefined
+                snapshot?.scheduler.gameActive ? "游戏中已降低后台占用。" : "何时处理待转录的录音。"
               }
             >
               <select
                 className="ai-processing-select"
                 aria-label="转录时机"
+                disabled={!snapshot}
                 value={settings.aiProcessingMode}
                 onChange={(event) =>
                   void onChange({
@@ -894,24 +908,13 @@ export const AiVoiceMemorySettingsCard = ({
               </select>
             </SettingsItemRow>
           ) : null}
-          <SettingsItemRow
-            label="自动转录"
-            description={
-              activeTranscriptionReady
-                ? undefined
-                : transcriptionProvider !== "local" && transcriptionConfigState !== "ready"
-                  ? transcriptionConfigState === "error"
-                    ? "密钥配置暂时无法读取，原文件已保留；可在下方重试读取。"
-                    : "正在读取本机密钥配置…"
-                  : transcriptionProvider === "local"
-                    ? "当前本地转录模型未就绪。"
-                    : "请先配置当前转录 API 密钥。"
-            }
-          >
+          <SettingsItemRow label="自动转录" description={autoTranscriptionDescription}>
             <Switch
               isChecked={settings.isAiAutoTranscribeEnabled}
               ariaLabel="自动转录"
-              isDisabled={!activeTranscriptionReady && !settings.isAiAutoTranscribeEnabled}
+              isDisabled={
+                !snapshot || (!activeTranscriptionReady && !settings.isAiAutoTranscribeEnabled)
+              }
               onChange={(checked) => void onChange({ isAiAutoTranscribeEnabled: checked })}
             />
           </SettingsItemRow>
@@ -922,7 +925,7 @@ export const AiVoiceMemorySettingsCard = ({
           <CloudLocalAssistControl
             settings={settings}
             disabled={modelInUse}
-            models={snapshot.models}
+            models={models}
             onChange={(patch) => void onChange(patch)}
           />
         </div>
@@ -1231,7 +1234,7 @@ export const AiVoiceMemorySettingsCard = ({
         ) : null}
       </details>
 
-      <CloudAiAdminPanel />
+      {snapshot ? <CloudAiAdminPanel /> : null}
       {pendingDeleteModel
         ? createPortal(
             <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center px-6">

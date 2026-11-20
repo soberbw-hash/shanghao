@@ -535,10 +535,9 @@ test("microphone processing lives in the room panel while about shows three rele
   assert.equal(aboutSource.includes("slice(0, 10)"), false);
   assert.equal(aboutSource.includes("最近 3 个正式版本"), true);
   assert.equal(aboutSource.includes("RECENT_RELEASE_HISTORY.map"), true);
-  assert.equal(aboutSource.includes("查看全部版本"), true);
+  assert.doesNotMatch(aboutSource, /查看全部版本|发布页面|作者与项目|作者主页|github\.com/);
   assert.equal(aboutSource.includes("检查更新"), true);
   assert.equal(aboutSource.includes("版本 {currentVersion}"), true);
-  assert.equal(aboutSource.includes("作者主页"), true);
   assert.equal(aboutSource.includes("投喂作者"), true);
   assert.equal(aboutSource.includes("固定好友语音"), false);
 });
@@ -768,7 +767,6 @@ test("successful empty ASR units remain silence instead of failing the recording
   assert.equal(detailSource.includes('process("transcribe")'), true);
   assert.equal(detailSource.includes('process("organize")'), true);
   assert.equal(detailSource.includes('transcribe: action === "transcribe"'), true);
-  assert.equal(detailSource.includes("organize: retryUnitIds ? false : true"), true);
   assert.equal(detailSource.includes("diagnostic?.taskId"), false);
 });
 

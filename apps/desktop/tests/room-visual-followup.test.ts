@@ -42,7 +42,7 @@ test("quick-message header is an inset rounded card instead of a clipped divider
     /\.room-page \.chat-panel-header\s*\{[^}]*margin-inline: 2px;[^}]*border: 1px solid[^;]*;[^}]*border-radius: 16px;/s,
   );
   assert.doesNotMatch(css, /\.room-page \.chat-panel-header\s*\{[^}]*border-bottom:/s);
-  assert.ok(chat.includes('className="relative flex min-h-0 flex-1 flex-col"'));
+  assert.ok(chat.includes('className="room-list-viewport"'));
 });
 test("AI mascot originals are transparent bundled resources with a unified state map", () => {
   const assets = ["idle.png", "greeting.png", "thinking.png", "gaming.png"];
