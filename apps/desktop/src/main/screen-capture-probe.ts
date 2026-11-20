@@ -23,8 +23,8 @@ void app
   .whenReady()
   .then(async () => {
     const elevation = await readWindowsElevationStatus();
-    if (elevation.method !== "windows-token" || elevation.isElevated) {
-      throw new Error("Expected the packaged app to run with a standard Windows token");
+    if (elevation.method !== "windows-token") {
+      throw new Error("Could not verify the packaged app's Windows token");
     }
     const window = createMainWindow({ reveal: false });
     await new Promise<void>((resolve, reject) => {
@@ -60,7 +60,7 @@ void app
       true,
     )) as [number, number];
     if (frame.some((dimension) => dimension <= 0)) throw new Error("Invalid display frame");
-    finish(true, { version: app.getVersion(), elevated: false, frame });
+    finish(true, { version: app.getVersion(), elevated: elevation.isElevated, frame });
   })
   .catch((error: unknown) =>
     finish(false, { error: error instanceof Error ? error.message : String(error) }),
