@@ -1,6 +1,6 @@
 .about-info-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -8,25 +8,18 @@
 .about-info-card {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
-  gap: 12px;
+  column-gap: 12px;
+  row-gap: 8px;
   align-items: start;
   border: 1px solid rgba(198, 216, 237, 0.76);
   border-radius: 20px;
   background: rgba(250, 252, 255, 0.86);
-  padding: 20px;
+  padding: 16px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94);
 }
 
 .about-info-card--support {
-  grid-column: 1 / -1;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
-  align-items: center;
   background: rgba(255, 252, 247, 0.88);
-}
-
-.about-info-card--support .about-card-actions {
-  grid-column: 3;
-  margin-top: 0;
 }
 
 .about-info-icon {
@@ -70,7 +63,6 @@
   grid-column: 2;
   align-items: center;
   align-self: end;
-  margin-top: 8px;
 }
 
 .about-card-status {
@@ -78,15 +70,4 @@
   font-size: 12px;
   line-height: 1.6;
   overflow-wrap: anywhere;
-}
-
-@media (max-width: 640px) {
-  .about-info-card--support {
-    grid-template-columns: 42px minmax(0, 1fr);
-  }
-
-  .about-info-card--support .about-card-actions {
-    grid-column: 2;
-    margin-top: 8px;
-  }
 }

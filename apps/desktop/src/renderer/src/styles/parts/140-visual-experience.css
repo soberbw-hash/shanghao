@@ -1198,10 +1198,13 @@ dialog::backdrop {
 /* About keeps low-frequency product information out of the room controls. */
 .about-settings-page {
   min-width: 0;
+  max-width: 1080px;
+  margin-inline: auto;
 }
 
 .about-product-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 18px;
   border: 1px solid rgba(184, 207, 235, 0.72);
@@ -1216,29 +1219,27 @@ dialog::backdrop {
 }
 
 .about-product-mark {
-  width: 74px;
-  height: 74px;
-  flex: 0 0 auto;
+  width: 54px;
+  height: 54px;
   display: block;
 }
 
 .about-product-copy {
+  display: grid;
+  gap: 5px;
   min-width: 0;
-  flex: 1 1 auto;
 }
 
 .about-product-title-row,
-.about-update-row,
 .about-card-actions,
 .donation-modal-heading {
   display: flex;
   align-items: center;
 }
 
-.about-product-title-row,
-.about-update-row {
-  justify-content: space-between;
-  gap: 16px;
+.about-product-title-row {
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .about-product-title-row h4 {
@@ -1246,12 +1247,6 @@ dialog::backdrop {
   font-size: 22px;
   font-weight: 780;
   letter-spacing: -0.035em;
-}
-
-.about-product-title-row p {
-  margin-top: 2px;
-  color: #73849a;
-  font-size: 13px;
 }
 
 .about-version-chip {
@@ -1266,12 +1261,6 @@ dialog::backdrop {
   font-variant-numeric: tabular-nums;
 }
 
-.about-update-row {
-  margin-top: 14px;
-  border-top: 1px solid rgba(199, 216, 235, 0.62);
-  padding-top: 13px;
-}
-
 .about-update-status {
   display: inline-flex;
   min-width: 0;
@@ -1280,6 +1269,7 @@ dialog::backdrop {
   color: #687b92;
   font-size: 13px;
   font-weight: 620;
+  overflow-wrap: anywhere;
 }
 
 .about-update-status i {
@@ -1301,15 +1291,10 @@ dialog::backdrop {
   box-shadow: 0 0 0 4px rgba(231, 116, 124, 0.1);
 }
 
-.about-action-row,
 .about-card-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.about-action-row {
-  justify-content: flex-end;
 }
 
 .about-release-history {
@@ -1325,8 +1310,7 @@ dialog::backdrop {
   grid-template-columns: 42px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  min-height: 84px;
-  padding: 20px;
+  padding: 14px 16px;
   cursor: pointer;
   list-style: none;
   transition: background-color 150ms ease;
@@ -1373,13 +1357,14 @@ dialog::backdrop {
   line-height: 1.7;
 }
 
-.about-release-count {
-  border-radius: 999px;
-  background: rgba(235, 243, 253, 0.9);
-  padding: 4px 8px;
-  color: #71849c;
-  font-size: 11px;
-  font-weight: 700;
+.about-release-chevron {
+  width: 16px;
+  height: 16px;
+  color: #6882a1;
+}
+
+.about-release-history[open] .about-release-chevron {
+  transform: rotate(180deg);
 }
 
 .about-release-list {
@@ -1388,22 +1373,6 @@ dialog::backdrop {
   overflow-y: auto;
   border-top: 1px solid rgba(205, 220, 238, 0.72);
   padding: 8px;
-}
-
-.about-release-archive {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-top: 1px solid rgba(205, 220, 238, 0.72);
-  padding: 8px 16px 12px;
-}
-
-.about-release-archive p {
-  margin: 0;
-  color: #77889e;
-  font-size: 11px;
-  line-height: 1.6;
 }
 
 .about-release-item {
@@ -1467,33 +1436,15 @@ dialog::backdrop {
   margin-top: 8px;
 }
 
-@media (max-width: 900px) {
-  .about-info-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .about-product-card,
-  .about-product-title-row,
-  .about-update-row {
-    align-items: flex-start;
-  }
-
-  .about-update-row {
-    flex-direction: column;
-  }
-
-  .about-action-row {
-    justify-content: flex-start;
-  }
-}
-
 @media (max-width: 700px) {
   .about-product-card {
-    flex-direction: column;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
   }
 
-  .about-product-title-row {
-    flex-direction: column;
+  .about-check-update {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .about-release-item {
@@ -1503,10 +1454,5 @@ dialog::backdrop {
   .about-release-item-copy {
     grid-column: 1 / -1;
     grid-row: 2;
-  }
-
-  .about-release-archive {
-    align-items: flex-start;
-    flex-direction: column;
   }
 }

@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   applyRoomMemoryNames,
   isPrivateRoomId,
   roomAutomaticMemoryText,
   roomMemoryNames,
 } from "@private-voice/shared";
-import { BookOpen, Download, Mic, MicOff } from "lucide-react";
+import { BookOpen, Download, Info, Mic, MicOff } from "lucide-react";
 import { useRoomStore } from "../../store/roomStore";
 import type { RoomChronicleClient } from "../../features/room/RoomChronicleClient";
 import { useChronicleArchive } from "../../features/room/useChronicleArchive";
@@ -29,9 +29,12 @@ export function RoomChroniclePanel({
   const participating = !!localId && !!state?.participants.includes(localId);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const helpId = useId();
+  const [helpDismissed, setHelpDismissed] = useState(false);
   const pendingRef = useRef(false);
   const [shown, setShown] = useState(60);
-  const archive = useChronicleArchive(room.roomId, message?.state?.entries ?? EMPTY_ENTRIES);
+  const archive = useChronicleArchive(room.roomId, state?.entries ?? EMPTY_ENTRIES, message?.day);
+  useEffect(() => setShown(60), [message?.day?.date, room.roomId]);
   const [memoryNames, setMemoryNames] = useState<{ roomId: string; names: Map<string, string> }>();
   useEffect(() => {
     const roomId = room.roomId;
@@ -89,7 +92,7 @@ export function RoomChroniclePanel({
         <button
           type="button"
           disabled={!archive.stored || !archive.entries.length}
-          title="导出本机纪事，不包含逐字转录稿"
+          title={message?.day ? "导出当天纪事，不包含逐字转录稿" : "导出本机纪事，不包含逐字转录稿"}
           onClick={() => void archive.exportStories()}
         >
           <Download size={14} />
@@ -122,19 +125,49 @@ export function RoomChroniclePanel({
               : "开始转录"}
         </button>
       </div>
-      <details className="chronicle-source-status">
-        <summary>
-          {state ? "房间转录中" : "转录未开启"}
-          <span>{state ? `${heard.length}/${members.length} 人参与转录` : "查看说明"}</span>
-        </summary>
-        {heard.length ? (
-          <p>
-            参与：
-            {heard.map(({ nickname }) => names.get(nickname.toLowerCase()) ?? nickname).join("、")}
-          </p>
+      <div className="chronicle-source-status">
+        <span>{state ? "房间转录中" : "转录未开启"}</span>
+        <span
+          className="chronicle-source-help"
+          data-dismissed={helpDismissed}
+          onPointerEnter={() => setHelpDismissed(false)}
+        >
+          <button
+            type="button"
+            className="chronicle-source-info"
+            aria-label="转录说明"
+            aria-describedby={helpId}
+            onFocus={() => setHelpDismissed(false)}
+            onBlur={() => setHelpDismissed(false)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                setHelpDismissed(true);
+              }
+            }}
+          >
+            <Info size={14} aria-hidden="true" />
+          </button>
+          <span id={helpId} className="chronicle-source-tooltip" role="tooltip">
+            {message?.day
+              ? "房间成员都能查看当天纪事，北京时间零点清空。转录使用云端，随时可停止提供语音。"
+              : "一人开启，成员语音发送至云端转录，可随时停止参与。"}
+            {heard.length ? (
+              <span>
+                参与：
+                {heard
+                  .map(({ nickname }) => names.get(nickname.toLowerCase()) ?? nickname)
+                  .join("、")}
+              </span>
+            ) : null}
+          </span>
+        </span>
+        {state ? (
+          <span className="chronicle-source-count">
+            {heard.length}/{members.length} 人参与转录
+          </span>
         ) : null}
-        <small>一人开启，成员语音发送至云端转录，可随时停止参与。</small>
-      </details>
+      </div>
       {archive.error ? (
         <p className="room-chronicle-hint" role="status">
           {archive.error}
@@ -150,38 +183,46 @@ export function RoomChroniclePanel({
                 : "纪事服务暂不可用，已有纪事仍保留")}
         </p>
       ) : null}
-      <div className="room-chronicle-entries" aria-live="polite" aria-relevant="additions">
-        {archive.entries.length ? (
-          <>
-            {archive.entries.length > shown ? (
-              <button
-                type="button"
-                className="chronicle-earlier"
-                onClick={() => setShown((count) => count + 60)}
-              >
-                查看更早的纪事（共{archive.entries.length}条）
-              </button>
-            ) : null}
-            {archive.entries.slice(-shown).map((entry) => (
-              <article key={entry.id}>
-                <time dateTime={new Date(entry.at).toISOString()}>
-                  {new Date(entry.at).toLocaleTimeString("zh-CN", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </time>
-                <div>
-                  <p>{applyRoomMemoryNames(entry.text, names)}</p>
-                </div>
-              </article>
-            ))}
-          </>
-        ) : (
-          <div className="room-chronicle-empty">
-            <BookOpen size={26} />
-            <p>{state ? "收到语音后，纪事会分段出现。" : "开始转录后，可以在这里查看房间纪事。"}</p>
-          </div>
-        )}
+      <div className="room-list-viewport" data-room-list-edge={archive.entries.length > 0}>
+        <div className="room-chronicle-entries" aria-live="polite" aria-relevant="additions">
+          {archive.entries.length ? (
+            <>
+              {archive.entries.length > shown ? (
+                <button
+                  type="button"
+                  className="chronicle-earlier"
+                  onClick={() => setShown((count) => count + 60)}
+                >
+                  查看更早的纪事（共{archive.entries.length}条）
+                </button>
+              ) : null}
+              {archive.entries.slice(-shown).map((entry) => (
+                <article key={entry.id}>
+                  <time dateTime={new Date(entry.at).toISOString()}>
+                    {new Date(entry.at).toLocaleTimeString("zh-CN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </time>
+                  <div>
+                    <p>{applyRoomMemoryNames(entry.text, names)}</p>
+                  </div>
+                </article>
+              ))}
+            </>
+          ) : (
+            <div className="room-chronicle-empty">
+              <BookOpen size={26} />
+              <p>
+                {state
+                  ? "收到语音后，纪事会分段出现。"
+                  : message?.day
+                    ? "今天还没有纪事。"
+                    : "开始转录后，可以在这里查看房间纪事。"}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
       {status && state ? (
         <p className="room-chronicle-hint" role="status">

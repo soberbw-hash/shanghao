@@ -1,44 +1,61 @@
 .chronicle-source-status {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
   margin: 0 8px;
   padding: 6px 12px;
   border: 1px solid #dce9fa;
   border-radius: 12px;
   background: #f2f7fd;
-  color: #405f7d;
-  font-size: 12px;
-  line-height: 1.6;
-}
-.chronicle-source-status summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  justify-content: space-between;
   color: #3e6391;
   font-size: 13px;
-  cursor: pointer;
-  list-style: none;
+  line-height: 1.6;
 }
-.chronicle-source-status summary::-webkit-details-marker {
-  display: none;
-}
-.chronicle-source-status summary::after {
-  content: "⌄";
-  margin-left: auto;
-}
-.chronicle-source-status[open] summary::after {
-  content: "⌃";
-}
-.chronicle-source-status summary span {
+.chronicle-source-count {
+  margin-inline-start: auto;
   font-size: 12px;
-  font-weight: 500;
 }
-.chronicle-source-status p {
-  margin: 4px 0;
-  overflow-wrap: anywhere;
+.chronicle-source-help {
+  display: inline-flex;
 }
-.chronicle-source-status small {
+.chronicle-source-info {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 6px;
+  color: #527498;
+  cursor: help;
+}
+.chronicle-source-info:is(:hover, :focus-visible) {
+  background: #e2edf9;
+}
+.chronicle-source-tooltip {
+  position: absolute;
+  z-index: 3;
+  inset-block-start: calc(100% - 3px);
+  inset-inline-start: 10px;
+  width: max-content;
+  max-width: calc(100% - 20px);
+  padding: 8px 10px;
+  visibility: hidden;
+  border: 1px solid #cddff1;
+  border-radius: 9px;
+  background: #f8fbff;
+  box-shadow: 0 4px 12px rgb(41 68 100 / 14%);
   color: #4d6681;
   font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.chronicle-source-tooltip > span {
+  display: block;
+  margin-block-start: 3px;
+}
+.chronicle-source-help:not([data-dismissed="true"]):is(:hover, :focus-within)
+  .chronicle-source-tooltip {
+  visibility: visible;
 }
 .room-chronicle-entries article {
   margin: 0 8px 6px;
@@ -64,7 +81,7 @@
   color: #697e98;
   font-size: 10px;
 }
-.chronicle-source-status summary:focus-visible,
+.chronicle-source-info:focus-visible,
 .chronicle-earlier:focus-visible {
   outline: 2px solid #4b91dd;
   outline-offset: 2px;

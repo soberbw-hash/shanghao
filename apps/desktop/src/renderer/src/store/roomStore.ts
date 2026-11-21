@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { ChronicleStateMessage, ReplayStateMessage } from "@private-voice/signaling";
+import type { ReplayStateMessage } from "@private-voice/signaling";
+import type { RoomChronicleViewState } from "../features/room/RoomChronicleClient";
 
 import {
   DEFAULT_ROOM_NAME,
@@ -57,10 +58,10 @@ export interface RemoteScreenFrame {
 }
 
 interface RoomStoreState {
-  chronicle?: ChronicleStateMessage;
+  chronicle?: RoomChronicleViewState;
   replay?: ReplayStateMessage;
   setReplay: (message: ReplayStateMessage) => void;
-  setChronicle: (message: ChronicleStateMessage) => void;
+  setChronicle: (message: RoomChronicleViewState) => void;
   room: RoomSummary;
   localStream?: MediaStream;
   remoteStreams: Record<string, MediaStream>;

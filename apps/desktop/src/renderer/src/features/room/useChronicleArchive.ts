@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import type { LocalChronicleEntry } from "@private-voice/shared";
+import type { LocalChronicleEntry, RoomChronicleDay } from "@private-voice/shared";
 import { useAccountStore } from "../../store/accountStore";
 import { useSettingsStore } from "../../store/settingsStore";
 
-export function useChronicleArchive(roomId: string, incoming: LocalChronicleEntry[]) {
+export function useChronicleArchive(
+  roomId: string,
+  incoming: LocalChronicleEntry[],
+  serverDay?: RoomChronicleDay,
+) {
   const account = useAccountStore((state) => state.snapshot.profile?.userId);
   const server = useSettingsStore((state) => state.settings?.relayServerUrl);
   const scope = JSON.stringify([account, server, roomId]);
@@ -14,7 +18,7 @@ export function useChronicleArchive(roomId: string, incoming: LocalChronicleEntr
   const api = window.desktopApi?.chronicleArchive;
   useEffect(() => {
     let active = true;
-    if (!api || !account) return;
+    if (!api || !account || serverDay) return;
     void api
       .append(roomId, incoming)
       .then((entries) => {
@@ -29,17 +33,19 @@ export function useChronicleArchive(roomId: string, incoming: LocalChronicleEntr
     return () => {
       active = false;
     };
-  }, [api, account, roomId, scope, incoming]);
-  const retained = saved?.scope === scope ? saved.entries : [];
+  }, [api, account, roomId, scope, incoming, serverDay]);
+  const retained = !serverDay && saved?.scope === scope ? saved.entries : [];
   const reactions = new Map(retained.map((entry) => [entry.id, entry.reaction]));
-  const entries = [
-    ...new Map(
-      [...retained, ...incoming].map((entry) => [
-        entry.id,
-        { ...entry, reaction: reactions.get(entry.id) },
-      ]),
-    ).values(),
-  ].sort((a, b) => a.at - b.at);
+  const entries =
+    serverDay?.entries ??
+    [
+      ...new Map(
+        [...retained, ...incoming].map((entry) => [
+          entry.id,
+          { ...entry, reaction: reactions.get(entry.id) },
+        ]),
+      ).values(),
+    ].sort((a, b) => a.at - b.at);
   const react = async (id: string, reaction: LocalChronicleEntry["reaction"]) => {
     if (!api) return;
     try {
@@ -53,7 +59,7 @@ export function useChronicleArchive(roomId: string, incoming: LocalChronicleEntr
   const exportStories = async () => {
     if (!api) return;
     try {
-      await api.export(roomId);
+      await api.export(roomId, serverDay);
     } catch {
       if (currentScope.current === scope)
         setFailure({ scope, text: "导出未完成；请选择新的文件名，原纪事仍保留" });
@@ -64,7 +70,7 @@ export function useChronicleArchive(roomId: string, incoming: LocalChronicleEntr
     react,
     exportStories,
     available: !!api && !!account,
-    stored: !!saved && saved.scope === scope,
+    stored: serverDay ? !!api && !!account : !!saved && saved.scope === scope,
     error: failure?.scope === scope ? failure.text : "",
   };
 }

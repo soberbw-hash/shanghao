@@ -69,7 +69,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const updateStatus = useSettingsStore((state) => state.updateStatus);
   const saveSettings = useSettingsStore((state) => state.saveSettings);
   const checkUpdates = useSettingsStore((state) => state.checkUpdates);
-  const openReleases = useSettingsStore((state) => state.openReleases);
   const inputDevices = useAudioStore((state) => state.inputDevices);
   const outputDevices = useAudioStore((state) => state.outputDevices);
   const [windowsDiagnostics, setWindowsDiagnostics] = useState<
@@ -353,7 +352,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         updateInfo={updateInfo}
         updateStatus={updateStatus}
         onCheckUpdates={checkUpdates}
-        onOpenReleases={openReleases}
       />
     ),
     diagnostics:

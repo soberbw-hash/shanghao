@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { CloudAsrService } from "./cloud-asr-service";
 import type { CloudAiService } from "./cloud-ai-service";
 import type { ChronicleAudioMessage } from "./protocol";
-import { RoomChronicleSessions } from "./room-chronicle-sessions";
+import { RoomChronicleSessions, type ChronicleEntry } from "./room-chronicle-sessions";
 import { CHRONICLE_SUMMARY_INTERVAL_MS, roomChroniclePrompt } from "./room-chronicle-prompt";
+import type { ChronicleGameHint } from "./room-chronicle-game-hint";
 import type { DailyRoomReportStore } from "./daily-room-report-store";
-import { applyRoomMemoryNames } from "@private-voice/shared";
+import { applyRoomMemoryNames, getRoomChronicleDate } from "@private-voice/shared";
 
 type Speech = Pick<CloudAsrService, "isConfigured" | "transcribe">;
 type Text = Pick<CloudAiService, "isConfigured" | "execute">;
@@ -17,7 +18,7 @@ interface Segment {
   at: number;
   text: string;
   expires: number;
-  gameContext?: ChronicleAudioMessage["gameContext"];
+  gameContext?: ChronicleGameHint;
 }
 
 /** Bounded, ephemeral jobs. Never writes audio, transcript or vendor credentials to disk. */
@@ -35,10 +36,11 @@ export class RoomChronicleProcessor {
     private readonly sessions: RoomChronicleSessions,
     private readonly speech: Speech,
     private readonly text: Text,
-    private readonly changed: (roomId: string) => void,
+    private readonly changed: (roomId: string, entry?: ChronicleEntry) => void,
     private readonly batchMs = CHRONICLE_SUMMARY_INTERVAL_MS,
     private readonly reports?: Promise<DailyRoomReportStore>,
     private readonly speakerNames?: (roomId: string) => Promise<Map<string, string>>,
+    private readonly gameHint?: (message: ChronicleAudioMessage) => ChronicleGameHint | undefined,
   ) {}
 
   configured(): boolean {
@@ -50,6 +52,9 @@ export class RoomChronicleProcessor {
     const { roomId, sessionId, peerId, chunkId } = message;
     const revision = this.sessions.submissionRevision(roomId, sessionId, peerId);
     if (!this.configured()) throw Error("chronicle_unavailable");
+    const arrivedAt = Date.now();
+    const at = Math.max(arrivedAt - 180_000, Math.min(arrivedAt, message.startedAt));
+    if (getRoomChronicleDate(at) !== getRoomChronicleDate(arrivedAt)) return;
     const key = `${sessionId}:${peerId}:${chunkId}`;
     for (const [id, time] of this.seen) if (Date.now() - time > 180_000) this.seen.delete(id);
     if (this.seen.has(key)) return;
@@ -60,6 +65,8 @@ export class RoomChronicleProcessor {
     )
       throw Error("chronicle_busy");
     if (this.seen.size >= 4096) throw Error("chronicle_busy");
+    // Capture context before awaiting the provider; a later game/phase switch is not retroactive.
+    const gameContext = this.gameHint ? this.gameHint(message) : message.gameContext;
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]);
     this.jobs.set(key, { roomId, controller });
@@ -91,10 +98,10 @@ export class RoomChronicleProcessor {
         name: name.slice(0, 32),
         revision,
         sessionId,
-        at: Math.max(Date.now() - 180_000, Math.min(Date.now(), message.startedAt)),
+        at,
         text: content,
         expires: Date.now() + 300_000,
-        gameContext: message.gameContext,
+        gameContext,
       });
       this.backlog.set(roomId, (this.backlog.get(roomId) ?? 0) + 1);
       this.seen.set(key, Date.now());
@@ -109,9 +116,10 @@ export class RoomChronicleProcessor {
     if (!batch) return;
     this.batches.delete(roomId);
     clearTimeout(batch.timer);
+    const batchDate = getRoomChronicleDate();
     const segments = batch.segments
       .filter((part) => {
-        if (part.expires <= Date.now()) return false;
+        if (part.expires <= Date.now() || getRoomChronicleDate(part.at) !== batchDate) return false;
         try {
           return (
             this.sessions.submissionRevision(roomId, part.sessionId, part.peerId) === part.revision
@@ -184,7 +192,10 @@ export class RoomChronicleProcessor {
       const summary = {
         id: randomUUID(),
         at: Math.min(...segments.map((part) => part.at)),
-        text: names?.size ? applyRoomMemoryNames(text.trim(), names) : text.trim(),
+        text: (names?.size ? applyRoomMemoryNames(text, names) : text)
+          .replace(/\s+/gu, " ")
+          .trim()
+          .slice(0, 800),
       };
       let reportStore: DailyRoomReportStore | undefined;
       if (this.reports) {
@@ -198,16 +209,18 @@ export class RoomChronicleProcessor {
         this.sessions.submissionRevision(roomId, first.sessionId, first.peerId) !== first.revision
       )
         return;
-      this.sessions.appendSubmission(
-        roomId,
-        first.sessionId,
-        first.peerId,
-        first.revision,
-        summary,
-      );
+      const today = getRoomChronicleDate(summary.at) === getRoomChronicleDate();
+      if (today)
+        this.sessions.appendSubmission(
+          roomId,
+          first.sessionId,
+          first.peerId,
+          first.revision,
+          summary,
+        );
       reportStore?.publishChronicleRecap(roomId, summary.id, summary.text, summary.at);
       this.sessions.notice(roomId, first.sessionId, undefined);
-      this.changed(roomId);
+      this.changed(roomId, today ? summary : undefined);
     } catch {
       if (!controller.signal.aborted) {
         this.sessions.notice(roomId, first.sessionId, "retrying");

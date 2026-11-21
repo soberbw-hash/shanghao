@@ -30,6 +30,7 @@ import { fitMainWindow, normalizeSavedWindowBounds } from "./window-layout";
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
 
 interface CreateMainWindowOptions {
+  reveal?: boolean;
   canUseSystemWeatherLocation?: () => boolean;
   log?: (
     level: "info" | "warn" | "error",
@@ -278,6 +279,7 @@ const createFallbackHtml = (title: string, description: string, logsDirectory?: 
 };
 
 export const createMainWindow = ({
+  reveal = true,
   log,
   logsDirectory,
   canUseSystemWeatherLocation,
@@ -361,6 +363,7 @@ export const createMainWindow = ({
   });
   const revealAtStartup = () => {
     if (window.isDestroyed() || !canRevealAtStartup || hasRevealedAtStartup) return;
+    if (!reveal) return;
     hasRevealedAtStartup = true;
     window.showInactive();
   };

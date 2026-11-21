@@ -78,17 +78,6 @@
   -webkit-backdrop-filter: none;
 }
 
-.ai-settings-loading {
-  display: grid;
-  min-height: 220px;
-  place-items: center;
-  align-content: center;
-  gap: 9px;
-  color: #536982;
-  text-align: center;
-}
-
-.ai-settings-loading-spinner,
 .chat-image-preview-loading > span {
   width: 24px;
   height: 24px;
@@ -96,11 +85,6 @@
   border-top-color: #4da3ff;
   border-radius: 999px;
   animation: sg-lightweight-spin 720ms linear infinite;
-}
-
-.ai-settings-loading small {
-  color: #7b8da3;
-  font-size: 12px;
 }
 
 @keyframes sg-lightweight-spin {

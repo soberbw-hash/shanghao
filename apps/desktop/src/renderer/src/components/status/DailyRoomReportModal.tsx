@@ -1,4 +1,4 @@
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, MessageCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -9,7 +9,7 @@ import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import {
   buildDailyRoomReportHighlights,
-  buildDailyRoomReportNarrative,
+  buildDailyRoomReportFacts,
 } from "../../features/daily-report/dailyRoomReportHighlights";
 import {
   dialogSurfaceVariants,
@@ -29,15 +29,7 @@ export const DailyRoomReportModal = ({
 }) => {
   const reduceMotion = useReducedMotion();
   const highlights = buildDailyRoomReportHighlights(report);
-  const savedCommentary = report.commentary?.trim();
-  const headline =
-    savedCommentary && savedCommentary.split(/\r?\n/).filter((line) => line.trim()).length >= 2
-      ? savedCommentary
-      : buildDailyRoomReportNarrative(report);
-  const narrativeParagraphs = headline
-    .split(/\r?\n/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
+  const facts = buildDailyRoomReportFacts(report);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -69,50 +61,50 @@ export const DailyRoomReportModal = ({
           <DialogCloseButton onClick={onClose} />
         </div>
         <div className="daily-report-meta inline-flex items-center gap-2 text-xs font-semibold text-[#4779b8]">
-          <CalendarDays className="h-4 w-4" /> {report.date} · {roomName}
+          <CalendarDays aria-hidden="true" className="h-4 w-4 shrink-0" />
+          <span className="truncate" title={roomName}>
+            {report.date} · {roomName}
+          </span>
         </div>
         <h2
           id="daily-room-report-title"
           className="daily-report-title mt-3 pr-12 text-balance text-[28px] font-bold text-[#172235]"
         >
-          昨日房间
+          昨日回顾
         </h2>
-        <div className="daily-report-narrative">
-          {narrativeParagraphs.map((paragraph, index) => (
-            <p key={index}>{paragraph}</p>
-          ))}
-        </div>
         {highlights.length ? (
-          <section
-            className="daily-report-highlights grid grid-cols-1 gap-3 sm:grid-cols-2"
-            aria-label="昨日亮点"
-          >
-            {highlights.map((highlight) => (
-              <div
-                key={highlight.id}
-                className={`daily-report-highlight rounded-2xl border border-[#d9e8f8] bg-white/55 p-4 ${
-                  highlight.id === "room-title" ? "sm:col-span-2" : ""
-                }`}
-              >
-                <small className="block text-xs font-semibold text-[#7b91aa]">
-                  {highlight.label}
-                </small>
-                <strong className="mt-1.5 block text-pretty text-[15px] font-semibold leading-relaxed text-[#29435f]">
-                  {highlight.value}
-                </strong>
-                {highlight.detail ? (
-                  <span className="mt-2 block text-pretty text-[13px] leading-relaxed text-[#6c839d]">
-                    {highlight.detail}
-                  </span>
-                ) : null}
-              </div>
-            ))}
+          <section className="daily-report-moments" aria-labelledby="daily-room-moments-title">
+            <h3 id="daily-room-moments-title">
+              <MessageCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+              聊了什么
+            </h3>
+            <ul>
+              {highlights.map(({ id, value, detail }) => (
+                <li key={id}>
+                  {detail ? (
+                    <>
+                      <strong>{value}</strong>
+                      <p>{detail}</p>
+                    </>
+                  ) : (
+                    <p>{value}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
           </section>
+        ) : (
+          <p className="mt-4 text-sm text-[#516985]">这天没有可回顾的对话片段。</p>
+        )}
+        {facts.length ? (
+          <ul className="daily-report-facts" aria-label="房间活动">
+            {facts.map((fact) => (
+              <li key={fact}>{fact}</li>
+            ))}
+          </ul>
         ) : null}
-        <div className="sticky bottom-0 -mx-2 mt-4 bg-gradient-to-t from-[#f7fbff] via-[#f7fbff]/95 to-transparent px-2 pt-3">
-          <Button isFullWidth onClick={onClose}>
-            知道了
-          </Button>
+        <div className="mt-5 flex justify-end">
+          <Button onClick={onClose}>返回</Button>
         </div>
       </motion.section>
     </motion.div>,

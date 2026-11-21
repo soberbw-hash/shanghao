@@ -39,6 +39,29 @@ test("daily summary prompt uses only the room's uploaded summaries and rejects s
   assert.equal(store.getHistory(roomA, now)[0]?.commentary, undefined);
 });
 
+test("daily summary keeps a single grounded moment and skips model calls for stats-only reports", async () => {
+  const store = await DailyRoomReportStore.create();
+  const date = "2026-10-01";
+  const eventAt = Date.parse(`${date}T20:00:00+08:00`);
+  store.recordJoin(roomA, "a", "小明", 1, eventAt);
+  let calls = 0;
+  const moment = "小明找到了静音开关，队友终于听见指挥。";
+  const commentary = new DailyRoomCommentaryService(Promise.resolve(store), {
+    isConfigured: () => true,
+    execute: async () => {
+      calls++;
+      return JSON.stringify({ commentary: moment });
+    },
+  });
+  await commentary.ensure(store.getHistory(roomA, now)[0]!);
+  assert.equal(calls, 0);
+  store.publishChronicleRecap(roomA, "moment", moment, eventAt, now);
+  await commentary.ensure(store.getHistory(roomA, now)[0]!);
+  assert.equal(store.getHistory(roomA, now)[0]?.commentary, moment);
+  await commentary.ensure(store.getHistory(roomA, now)[0]!);
+  assert.equal(calls, 1);
+});
+
 test("waiting for summary persistence keeps live game and room counters running", async (t) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "shanghao-report-write-fixture-"));
   t.after(() => rm(directory, { recursive: true, force: true }));

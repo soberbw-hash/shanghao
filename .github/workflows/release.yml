@@ -39,6 +39,7 @@ jobs:
         env:
           ARCHITECTURE_BASE: HEAD^
       - run: pnpm install --frozen-lockfile
+      - run: node apps/desktop/node_modules/electron/install.js
       - shell: bash
         run: bash -n scripts/deploy-relay-ubuntu.sh
       - shell: bash
@@ -65,6 +66,8 @@ jobs:
       - run: pnpm build
       - run: pnpm dist:win
       - run: pnpm release:verify-package
+      # Hosted Windows agents inherit an administrator token even with an asInvoker manifest.
+      - run: node scripts/verify-packaged-screen-capture.mjs --allow-elevated
       - run: pnpm --dir apps/desktop exec electron ../../tools/asset-review/verify.cjs
         env:
           ASSET_STUDIO_TEST_ROOT: ${{ github.workspace }}/apps/desktop/release/win-unpacked/resources/asset-studio

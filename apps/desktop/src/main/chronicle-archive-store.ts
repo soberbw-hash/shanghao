@@ -6,7 +6,7 @@ import { writePrivateFileAtomically } from "./atomic-private-file";
 
 const MAX_ENTRIES = 5000;
 const MAX_BYTES = 8 * 1024 * 1024;
-const validEntry = (value: unknown): value is LocalChronicleEntry => {
+export const isLocalChronicleEntry = (value: unknown): value is LocalChronicleEntry => {
   if (!value || typeof value !== "object") return false;
   const entry = value as LocalChronicleEntry;
   return (
@@ -54,7 +54,7 @@ export class ChronicleArchiveStore {
         data.roomId !== roomId ||
         !Array.isArray(data.entries) ||
         data.entries.length > MAX_ENTRIES ||
-        !data.entries.every(validEntry) ||
+        !data.entries.every(isLocalChronicleEntry) ||
         new Set(data.entries.map((entry: LocalChronicleEntry) => entry.id)).size !==
           data.entries.length
       )
@@ -92,7 +92,11 @@ export class ChronicleArchiveStore {
     return this.run(roomId);
   }
   append(roomId: string, additions: LocalChronicleEntry[]) {
-    if (!Array.isArray(additions) || additions.length > 60 || !additions.every(validEntry))
+    if (
+      !Array.isArray(additions) ||
+      additions.length > 60 ||
+      !additions.every(isLocalChronicleEntry)
+    )
       return Promise.reject(Error("chronicle_archive_invalid"));
     return this.run(roomId, (entries) => {
       const indexed = new Map(entries.map((entry) => [entry.id, entry]));

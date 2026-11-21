@@ -6,9 +6,11 @@
   box-shadow: none;
 }
 
-.recording-library-page .voice-memory-detail header {
+.recording-library-page .voice-memory-detail > header {
   justify-content: space-between;
   gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgb(189 210 234 / 50%);
 }
 
 .voice-memory-header-actions {
@@ -89,7 +91,7 @@
 }
 
 .recording-overview {
-  margin: 6px 0;
+  margin: 8px 0;
   color: #283b51;
 }
 

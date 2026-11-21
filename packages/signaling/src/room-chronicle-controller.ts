@@ -2,17 +2,28 @@ import type {
   ChronicleControlMessage,
   ChronicleAudioMessage,
   ChronicleStateMessage,
+  ChronicleHistoryMessage,
 } from "./protocol";
-import { RoomChronicleSessions } from "./room-chronicle-sessions";
+import type { WebSocket } from "ws";
+import { getRoomChronicleDate } from "@private-voice/shared";
+import type { RoomManager } from "./room-manager";
+import { RoomChronicleSessions, type ChronicleEntry } from "./room-chronicle-sessions";
 import { isTemporaryRoomSessionId } from "../../shared/src/types/temporary-room.types";
 import { RoomChronicleProcessor } from "./room-chronicle-processor";
+import { selectChronicleGameHint } from "./room-chronicle-game-hint";
 import type { CloudAiRuntime } from "./cloud-ai-runtime";
-import type { DailyRoomReportStore } from "./daily-room-report-store";
+import { shiftShanghaiDate, type DailyRoomReportStore } from "./daily-room-report-store";
 
 /** Receives only the room and peer identity established by the signaling connection. */
 export class RoomChronicleController {
   readonly sessions = new RoomChronicleSessions();
   private processor?: RoomChronicleProcessor;
+  private chronicleRolloverTimer?: NodeJS.Timeout;
+  private history?: {
+    rooms: RoomManager;
+    store: DailyRoomReportStore;
+    send: (socket: WebSocket, message: ChronicleHistoryMessage | ChronicleStateMessage) => boolean;
+  };
 
   configure(
     runtime: Pick<CloudAiRuntime, "speechService" | "textService">,
@@ -24,10 +35,21 @@ export class RoomChronicleController {
       this.sessions,
       runtime.speechService,
       runtime.textService,
-      changed,
+      (roomId, entry) => {
+        changed(roomId);
+        if (entry) this.broadcastChronicleEntry(roomId, entry);
+      },
       undefined,
       reports,
       speakerNames,
+      ({ roomId, peerId, gameContext }) => {
+        const peers = this.history?.rooms.getRoom(roomId)?.peers;
+        return selectChronicleGameHint(
+          peers?.getPeer(peerId),
+          peers?.listConnectedPeers() ?? [],
+          gameContext,
+        );
+      },
     );
   }
 
@@ -72,7 +94,77 @@ export class RoomChronicleController {
   }
 
   dispose(): void {
+    clearTimeout(this.chronicleRolloverTimer);
     this.processor?.dispose();
+  }
+
+  async startHistory(
+    rooms: RoomManager,
+    reports: Promise<DailyRoomReportStore>,
+    send: NonNullable<RoomChronicleController["history"]>["send"],
+  ): Promise<void> {
+    const store = await reports;
+    this.history = { rooms, store, send };
+    store.compactChronicleHistory();
+    this.scheduleChronicleRollover();
+  }
+
+  day(): string | undefined {
+    return this.history ? getRoomChronicleDate() : undefined;
+  }
+
+  sendHistory(socket: WebSocket, roomId: string, now = Date.now()): void {
+    const history = this.history;
+    if (!history) return;
+    const day = history.store.getChronicleDay(roomId, now);
+    // Keep even large rooms' whole day within the existing per-message size limit.
+    for (let offset = 0; offset < Math.max(1, day.entries.length); offset += 32) {
+      if (
+        !history.send(socket, {
+          type: "chronicle_history",
+          roomId,
+          date: day.date,
+          entries: day.entries.slice(offset, offset + 32),
+          replace: offset === 0 ? true : undefined,
+        })
+      )
+        break;
+    }
+  }
+
+  private broadcastChronicleEntry(roomId: string, entry: ChronicleEntry): void {
+    const history = this.history;
+    if (!history || isTemporaryRoomSessionId(roomId)) return;
+    const date = getRoomChronicleDate();
+    if (getRoomChronicleDate(entry.at) !== date) return;
+    for (const peer of history.rooms.getRoom(roomId)?.peers.listConnectedPeers() ?? [])
+      history.send(peer.socket, { type: "chronicle_history", roomId, date, entries: [entry] });
+  }
+
+  private scheduleChronicleRollover(): void {
+    const history = this.history;
+    if (!history) return;
+    const now = Date.now();
+    const next = Date.parse(`${shiftShanghaiDate(getRoomChronicleDate(now), 1)}T00:00:00+08:00`);
+    this.chronicleRolloverTimer = setTimeout(
+      () => {
+        const cutoff = Date.now();
+        this.sessions.clearExpiredEntries(getRoomChronicleDate(cutoff));
+        history.store.compactChronicleHistory(cutoff);
+        for (const room of history.rooms.listRooms()) {
+          if (isTemporaryRoomSessionId(room.roomId)) continue;
+          for (const peer of room.peers.listConnectedPeers()) {
+            this.sendHistory(peer.socket, room.roomId, cutoff);
+            const state = this.sessions.snapshot(room.roomId, peer.id);
+            if (state)
+              history.send(peer.socket, { type: "chronicle_state", roomId: room.roomId, state });
+          }
+        }
+        this.scheduleChronicleRollover();
+      },
+      Math.max(1, next - now),
+    );
+    this.chronicleRolloverTimer.unref();
   }
 
   handle(

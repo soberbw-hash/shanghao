@@ -49,7 +49,6 @@ interface SettingsStoreState {
   checkUpdates: () => Promise<UpdateCheckResult>;
   downloadUpdate: () => Promise<void>;
   installUpdate: () => Promise<void>;
-  openReleases: () => Promise<void>;
   resetSettings: () => Promise<void>;
 }
 
@@ -316,9 +315,6 @@ export const useSettingsStore = create<SettingsStoreState>((set, get) => ({
   },
   installUpdate: async () => {
     await desktopApi.updates.install();
-  },
-  openReleases: async () => {
-    await desktopApi.updates.openReleases();
   },
   resetSettings: async () => {
     cancelPendingMemberVolumeSaves();

@@ -1,11 +1,18 @@
 import type {
   ChronicleAudioMessage,
   ChronicleControlMessage,
+  ChronicleHistoryMessage,
   ChronicleStateMessage,
   SignalEnvelope,
 } from "@private-voice/signaling";
+import {
+  getRoomChronicleDate,
+  MAX_DAILY_CHRONICLE_ENTRIES,
+  type RoomChronicleDay,
+} from "@private-voice/shared";
 
 export type ChronicleAudioPart = Omit<ChronicleAudioMessage, "type" | "roomId" | "peerId">;
+export type RoomChronicleViewState = ChronicleStateMessage & { day?: RoomChronicleDay };
 const optedOutSessions = new Set<string>();
 
 /** Additive protocol: never sends a new message to an older server. */
@@ -16,6 +23,7 @@ export class RoomChronicleClient {
   private automaticAttemptAt = 0;
   private automaticJoining = false;
   private lastState?: ChronicleStateMessage["state"];
+  private day?: RoomChronicleDay;
   private readonly pending = new Map<
     string,
     { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
@@ -24,17 +32,63 @@ export class RoomChronicleClient {
     private readonly roomId: string,
     private readonly peerId: string,
     private readonly send: (message: SignalEnvelope) => Promise<void>,
-    private readonly changed?: (message: ChronicleStateMessage) => void,
+    private readonly changed?: (message: RoomChronicleViewState) => void,
   ) {}
 
-  capability(supported: boolean): void {
+  capability(supported: boolean, date?: string): void {
     if (this.disposed) return;
     this.supported = supported;
+    this.day = supported && date ? { date, entries: [] } : undefined;
+    this.lastState = undefined;
     if (!supported) {
-      this.lastState = undefined;
       this.rejectPending("chronicle_unavailable");
     }
-    this.changed?.({ type: "chronicle_state", roomId: this.roomId, available: supported });
+    this.changed?.({
+      type: "chronicle_state",
+      roomId: this.roomId,
+      available: supported,
+      day: this.day,
+    });
+  }
+
+  receiveHistory(message: ChronicleHistoryMessage): void {
+    if (
+      this.disposed ||
+      !this.supported ||
+      message.roomId !== this.roomId ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(message.date) ||
+      !Array.isArray(message.entries) ||
+      message.entries.length > 32 ||
+      (this.day && message.date < this.day.date)
+    )
+      return;
+    const previous = this.day?.date === message.date && !message.replace ? this.day.entries : [];
+    const incoming = message.entries.filter(
+      (entry) =>
+        entry &&
+        typeof entry.id === "string" &&
+        /^[\w-]{1,180}$/.test(entry.id) &&
+        typeof entry.text === "string" &&
+        entry.text.length > 0 &&
+        entry.text.length <= 800 &&
+        Number.isSafeInteger(entry.at) &&
+        entry.at > 0 &&
+        entry.at <= 8.64e15 &&
+        getRoomChronicleDate(entry.at) === message.date,
+    );
+    const entries = [
+      ...new Map([...previous, ...incoming].map((entry) => [entry.id, entry])).values(),
+    ]
+      .sort((a, b) => a.at - b.at)
+      .slice(-MAX_DAILY_CHRONICLE_ENTRIES);
+    this.day = { date: message.date, entries };
+    this.changed?.({
+      type: "chronicle_state",
+      roomId: this.roomId,
+      available: true,
+      state: this.lastState,
+      day: this.day,
+    });
   }
 
   receive(message: ChronicleStateMessage): void {
@@ -50,6 +104,7 @@ export class RoomChronicleClient {
     this.changed?.({
       ...message,
       state: message.error && !message.state ? this.lastState : message.state,
+      day: this.day,
       available: this.supported,
     });
   }

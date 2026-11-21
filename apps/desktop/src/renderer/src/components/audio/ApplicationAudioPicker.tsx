@@ -14,6 +14,7 @@ import type { ApplicationAudioSource } from "@private-voice/shared";
 import { musicApplicationName } from "@private-voice/shared";
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
+import { ApplicationAudioGlassRim } from "./ApplicationAudioGlassRim";
 
 interface Props {
   open: boolean;
@@ -59,6 +60,7 @@ export function ApplicationAudioPicker(props: Props) {
     <dialog
       ref={dialog}
       className="application-audio-dialog"
+      data-sharing={Boolean(props.sharingName)}
       aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault();
@@ -71,18 +73,19 @@ export function ApplicationAudioPicker(props: Props) {
         </span>
         <div>
           <h2 id={titleId}>一起听歌</h2>
-          <p>选择音乐应用，把正在播放的歌放给朋友听。</p>
+          {!props.sharingName ? <p>选择音乐应用，把正在播放的歌放给朋友听。</p> : null}
         </div>
         <DialogCloseButton label="关闭放歌窗口" onClick={close} />
       </header>
       {props.sharingName ? (
         <section className="application-audio-sharing" aria-label="正在放歌">
           <span className="application-audio-sharing-icon">
-            <Volume2 size={36} aria-hidden="true" />
+            <Volume2 size={26} aria-hidden="true" />
           </span>
-          <span className="application-audio-sharing-label">正在放歌</span>
-          <h3>{props.sharingName}</h3>
-          <p>你可以继续使用麦克风说话。</p>
+          <div className="application-audio-sharing-copy">
+            <p className="application-audio-sharing-label">正在放歌</p>
+            <h3>{props.sharingName}</h3>
+          </div>
           <label className="application-audio-gain">
             音乐音量 <output>{Math.round(props.gain * 100)}%</output>
             <input
@@ -191,6 +194,7 @@ export function ApplicationAudioPicker(props: Props) {
           </>
         )}
       </footer>
+      <ApplicationAudioGlassRim dialog={dialog} />
     </dialog>,
     document.body,
   );

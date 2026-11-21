@@ -8,7 +8,7 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看最近版本更新](#最近版本更新) · [v3.4.22 完整说明](./docs/release-notes/v3.4.22.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看最近版本更新](#最近版本更新) · [v3.4.23 完整说明](./docs/release-notes/v3.4.23.md) · [看技术结构](#声音到底经过了什么)
 
 ![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
 
@@ -233,6 +233,10 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 这里仅列出最近三个正式版本。更早版本的功能已按主题整合进上方的功能总览，不再逐版重复；完整历史仍可在 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases) 查看。
 
+### 3.4.23
+
+修复 Windows 正式版选中显示器后无法启动采集的问题。聊天链接尺寸统一，房间纪事按日共享，设置和录音库减少了冗余信息。[完整说明](./docs/release-notes/v3.4.23.md)
+
 ### 3.4.22
 
 改进屏幕分享选源、房间转录与记忆称呼。更新进度窗可以拖动，单链接消息合为一张带站点图标的卡片。新增 8 段快捷音乐，上号素材支持按包试听。[完整说明](./docs/release-notes/v3.4.22.md)
@@ -241,13 +245,9 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 改善房间纪事、成员状态和房间管理，修复开发版热更新时可能影响屏幕分享的问题。[完整说明](./docs/release-notes/v3.4.21.md)
 
-### 3.4.20
-
-改善房间管理、对话回溯和设置界面，适配和平精英模拟器，并完善临时联机与录音转录体验。[完整说明](./docs/release-notes/v3.4.20.md)
-
 ## 下载与使用
 
-当前仓库版本为 **3.4.22**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.22 更新公告](./docs/release-notes/v3.4.22.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.23**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.23 更新公告](./docs/release-notes/v3.4.23.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 

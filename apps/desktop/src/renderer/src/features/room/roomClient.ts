@@ -649,6 +649,9 @@ export class RoomClient {
       case "chronicle_state":
         this.chronicle.receive(payload);
         return;
+      case "chronicle_history":
+        this.chronicle.receiveHistory(payload);
+        return;
       case "replay_state":
         this.replay.receive(payload);
         return;
@@ -813,7 +816,7 @@ export class RoomClient {
 
     this.joinAckReceived = true;
     this.serverBuildNumber = payload.buildNumber;
-    this.chronicle.capability(payload.chronicleSupported === true);
+    this.chronicle.capability(payload.chronicleSupported === true, payload.chronicleDay);
     this.replay.capability(payload.replaySupported === true);
     this.reconnectSessionToken = payload.sessionToken;
     this.hasJoinedOnce = true;

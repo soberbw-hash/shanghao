@@ -159,15 +159,9 @@ app.whenReady().then(async () => {
       check(retryRequest.manual===true&&retryRequest.transcribe===true&&retryRequest.organize===true&&retryRequest.restartTranscription===true,'existing cloud recording did not request transcription with automatic organization');
       window.dispatchEvent(new Event('fixture-show-hybrid'));await pause(150);
       window.dispatchEvent(new Event('fixture-show-unexamined'));await pause(100);
-      const quiet=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent.includes('查看待复核区间'));
-      check(quiet,'uncertain audio review is missing');quiet.querySelector('summary').click();
-      const quietRange=[...quiet.querySelectorAll('button')].find(b=>b.textContent.includes('低音量，回听确认'));
-      check(quietRange,'quiet range missing');quietRange.click();await pause(30);
-      check(document.documentElement.dataset.transcriptSeekMs==='0','quiet range lost its original offset');
-      const gap=[...document.querySelectorAll('details')].find(d=>d.querySelector('summary')?.textContent.includes('未检查区间'));
-      check(gap && gap.textContent.includes('测试成员') && gap.textContent.includes('回听混音'),'unexamined member audio is not displayed');
-      gap.querySelector('summary').click();gap.querySelector('button').click();await pause(30);
-      check(document.documentElement.dataset.transcriptSeekMs==='2100','unexamined range lost its original audio offset');
+      const detail=document.querySelector('.voice-memory-detail');
+      check(detail?.querySelector('.recording-processing-settings'),'transcription controls are missing');
+      check(!/查看待复核区间|查看未检查区间/.test(detail.textContent),'diagnostic ranges leaked into the reading view');
       window.dispatchEvent(new Event('fixture-clear-unexamined'));await pause(100);
       const fuse=[...document.querySelectorAll('.voice-memory-header-actions button')].find(b=>b.textContent.includes('融合校对'));
       check(fuse,'saved cloud and local originals have no fusion action');

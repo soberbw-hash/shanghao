@@ -74,7 +74,7 @@ import {
   normalizeAvatar,
 } from "./room-member-placement";
 import { SessionTokenStore } from "./session-token-store";
-import { DailyRoomReportStore } from "./daily-room-report-store";
+import type { DailyRoomReportStore } from "./daily-room-report-store";
 import { CloudAiRuntime } from "./cloud-ai-runtime";
 import { AccountHttpController } from "./account-http-controller";
 import { PhoneMicBridge } from "./phone-mic-bridge";
@@ -130,6 +130,7 @@ const SERVER_ONLY_MESSAGE_TYPES = new Set([
   "daily_room_reports",
   "recording_recap_published",
   "room_collection_snapshot",
+  "chronicle_history",
   "avatar_update",
   "cloud_ai_response",
   "error",
@@ -433,8 +434,10 @@ export class SignalingServer extends EventEmitter {
 
   async listen(): Promise<number> {
     await this.roomDirectory;
+    const send = this.safeSend.bind(this);
+    if (!this.options.temporaryOnly)
+      await this.chronicle.startHistory(this.roomManager, this.dailyRoomReports, send);
     const preferredPort = this.options.port ?? 0;
-
     try {
       await this.listenOnPort(preferredPort);
     } catch (error) {
@@ -483,9 +486,7 @@ export class SignalingServer extends EventEmitter {
   async close(): Promise<void> {
     this.chronicle.dispose();
     this.replay.consent.clear();
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-    }
+    clearInterval(this.heartbeatTimer);
 
     for (const client of this.wss.clients) {
       client.close();
@@ -1119,6 +1120,7 @@ export class SignalingServer extends EventEmitter {
 
     const joinAck: JoinAckMessage = {
       chronicleSupported: !this.options.temporaryOnly,
+      chronicleDay: temporaryRoom ? undefined : this.chronicle.day(),
       replaySupported: !this.options.temporaryOnly,
       type: "join_ack",
       roomId: room.roomId,
@@ -1138,6 +1140,7 @@ export class SignalingServer extends EventEmitter {
     void this.sendChatHistory(socket, room.roomId);
     void this.sendRoomCollection(socket, room.roomId);
     this.broadcastSnapshot(message.roomId);
+    if (joinAck.chronicleDay) this.chronicle.sendHistory(socket, room.roomId);
   }
 
   private handleLeave(socket: WebSocket, message: LeaveChannelMessage): void {

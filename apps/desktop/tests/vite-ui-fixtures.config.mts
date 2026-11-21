@@ -9,13 +9,16 @@ export default defineConfig({
   build: {
     outDir: path.resolve("../../artifacts/native-ui"),
     emptyOutDir: false,
-    rollupOptions: { input: {
-      background: path.resolve("tests/fixtures/background-audio.static.html"),
-      replay: path.resolve("tests/fixtures/replay-library.static.html"),
-      chronicle: path.resolve("tests/fixtures/room-chronicle.static.html"),
-      voiceReplay: path.resolve("tests/fixtures/voice-replay.static.html"),
-      memberStatus: path.resolve("tests/fixtures/member-status.static.html"),
-      audioPresets: path.resolve("tests/fixtures/audio-device-presets.static.html"),
-    } },
+    rollupOptions: {
+      input: {
+        background: path.resolve("tests/fixtures/background-audio.static.html"),
+        replay: path.resolve("tests/fixtures/replay-library.static.html"),
+        chronicle: path.resolve("tests/fixtures/room-chronicle.static.html"),
+        roomEffects: path.resolve("tests/fixtures/room-effects.static.html"),
+        voiceReplay: path.resolve("tests/fixtures/voice-replay.static.html"),
+        memberStatus: path.resolve("tests/fixtures/member-status.static.html"),
+        audioPresets: path.resolve("tests/fixtures/audio-device-presets.static.html"),
+      },
+    },
   },
 });

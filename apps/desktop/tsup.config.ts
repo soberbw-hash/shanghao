@@ -8,6 +8,7 @@ export default defineConfig({
   entry: {
     "main/index": path.join(currentDirectory, "src/main/entry.ts"),
     "main/app": path.join(currentDirectory, "src/main/index.ts"),
+    "main/screen-capture-probe": path.join(currentDirectory, "src/main/screen-capture-probe.ts"),
     "preload/index": path.join(currentDirectory, "src/preload/index.ts"),
     "preload/overlay": path.join(currentDirectory, "src/preload/overlay.ts"),
     "preload/screen-share-viewer": path.join(

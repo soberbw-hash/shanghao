@@ -1,0 +1,139 @@
+.room-list-viewport {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.room-list-viewport[data-room-list-edge="true"] {
+  --room-list-edge-depth: 36px;
+}
+
+.room-list-viewport[data-room-list-edge="true"] > :is(.chat-message-list, .room-chronicle-entries) {
+  padding-block-end: var(--room-list-edge-depth);
+  scroll-padding-block-end: var(--room-list-edge-depth);
+  /* Fade the messages themselves before the scroll clip, including on a busy background. */
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--room-list-edge-depth) * 0.65),
+    transparent
+  );
+}
+
+.room-list-viewport[data-room-list-edge="true"]::before,
+.room-list-viewport[data-room-list-edge="true"]::after {
+  position: absolute;
+  z-index: 2;
+  inset-inline: 0 8px;
+  bottom: 0;
+  height: var(--room-list-edge-depth);
+  backdrop-filter: blur(5px);
+  /* Taper the blur back to the real room background before the composer. */
+  mask-image:
+    linear-gradient(to bottom, transparent, #000 58%, transparent),
+    linear-gradient(to right, transparent, #000 8px calc(100% - 8px), transparent);
+  mask-composite: intersect;
+  pointer-events: none;
+  content: "";
+}
+
+.room-list-viewport[data-room-list-edge="true"]::after {
+  height: calc(var(--room-list-edge-depth) * 0.62);
+  backdrop-filter: blur(15px);
+}
+
+.temporary-chat-panel .chat-composer {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  width: min(86%, 480px);
+  max-width: 100%;
+  margin: 2px auto 0;
+  padding: 3px;
+  border: 1px solid rgb(166 196 230 / 65%);
+  border-radius: 28px;
+  background: rgb(248 252 255 / 88%);
+  box-shadow: 0 3px 12px rgb(53 92 138 / 10%);
+  transition:
+    width var(--duration-fast) var(--ease-out),
+    border-radius var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.temporary-chat-panel .chat-composer:is(:focus-within, [data-has-draft="true"]) {
+  width: 100%;
+  border-radius: 16px;
+  background: #f8fcff;
+}
+
+.temporary-chat-panel .chat-composer:focus-within {
+  box-shadow: 0 0 0 2px rgb(76 150 235 / 50%);
+}
+
+.temporary-chat-panel .chat-composer input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  border-radius: inherit;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.temporary-chat-panel .chat-composer .chat-send-button {
+  border-radius: 14px;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.temporary-chat-panel .chat-composer .chat-send-button:disabled {
+  transform: scale(0.9);
+}
+
+.temporary-chat-panel .chat-composer .chat-send-button:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.temporary-chat-panel .chat-composer[data-reduce-motion="true"],
+.temporary-chat-panel .chat-composer[data-reduce-motion="true"] .chat-send-button {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .temporary-chat-panel .chat-composer,
+  .temporary-chat-panel .chat-composer .chat-send-button {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .temporary-chat-panel .chat-composer:focus-within {
+    outline: 2px solid Highlight;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .room-list-viewport[data-room-list-edge="true"] {
+    --room-list-edge-depth: 8px;
+  }
+
+  .room-list-viewport[data-room-list-edge="true"]
+    > :is(.chat-message-list, .room-chronicle-entries) {
+    mask-image: none;
+  }
+
+  .room-list-viewport[data-room-list-edge="true"]::before,
+  .room-list-viewport[data-room-list-edge="true"]::after {
+    display: none;
+  }
+}
+
+.room-page .chat-message-name,
+.room-page .chat-link-preview-copy small {
+  color: #526880;
+}

@@ -547,7 +547,8 @@
 
 .chat-link-preview {
   display: grid;
-  width: min(238px, 100%);
+  width: 238px;
+  max-width: 100%;
   min-height: 58px;
   grid-template-columns: 42px minmax(0, 1fr) 14px;
   align-items: center;
