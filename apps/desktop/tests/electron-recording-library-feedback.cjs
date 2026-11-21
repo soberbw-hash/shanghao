@@ -196,7 +196,7 @@ app.whenReady().then(async () => {
         const overview=document.querySelector('.recording-overview'), paragraph=document.querySelector('.transcript-paragraph');
         const first=paragraph.getBoundingClientRect(), panel=document.querySelector('.recording-library-panel').getBoundingClientRect();
         if(overview.getBoundingClientRect().height>40)throw Error('empty summary became a large panel');
-        if(first.top>panel.top+280)throw Error('summary state pushes transcript below first screen');
+        if(first.top>panel.top+280)throw Error('summary state pushes transcript below first screen: '+JSON.stringify({state:'${state}',viewport:[innerWidth,innerHeight],offset:first.top-panel.top,items:[...document.querySelector('.voice-memory-detail').children].map(item=>[item.className,item.getBoundingClientRect().height])}));
         if(document.querySelector('.voice-memory-audio-trajectory'))throw Error('decorative processing block restored');
         const details=document.querySelector('.recording-game-context');
         if(details)throw Error('game context controls occupy the transcript view');
