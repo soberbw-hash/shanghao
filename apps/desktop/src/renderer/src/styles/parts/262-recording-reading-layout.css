@@ -5,16 +5,13 @@
   margin-top: 0;
   padding-top: 8px;
 }
-.recording-player-heading {
+.recording-player-heading,
+.recording-player-title {
   flex: 1;
   overflow: hidden;
 }
 .recording-player-heading > :first-child {
   flex: 1;
-}
-.recording-player-title {
-  flex: 1;
-  overflow: hidden;
 }
 .recording-player-datetime {
   flex-shrink: 1;
@@ -188,7 +185,6 @@
     display: none;
   }
 }
-
 @media (max-height: 800px) {
   .settings-page--recording-library {
     padding-bottom: 12px;
