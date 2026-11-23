@@ -1,8 +1,7 @@
 import { isChannelCode, isPrivateRoomId } from "../types/private-room.types";
 import { OFFICIAL_RELAY_SERVER_URL } from "../constants/app";
 
-export const OFFICIAL_WEBSITE_URL =
-  "https://shanghao-d3ga95tc8224e727a-1315451893.tcloudbaseapp.com";
+export const OFFICIAL_WEBSITE_URL = "https://soberbw-hash.github.io/shanghao";
 
 export interface PrivateRoomInvitation {
   roomId: string;
@@ -66,7 +65,7 @@ export const privateRoomInvitationParams = (invite: PrivateRoomInvitation): URLS
 };
 
 export const privateRoomInvitationUrl = (invite: PrivateRoomInvitation): string =>
-  `${OFFICIAL_WEBSITE_URL}/join#${privateRoomInvitationParams(invite)}`;
+  `${OFFICIAL_WEBSITE_URL}/join/#${privateRoomInvitationParams(invite)}`;
 
 export const privateRoomInvitationDeepLink = (invite: PrivateRoomInvitation): string =>
   `shanghao://join?${privateRoomInvitationParams(invite)}`;

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build && node scripts/copy-404.mjs",
+    "build:pages": "tsc --noEmit && vite build --base /shanghao/ && node scripts/copy-404.mjs --pages",
     "preview": "vite preview",
     "release:prepare": "node scripts/prepare-release.mjs",
     "release:activate": "node scripts/prepare-release.mjs --activate"

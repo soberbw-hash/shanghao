@@ -1,9 +1,26 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import {
+  parsePrivateRoomInvitation,
+  privateRoomInvitationUrl,
+} from "../../../packages/shared/src/utils/roomInvite";
 
 const read = (file: string) =>
   readFile(new URL(`../src/renderer/src/${file}`, import.meta.url), "utf8");
+
+test("private room invitation opens the Pages join route with its room data in the fragment", () => {
+  const invite = {
+    roomId: `room_${"1".repeat(32)}`,
+    channelCode: "123456",
+    roomName: "开黑演示",
+    serverUrl: "wss://relay.example.com/",
+  };
+  const url = new URL(privateRoomInvitationUrl(invite));
+  assert.equal(url.origin + url.pathname, "https://soberbw-hash.github.io/shanghao/join/");
+  assert.equal(url.search, "");
+  assert.deepEqual(parsePrivateRoomInvitation(new URLSearchParams(url.hash.slice(1))), invite);
+});
 
 test("room header shares compact actions and keeps channel codes in invitation rather than chrome", async () => {
   const topbar = await read("components/layout/TopStatusBar.tsx");

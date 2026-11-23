@@ -9,11 +9,21 @@ corepack pnpm run dev
 corepack pnpm run build
 ```
 
-The site reads the latest public GitHub Release at runtime. No CloudBase
-publishable key is needed by this informational site, and no secret belongs in
-this directory. The live site uses CloudBase static hosting at the root path.
-For a formal release, run these commands from this folder after the GitHub
-Release has been published:
+The GitHub Pages build serves the homepage, `/shanghao/download/` and
+`/shanghao/join/` under `https://soberbw-hash.github.io/shanghao/`. It reads the
+latest public stable GitHub Release at build time and uses its versioned
+installer URL and SHA-256 digest. Installer files stay in GitHub Releases.
+The Website Pages workflow publishes site changes and refreshes the download
+page after a successful Release workflow. For a manual refresh, run Website Pages.
+
+```powershell
+corepack pnpm build:pages
+```
+
+The default build still supports the legacy CloudBase root site and versioned
+download mirrors. The static site does not need an account configuration.
+If the CloudBase mirror needs a refresh, run these commands from this folder
+after the GitHub Release has been published:
 
 ```powershell
 corepack pnpm release:prepare
