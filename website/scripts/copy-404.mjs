@@ -1,5 +1,9 @@
 import { copyFile, cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 
+const pages = process.argv.includes("--pages");
+const base = pages ? "/shanghao/" : "/";
+const repository = "https://github.com/soberbw-hash/shanghao";
+
 // Versioned installers are deployed separately after checksum verification.
 // Keep local historical downloads intact without copying them into homepage builds.
 for (const entry of await readdir("public", { withFileTypes: true })) {
@@ -15,16 +19,52 @@ const escapeHtml = (value) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character],
   );
 
-const release = JSON.parse(await readFile("public/release.json", "utf8"));
+async function readGitHubRelease() {
+  const token = process.env.GH_TOKEN;
+  const response = await fetch("https://api.github.com/repos/soberbw-hash/shanghao/releases/latest", {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error(`GitHub release lookup failed (${response.status}).`);
+
+  const latest = await response.json();
+  if (latest.draft || latest.prerelease || !/^v\d+\.\d+\.\d+$/.test(latest.tag_name)) {
+    throw new Error("Expected a stable GitHub release.");
+  }
+  const name = `ShangHao-${latest.tag_name.slice(1)}-Setup-x64.exe`;
+  const installer = latest.assets?.find((item) => item.name === name);
+  return {
+    tag_name: latest.tag_name,
+    published_at: latest.published_at,
+    html_url: latest.html_url,
+    highlights: (latest.body ?? "")
+      .split(/\r?\n/)
+      .flatMap((line) => /^- \*\*(.+?)\*\*\s+(.+)$/.exec(line)?.slice(1).join(" ") ?? []),
+    assets: [
+      {
+        name,
+        browser_download_url: installer?.browser_download_url,
+        size: installer?.size,
+        sha256: /^sha256:([a-f0-9]{64})$/.exec(installer?.digest ?? "")?.[1],
+      },
+    ],
+  };
+}
+
+const release = pages
+  ? await readGitHubRelease()
+  : JSON.parse(await readFile("public/release.json", "utf8"));
 const asset = release.assets?.[0];
+const releasePath = `${repository}/releases`;
 if (
   !/^v\d+\.\d+\.\d+$/.test(release.tag_name) ||
   !/^ShangHao-\d+\.\d+\.\d+-Setup-x64\.exe$/.test(asset?.name ?? "") ||
   asset.name !== `ShangHao-${release.tag_name.slice(1)}-Setup-x64.exe` ||
-  asset.mirror_path !== `/downloads/${release.tag_name}/${asset.name}` ||
-  !/^https:\/\/github\.com\/soberbw-hash\/shanghao\/releases\/tag\/v\d+\.\d+\.\d+$/.test(
-    release.html_url,
-  ) ||
+  asset.browser_download_url !== `${releasePath}/download/${release.tag_name}/${asset.name}` ||
+  (!pages && asset.mirror_path !== `/downloads/${release.tag_name}/${asset.name}`) ||
+  release.html_url !== `${releasePath}/tag/${release.tag_name}` ||
+  !Number.isSafeInteger(asset.size) ||
+  asset.size <= 0 ||
   !/^[a-f0-9]{64}$/.test(asset.sha256)
 ) {
   throw new Error("The download page requires a verified, version-matched release manifest.");
@@ -35,7 +75,9 @@ const highlights = Array.isArray(release.highlights)
   : [];
 const publishedDate = /^\d{4}-\d{2}-\d{2}/.exec(release.published_at)?.[0] ?? "";
 const size = (asset.size / 1024 / 1024).toFixed(1);
+const download = pages ? asset.browser_download_url : asset.mirror_path;
 
+if (pages) await writeFile("dist/release.json", `${JSON.stringify(release, null, 2)}\n`);
 await copyFile("dist/index.html", "dist/404.html");
 await mkdir("dist/join", { recursive: true });
 await copyFile("dist/join.html", "dist/join/index.html");
@@ -46,7 +88,7 @@ await writeFile(
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" href="/brand-mark.png" type="image/png" />
+  <link rel="icon" href="${base}brand-mark.png" type="image/png" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#eaf3ff" />
   <meta name="description" content="下载上号 ${escapeHtml(release.tag_name)} Windows 正式版，查看更新亮点与 SHA-256 校验信息。" />
@@ -63,14 +105,14 @@ await writeFile(
 </head>
 <body>
   <div class="shell">
-    <header class="top"><a class="brand" href="/"><img src="/brand-mark.png" alt="" />上号 <span aria-hidden="true">/</span> SHANGHAO</a><a href="/">返回首页 ↗</a></header>
+    <header class="top"><a class="brand" href="${base}"><img src="${base}brand-mark.png" alt="" />上号</a><a href="${base}">返回首页</a></header>
     <main>
       <div class="layout">
-        <section class="card main" aria-labelledby="version"><div class="eyebrow">WINDOWS 10 / 11 · X64</div><h1 class="version" id="version">上号 ${escapeHtml(release.tag_name)}</h1><p class="lead">最新正式版已就绪。选择下载后才会保存安装包，不会自动安装或覆盖旧版本。</p><a class="download" href="${escapeHtml(asset.mirror_path)}" download="${escapeHtml(asset.name)}">下载 Windows 安装包 ↓</a><div class="meta"><span>${escapeHtml(asset.name)}</span><span>${escapeHtml(size)} MB</span>${publishedDate ? `<span>发布于 ${escapeHtml(publishedDate)}</span>` : ""}</div></section>
+        <section class="card main" aria-labelledby="version"><div class="eyebrow">WINDOWS 10 / 11 · X64</div><h1 class="version" id="version">上号 ${escapeHtml(release.tag_name)}</h1><p class="lead">下载后打开安装包，按提示安装或更新。</p><a class="download" href="${escapeHtml(download)}"${pages ? "" : ` download="${escapeHtml(asset.name)}"`}>下载 Windows 安装包 ↓</a><div class="meta"><span>${escapeHtml(size)} MB</span>${publishedDate ? `<span>发布于 ${escapeHtml(publishedDate)}</span>` : ""}</div></section>
         <aside class="card side"><h2>这一版，更新了什么？</h2><ul>${highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>查看完整更新说明，了解本版修复与改进。</li>"}</ul><a href="${escapeHtml(release.html_url)}" rel="noopener noreferrer">查看完整更新说明 ↗</a></aside>
       </div>
       <details class="card checksum"><summary>核对安装包 SHA-256</summary><code>${escapeHtml(asset.sha256)}</code></details>
-      <p class="foot">如果腾讯云下载缓慢，可从 <a href="${escapeHtml(asset.browser_download_url)}" rel="noopener noreferrer">GitHub Release 备用下载</a>。安装或更新需由你确认；自动化验证不能代替真实多设备体验。</p>
+      ${pages ? "" : `<p class="foot">也可通过 <a href="${escapeHtml(asset.browser_download_url)}" rel="noopener noreferrer">GitHub 下载安装包</a>。</p>`}
     </main>
   </div>
 </body>

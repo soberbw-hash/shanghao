@@ -3,12 +3,12 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"/>
-<link rel="icon" href="/brand-mark.png" type="image/png"/>
+<link rel="icon" href="%BASE_URL%brand-mark.png" type="image/png"/>
 <meta content="width=device-width,initial-scale=1" name="viewport"/>
 <meta content="#ffffff" name="theme-color"/>
-<meta content="上号是一款开黑房。语音、聊天、录音，都在这。" name="description"/>
+<meta content="上号是 Windows 开黑房，支持房间语音、屏幕分享、快捷音效和录音转录。" name="description"/>
 <meta content="上号｜开黑房" property="og:title"/>
-<meta content="语音、聊天、录音，都在这。" property="og:description"/>
+<meta content="房间语音、屏幕分享、快捷音效和录音转录。" property="og:description"/>
 <meta content="website" property="og:type"/>
 <title>上号｜开黑房</title>
 <style>
@@ -22,6 +22,7 @@
   --line:#e7e9ee;
   --font:"PingFang SC","SF Pro Display","Segoe UI Variable","Noto Sans SC","Microsoft YaHei",sans-serif;
 }
+a:focus-visible{outline:2px solid #0669ef;outline-offset:4px}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;color:var(--ink);background:#fff;font-family:var(--font);font-synthesis:none;text-rendering:optimizeLegibility}
@@ -314,29 +315,27 @@ img{display:block;max-width:100%}
 <header class="site-nav">
 <div class="shell nav-inner">
 <a aria-label="上号首页" class="brand" href="#top">
-<img alt="上号" src="/brand-mark.png"/>
+<img alt="" src="%BASE_URL%brand-mark.png" width="31" height="31"/>
 <span class="brand-text"><small>SHANGHAO</small><strong>上号</strong></span>
 </a>
 <nav class="nav-links">
 <a href="#quick">功能</a>
-<a href="https://github.com/soberbw-hash/shanghao">GitHub</a>
-<a class="nav-download" href="https://shanghao-d3ga95tc8224e727a-1315451893.tcloudbaseapp.com/download">下载</a>
+<a class="nav-download" href="%BASE_URL%download/">下载</a>
 </nav>
 </div>
 </header>
 <main>
 <section class="hero">
 <div class="shell">
-<div class="hero-label reveal">开黑房</div>
 <h1 class="reveal">上号，开黑。</h1>
-<p class="hero-lede reveal">语音、聊天、录音，都在这。</p>
+<p class="hero-lede reveal">和朋友开麦、聊天、分享屏幕。想回听时，在录音库里找。</p>
 <div class="hero-actions reveal">
-<a class="btn btn-primary" href="https://shanghao-d3ga95tc8224e727a-1315451893.tcloudbaseapp.com/download">下载 Windows 版</a>
-<a class="text-link" href="https://github.com/soberbw-hash/shanghao">GitHub ↗</a>
+<a class="btn btn-primary" href="%BASE_URL%download/">下载 Windows 版</a>
+<a class="text-link" href="#quick">看看功能 ↓</a>
 </div>
 <div class="hero-note reveal">Windows 10 / 11 · 免费下载</div>
 <div class="hero-stage reveal">
-<img alt="上号语音房界面演示" decoding="async" fetchpriority="high" src="/screens/room-showcase.webp"/>
+<img alt="上号语音房，右侧是聊天和快捷消息，底部可开启屏幕分享或录音" decoding="async" fetchpriority="high" width="1680" height="1051" src="%BASE_URL%screens/room-showcase.webp"/>
 </div>
 </div>
 </section>
@@ -345,11 +344,10 @@ img{display:block;max-width:100%}
 <div class="copy reveal">
 <div class="eyebrow">快捷消息</div>
 <h2>常用的，点一下。</h2>
-<p>短句、音效，随手发。</p>
-<div class="meta">快捷键 · 实时试听 · 音频包</div>
+<p>开麦前发句「等我」，打出好配合就放段小曲。常用短句和音频可以自己排。</p>
 </div>
 <div class="visual reveal">
-<img alt="上号快捷消息与快捷音频设置界面" decoding="async" loading="lazy" src="/screens/quick-message-slots.webp"/>
+<img alt="上号快捷消息设置，支持排列短句和快捷音频" decoding="async" loading="lazy" width="1440" height="901" src="%BASE_URL%screens/quick-message-slots.webp"/>
 </div>
 </div>
 </section>
@@ -357,11 +355,11 @@ img{display:block;max-width:100%}
 <div class="shell story-grid reverse">
 <div class="copy reveal">
 <div class="eyebrow">房间记录</div>
-<h2>昨天聊了啥，一眼就知道。</h2>
-<p>谁来过，聊了多久。</p>
+<h2>翻到聊过的那一段。</h2>
+<p>房间纪事按时间记录聊天要点。第二天打开回顾，看看聊了什么、约好了什么。</p>
 </div>
 <div class="visual focus reveal">
-<img alt="上号昨日房间回顾" decoding="async" loading="lazy" src="/screens/daily-report-demo.png"/>
+<img alt="上号昨日房间回顾，展示聊天要点和下次约定示例" decoding="async" loading="lazy" width="1280" height="720" src="%BASE_URL%screens/daily-report-demo.png"/>
 </div>
 </div>
 </section>
@@ -369,22 +367,19 @@ img{display:block;max-width:100%}
 <div class="shell story-grid">
 <div class="copy reveal">
 <div class="eyebrow">录音与转录</div>
-<h2>想整理，再转录。</h2>
-<p>录音留在本地，需要时再转录。</p>
-<div class="meta">本地保存 · 模型可换</div>
+<h2>看到哪句，就回听哪句。</h2>
+<p>录音保存在本机，可自动转录。点文字稿的时间戳回听原声，也能剪下想留下的片段。</p>
 </div>
 <div class="visual reveal">
-<img alt="上号录音库与转录界面演示" decoding="async" loading="lazy" src="/screens/recordings-v3.4.15-demo.webp"/>
+<img alt="上号录音库，显示播放进度及带时间戳的示例文字稿" decoding="async" loading="lazy" width="1440" height="1080" src="%BASE_URL%screens/recording-library.webp"/>
 </div>
 </div>
 </section>
 <section class="final">
 <div class="shell">
-<h2 class="reveal">上号，直接聊。</h2>
-<p class="reveal">Windows 10 / 11 · 免费下载</p>
+<h2 class="reveal">开个房，喊朋友来。</h2>
 <div class="hero-actions reveal">
-<a class="btn btn-primary" href="https://shanghao-d3ga95tc8224e727a-1315451893.tcloudbaseapp.com/download">下载 Windows 版</a>
-<a class="text-link" href="https://github.com/soberbw-hash/shanghao">GitHub ↗</a>
+<a class="btn btn-primary" href="%BASE_URL%download/">下载 Windows 版</a>
 </div>
 </div>
 </section>
@@ -392,13 +387,11 @@ img{display:block;max-width:100%}
 <footer class="footer">
 <div class="shell footer-inner">
 <a class="brand" href="#top">
-<img alt="上号" src="/brand-mark.png"/>
+<img alt="" src="%BASE_URL%brand-mark.png" width="31" height="31"/>
 <span class="brand-text"><small>SHANGHAO</small><strong>上号</strong></span>
 </a>
-<span>桌面开黑房</span>
 <div class="footer-links">
-<a href="https://github.com/soberbw-hash/shanghao">GitHub</a>
-<a href="https://shanghao-d3ga95tc8224e727a-1315451893.tcloudbaseapp.com/download">下载</a>
+<a href="%BASE_URL%download/">下载</a>
 </div>
 </div>
 </footer>

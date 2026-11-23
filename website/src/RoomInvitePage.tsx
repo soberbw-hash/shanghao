@@ -79,7 +79,7 @@ export function RoomInvitePage() {
         </p>
         <div className="invite-download">
           <span>还没安装上号？</span>
-          <a href="/download" target="_blank" rel="noopener noreferrer">
+          <a href={`${import.meta.env.BASE_URL}download/`} target="_blank" rel="noopener noreferrer">
             <Download size={15} aria-hidden="true" />
             下载安装
           </a>
