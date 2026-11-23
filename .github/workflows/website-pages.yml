@@ -2,7 +2,7 @@ name: Website Pages
 
 on:
   push:
-    branches: [main, codex/website-pages]
+    branches: [main]
     paths:
       - "website/**"
       - "packages/shared/src/utils/roomInvite.ts"
