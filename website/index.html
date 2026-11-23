@@ -1,415 +1,142 @@
-<!DOCTYPE html>
-
+<!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="utf-8"/>
-<link rel="icon" href="%BASE_URL%brand-mark.png" type="image/png"/>
-<meta content="width=device-width,initial-scale=1" name="viewport"/>
-<meta content="#ffffff" name="theme-color"/>
-<meta content="上号是 Windows 开黑房，支持房间语音、屏幕分享、快捷音效和录音转录。" name="description"/>
-<meta content="上号｜开黑房" property="og:title"/>
-<meta content="房间语音、屏幕分享、快捷音效和录音转录。" property="og:description"/>
-<meta content="website" property="og:type"/>
-<title>上号｜开黑房</title>
-<style>
-:root{
-  --ink:#0b1220;
-  --muted:#6e7889;
-  --quiet:#969eaa;
-  --blue:#1677ff;
-  --blue-hover:#0669ef;
-  --soft:#f5f5f7;
-  --line:#e7e9ee;
-  --font:"PingFang SC","SF Pro Display","Segoe UI Variable","Noto Sans SC","Microsoft YaHei",sans-serif;
-}
-a:focus-visible{outline:2px solid #0669ef;outline-offset:4px}
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{margin:0;color:var(--ink);background:#fff;font-family:var(--font);font-synthesis:none;text-rendering:optimizeLegibility}
-a{color:inherit;text-decoration:none}
-img{display:block;max-width:100%}
-.shell{width:min(1180px,calc(100% - 64px));margin-inline:auto}
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3f8fe" />
+    <meta name="description" content="上号是 Windows 开黑房。开麦聊天、实时转录、房间纪事、降噪和手机麦克风，都能在一个房间里用。" />
+    <meta property="og:title" content="上号｜朋友的语音房" />
+    <meta property="og:description" content="实时房间纪事、清晰开麦、手机当麦克风。" />
+    <meta property="og:type" content="website" />
+    <title>上号｜朋友的语音房</title>
+    <link rel="icon" href="%BASE_URL%brand-mark.png" type="image/png" />
+    <link rel="stylesheet" href="./src/home.css" />
+  </head>
+  <body id="top">
+    <header class="site-nav">
+      <div class="shell nav-inner">
+        <a class="brand" href="#top" aria-label="上号首页">
+          <img src="%BASE_URL%brand-mark.png" width="36" height="36" alt="" />上号
+        </a>
+        <nav aria-label="官网导航">
+          <a href="#chronicle">实时转录</a>
+          <a href="#voice">语音</a>
+          <a href="#phone">手机麦克风</a>
+          <a class="button primary" href="%BASE_URL%download/">下载</a>
+        </nav>
+      </div>
+    </header>
 
-/* NAV */
-.site-nav{
-  position:sticky;top:0;z-index:30;
-  background:rgba(255,255,255,.86);
-  backdrop-filter:blur(18px) saturate(150%);
-  border-bottom:1px solid rgba(15,23,42,.06);
-}
-.nav-inner{height:58px;display:flex;align-items:center;gap:30px}
-.brand{display:flex;align-items:center;gap:10px;flex:none}
-.brand img{width:31px;height:31px;border-radius:8px}
-.brand-text{display:grid;line-height:1}
-.brand-text small{font-size:7px;letter-spacing:.22em;color:#8c98aa;font-weight:700}
-.brand-text strong{margin-top:4px;font-size:13px;letter-spacing:.02em}
-.nav-links{margin-left:auto;display:flex;align-items:center;gap:25px}
-.nav-links a{font-size:12px;color:#697386;transition:.18s}
-.nav-links a:hover{color:#111827}
-.nav-download{
-  min-height:37px;padding:0 16px;border-radius:11px;
-  display:inline-flex;align-items:center;justify-content:center;
-  background:var(--blue);color:#fff!important;font-weight:650!important;
-}
-.nav-download:hover{background:var(--blue-hover)!important;color:#fff!important}
+    <main>
+      <section class="hero">
+        <div class="shell hero-grid">
+          <div class="hero-copy">
+            <p class="feature-label">Windows 开黑语音房</p>
+            <h1><span>开麦就聊，</span><span>边聊边记。</span></h1>
+            <p class="lead">和朋友开黑时专心说话。实时转录会把聊天整理成房间纪事，错过几句，回来接着看。</p>
+            <div class="actions">
+              <a class="button primary" href="%BASE_URL%download/">下载 Windows 版</a>
+              <a class="text-link" href="#chronicle">看看实时转录 <span aria-hidden="true">↓</span></a>
+            </div>
+            <p class="compatibility">Windows 10 / 11 · 免费下载</p>
+          </div>
+          <div class="hero-visual">
+            <img class="room-preview" src="%BASE_URL%screens/room-showcase.webp" width="1680" height="1051" alt="上号房间，成员坐在各自的电脑前，右侧可以切换聊天与纪事" fetchpriority="high" />
+            <figure class="hero-chronicle">
+              <img src="%BASE_URL%screens/live-chronicle.webp" width="461" height="862" alt="房间转录中，正在按时间展示聊天纪事" />
+            </figure>
+          </div>
+        </div>
+      </section>
 
-/* HERO */
-.hero{padding:104px 0 124px;text-align:center;overflow:hidden}
-.hero-label{font-size:13px;font-weight:650;color:var(--blue);margin-bottom:22px}
-.hero h1{
-  margin:0 auto;
-  font-size:clamp(72px,7.3vw,106px);
-  line-height:1;
-  letter-spacing:-.038em;
-  font-weight:730;
-  white-space:nowrap;
-}
-.hero-lede{
-  margin:30px auto 0;
-  color:var(--muted);
-  font-size:clamp(18px,1.8vw,22px);
-  line-height:1.6;
-}
-.hero-actions{margin-top:34px;display:flex;justify-content:center;align-items:center;gap:14px}
-.btn{
-  min-height:48px;padding:0 22px;border-radius:14px;
-  display:inline-flex;align-items:center;justify-content:center;
-  font-size:14px;font-weight:650;transition:.18s;
-}
-.btn-primary{background:var(--blue);color:#fff;box-shadow:0 9px 24px rgba(22,119,255,.18)}
-.btn-primary:hover{background:var(--blue-hover);transform:translateY(-1px)}
-.text-link{font-size:14px;font-weight:620;color:var(--blue)}
-.hero-note{margin-top:18px;color:var(--quiet);font-size:12px}
-.hero-stage{
-  margin:62px auto 0;
-  padding:14px;
-  border-radius:35px;
-  background:linear-gradient(180deg,#f8fbff 0%,#edf5ff 100%);
-  border:1px solid #e7edf5;
-}
-.hero-stage img{
-  width:100%;
-  border-radius:23px;
-  box-shadow:0 32px 86px rgba(31,59,101,.13);
-}
+      <section class="section" id="chronicle">
+        <div class="shell feature-grid">
+          <div>
+            <p class="feature-label">实时转录 · 房间纪事</p>
+            <h2>晚进房间，也接得上话。</h2>
+            <p class="lead">一人开启，房间就会整理聊天要点。当天纪事全员可见，也可以随时停止提供语音。</p>
+            <dl class="feature-details">
+              <div><dt>跟得上房间语境</dt><dd>参考正在玩的游戏和房间记忆里的明确称呼。</dd></div>
+              <div><dt>隔天还能回顾</dt><dd>当天纪事按北京时间零点换日，回顾会挑出聊过的要点和约定。</dd></div>
+            </dl>
+          </div>
+          <figure class="preview recap">
+            <img src="%BASE_URL%screens/daily-report-demo.png" width="1280" height="720" alt="昨日房间回顾，包含有趣的对话、约定和下次计划" loading="lazy" />
+          </figure>
+        </div>
+      </section>
 
-/* STORY */
-.story{padding:162px 0;overflow:hidden}
-.story.soft{background:var(--soft)}
-.story-grid{
-  display:grid;
-  grid-template-columns:minmax(0,.78fr) minmax(0,1.22fr);
-  align-items:center;
-  gap:110px;
-}
-.story.reverse{grid-template-columns:minmax(0,1.06fr) minmax(0,.94fr)}
-.story.reverse .copy{order:2}
-.story.reverse .visual{order:1}
-.copy{max-width:560px}
-.eyebrow{
-  margin-bottom:17px;
-  color:#86868b;
-  font-size:12px;
-  font-weight:630;
-}
-.copy h2{
-  margin:0;
-  width:max-content;
-  max-width:100%;
-  font-size:clamp(40px,3vw,52px);
-  line-height:1.07;
-  letter-spacing:-.028em;
-  font-weight:710;
-  white-space:nowrap;
-}
-.copy p{
-  margin:21px 0 0;
-  color:var(--muted);
-  font-size:17px;
-  line-height:1.72;
-}
-.meta{margin-top:15px;color:#929aa7;font-size:11px}
-.visual{
-  padding:10px;
-  border:1px solid #e5e9ef;
-  border-radius:30px;
-  background:#fff;
-  box-shadow:0 30px 84px rgba(34,54,84,.09);
-}
-.visual img{width:100%;border-radius:20px}
-.visual.focus{width:min(100%,580px);justify-self:start;padding:14px}
-.visual.focus img{border-radius:22px}
-.history .copy{max-width:660px}
-.history .copy h2{font-size:clamp(40px,3.55vw,52px)}
+      <section class="section voice" id="voice">
+        <div class="shell feature-grid reverse">
+          <div>
+            <p class="feature-label">实时声音优化</p>
+            <h2>朋友的话，听得更清楚。</h2>
+            <p class="lead">用 DeepFilterNet 降低背景噪声，配合回声消除和自动增益。人声增强可以单独开，想调谁的声音也可以单独调。</p>
+            <dl class="feature-details">
+              <div><dt>少一点噪声和回声</dt><dd>根据麦克风和扬声器的用法，分别选择降噪与回声消除。</dd></div>
+              <div><dt>开麦前做一次体检</dt><dd>三秒麦克风体检可确认设备有没有收到声音。</dd></div>
+            </dl>
+          </div>
+          <figure class="preview">
+            <img src="%BASE_URL%screens/voice-processing.webp" width="1400" height="876" alt="房间中展开的声音处理面板，包含降噪、回声消除、人声增强和自动增益" loading="lazy" />
+          </figure>
+        </div>
+      </section>
 
-/* CTA */
-.final{padding:150px 0 138px;text-align:center}
-.final h2{
-  margin:0 auto;
-  font-size:clamp(60px,6vw,86px);
-  line-height:1;
-  letter-spacing:-.035em;
-  font-weight:725;
-  white-space:nowrap;
-}
-.final p{margin:25px 0 0;color:var(--quiet);font-size:12px}
-.final .hero-actions{margin-top:32px}
+      <section class="section" id="phone">
+        <div class="shell phone-card">
+          <div>
+            <p class="feature-label">手机麦克风</p>
+            <h2>电脑没麦，手机顶上。</h2>
+            <p class="lead">在上号打开手机麦克风，拿手机扫码并授权。连上后，手机收音会作为电脑的麦克风输入。</p>
+            <p class="compatibility">iPhone 和 Android 可扫码配对，Android 还支持 USB。</p>
+          </div>
+          <div class="phone-steps" aria-label="手机麦克风连接步骤">
+            <ol>
+              <li>在电脑选择「手机麦克风」</li>
+              <li>用手机扫码，允许使用麦克风</li>
+              <li>电脑显示已连接，就可以开麦</li>
+            </ol>
+          </div>
+        </div>
+      </section>
 
-/* FOOTER */
-.footer{border-top:1px solid #edf0f3}
-.footer-inner{min-height:96px;display:flex;align-items:center;gap:28px;color:#8c95a3;font-size:11px}
-.footer-inner .brand{opacity:.72}
-.footer-links{margin-left:auto;display:flex;gap:22px}
-.footer-links a:hover{color:#111827}
+      <section class="section other-features" aria-labelledby="more-title">
+        <div class="shell">
+          <h2 id="more-title">在同一个房间，还能做这些。</h2>
+          <div class="card-grid">
+            <article class="feature-card">
+              <img src="%BASE_URL%screens/recording-library.webp" width="1440" height="1080" alt="录音库里的时间戳、播放进度和文字稿" loading="lazy" />
+              <h3>录音与回听</h3>
+              <p>录音留在本机。点文字稿的时间戳回听原声，也能剪下想留下的片段。</p>
+            </article>
+            <article class="feature-card">
+              <img src="%BASE_URL%screens/quick-message-slots.webp" width="1440" height="901" alt="上号的快捷消息与音乐设置" loading="lazy" />
+              <h3>快捷消息与小曲</h3>
+              <p>常用短句、音效和音乐自己排，开黑时点一下就能发。</p>
+            </article>
+            <article class="feature-card">
+              <img src="%BASE_URL%screens/share-picker.webp" width="1000" height="746" alt="选择窗口或显示器的屏幕分享界面" loading="lazy" />
+              <h3>屏幕分享</h3>
+              <p>选一个窗口或整个显示器。朋友可以在房间里看，也可以打开独立观看窗口。</p>
+            </article>
+          </div>
+        </div>
+      </section>
 
-/* subtle reveal */
-.reveal{opacity:0;transform:translateY(16px);transition:opacity .65s cubic-bezier(.2,.7,.2,1),transform .65s cubic-bezier(.2,.7,.2,1)}
-.reveal.show{opacity:1;transform:none}
+      <section class="download-band">
+        <div class="shell download-inner">
+          <h2>开个房，喊朋友来。</h2>
+          <a class="button primary" href="%BASE_URL%download/">下载 Windows 版</a>
+        </div>
+      </section>
+    </main>
 
-@media (max-width:960px){
-  .shell{width:min(100% - 38px,1180px)}
-  .hero{padding:88px 0 108px}
-  .hero h1{font-size:clamp(58px,9vw,78px)}
-  .hero-stage{margin-top:54px}
-  .story{padding:122px 0}
-  .story-grid,.story.reverse{grid-template-columns:1fr;gap:52px}
-  .story.reverse .copy,.story.reverse .visual{order:initial}
-  .copy,.history .copy{max-width:760px;margin:auto;text-align:center}
-  .copy h2{margin-inline:auto}
-  .copy p{max-width:650px;margin-left:auto;margin-right:auto}
-  .visual,.visual.focus{width:min(100%,820px);justify-self:center}
-  .history .copy h2{font-size:clamp(40px,6vw,56px)}
-}
-
-@media (max-width:680px){
-  .shell{width:min(100% - 28px,1180px)}
-  .nav-links>a:not(.nav-download){display:none}
-  .hero{padding:68px 0 84px}
-  .hero-label{margin-bottom:16px}
-  .hero h1{
-    font-size:clamp(48px,14vw,62px);
-    white-space:normal;
-    text-wrap:balance;
-  }
-  .hero-lede{margin-top:22px;font-size:16px}
-  .hero-actions{margin-top:26px;flex-direction:column;gap:13px}
-  .btn{width:min(100%,280px)}
-  .hero-stage{margin-top:44px;padding:8px;border-radius:23px}
-  .hero-stage img{border-radius:17px}
-  .story{padding:88px 0}
-  .story-grid{gap:38px}
-  .copy h2,.history .copy h2{
-    width:auto;
-    font-size:clamp(39px,10.5vw,50px);
-    white-space:normal;
-    text-wrap:balance;
-  }
-  .copy p{margin-top:20px;font-size:15px}
-  .visual,.visual.focus{padding:8px;border-radius:22px}
-  .visual img,.visual.focus img{border-radius:15px}
-  .final{padding:112px 0 106px}
-  .final h2{
-    font-size:clamp(46px,12vw,58px);
-    white-space:normal;
-    text-wrap:balance;
-  }
-  .footer-inner{min-height:110px;align-items:flex-start;flex-direction:column;padding:24px 0}
-  .footer-links{margin-left:0}
-}
-
-@media (prefers-reduced-motion:reduce){
-  html{scroll-behavior:auto}
-  .reveal{opacity:1;transform:none;transition:none}
-}
-
-/* v9 final polish */
-.hero-label{color:#7f8794;font-weight:620}
-.hero h1,.copy h2,.final h2{font-kerning:normal}
-.copy p{max-width:460px}
-.story.soft{background:#f6f6f8}
-.visual{box-shadow:0 24px 68px rgba(34,54,84,.075)}
-#ai .visual img{aspect-ratio:auto;object-fit:cover;object-position:top}
-#ai .visual{padding:10px}
-@media(max-width:960px){
-  .hero{padding:78px 0 94px}
-  .story{padding:108px 0}
-  .final{padding:104px 0 96px}
-}
-@media(max-width:680px){
-  .hero{padding:62px 0 72px}
-  .story{padding:78px 0}
-  .final{padding:92px 0 86px}
-}
-
-/* ===== v10 截图严格等比显示 ===== */
-.hero-stage,
-.visual,
-.visual.focus{
-  height:auto !important;
-  min-height:0 !important;
-  align-self:center !important;
-}
-
-.hero-stage img,
-.visual img,
-.visual.focus img,
-#ai .visual img{
-  display:block !important;
-  width:100% !important;
-  height:auto !important;
-  max-width:100% !important;
-  max-height:none !important;
-  aspect-ratio:auto !important;
-  object-fit:contain !important;
-  object-position:center !important;
-  flex:none !important;
-}
-
-/* 不让 Grid 把图片区域纵向拉满 */
-.story-grid{
-  align-items:center !important;
-}
-
-.visual,
-.visual.focus{
-  overflow:hidden;
-}
-
-/* 房间记录本身是偏方形裁切，限制宽度但绝不改比例 */
-.history .visual.focus{
-  width:min(100%,560px) !important;
-}
-
-/* AI 截图只按原图比例展示，不再 cover 裁撑 */
-#ai .visual img{
-  object-fit:contain !important;
-  object-position:top center !important;
-}
-
-/* 手机和平板同样保持原图比例 */
-@media(max-width:960px){
-  .hero-stage img,
-  .visual img,
-  .visual.focus img,
-  #ai .visual img{
-    width:100% !important;
-    height:auto !important;
-  }
-}
-
-/* 房间记录标题较长：桌面端给文案和截图等宽空间，避免被截图遮住。 */
-@media(min-width:961px){
-  .history .story-grid{
-    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-    gap:64px;
-  }
-  .history .copy{max-width:none}
-  .history .copy h2{
-    width:100%;
-    font-size:clamp(38px,3vw,47px);
-  }
-}
-</style>
-</head>
-<body id="top">
-<header class="site-nav">
-<div class="shell nav-inner">
-<a aria-label="上号首页" class="brand" href="#top">
-<img alt="" src="%BASE_URL%brand-mark.png" width="31" height="31"/>
-<span class="brand-text"><small>SHANGHAO</small><strong>上号</strong></span>
-</a>
-<nav class="nav-links">
-<a href="#quick">功能</a>
-<a class="nav-download" href="%BASE_URL%download/">下载</a>
-</nav>
-</div>
-</header>
-<main>
-<section class="hero">
-<div class="shell">
-<h1 class="reveal">上号，开黑。</h1>
-<p class="hero-lede reveal">和朋友开麦、聊天、分享屏幕。想回听时，在录音库里找。</p>
-<div class="hero-actions reveal">
-<a class="btn btn-primary" href="%BASE_URL%download/">下载 Windows 版</a>
-<a class="text-link" href="#quick">看看功能 ↓</a>
-</div>
-<div class="hero-note reveal">Windows 10 / 11 · 免费下载</div>
-<div class="hero-stage reveal">
-<img alt="上号语音房，右侧是聊天和快捷消息，底部可开启屏幕分享或录音" decoding="async" fetchpriority="high" width="1680" height="1051" src="%BASE_URL%screens/room-showcase.webp"/>
-</div>
-</div>
-</section>
-<section class="story soft" id="quick">
-<div class="shell story-grid">
-<div class="copy reveal">
-<div class="eyebrow">快捷消息</div>
-<h2>常用的，点一下。</h2>
-<p>开麦前发句「等我」，打出好配合就放段小曲。常用短句和音频可以自己排。</p>
-</div>
-<div class="visual reveal">
-<img alt="上号快捷消息设置，支持排列短句和快捷音频" decoding="async" loading="lazy" width="1440" height="901" src="%BASE_URL%screens/quick-message-slots.webp"/>
-</div>
-</div>
-</section>
-<section class="story history">
-<div class="shell story-grid reverse">
-<div class="copy reveal">
-<div class="eyebrow">房间记录</div>
-<h2>翻到聊过的那一段。</h2>
-<p>房间纪事按时间记录聊天要点。第二天打开回顾，看看聊了什么、约好了什么。</p>
-</div>
-<div class="visual focus reveal">
-<img alt="上号昨日房间回顾，展示聊天要点和下次约定示例" decoding="async" loading="lazy" width="1280" height="720" src="%BASE_URL%screens/daily-report-demo.png"/>
-</div>
-</div>
-</section>
-<section class="story soft" id="ai">
-<div class="shell story-grid">
-<div class="copy reveal">
-<div class="eyebrow">录音与转录</div>
-<h2>看到哪句，就回听哪句。</h2>
-<p>录音保存在本机，可自动转录。点文字稿的时间戳回听原声，也能剪下想留下的片段。</p>
-</div>
-<div class="visual reveal">
-<img alt="上号录音库，显示播放进度及带时间戳的示例文字稿" decoding="async" loading="lazy" width="1440" height="1080" src="%BASE_URL%screens/recording-library.webp"/>
-</div>
-</div>
-</section>
-<section class="final">
-<div class="shell">
-<h2 class="reveal">开个房，喊朋友来。</h2>
-<div class="hero-actions reveal">
-<a class="btn btn-primary" href="%BASE_URL%download/">下载 Windows 版</a>
-</div>
-</div>
-</section>
-</main>
-<footer class="footer">
-<div class="shell footer-inner">
-<a class="brand" href="#top">
-<img alt="" src="%BASE_URL%brand-mark.png" width="31" height="31"/>
-<span class="brand-text"><small>SHANGHAO</small><strong>上号</strong></span>
-</a>
-<div class="footer-links">
-<a href="%BASE_URL%download/">下载</a>
-</div>
-</div>
-</footer>
-<script>
-const items = document.querySelectorAll('.reveal');
-if ('IntersectionObserver' in window) {
-  const io = new IntersectionObserver(entries => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('show');
-        io.unobserve(entry.target);
-      }
-    });
-  }, {threshold:.08});
-  items.forEach(el => io.observe(el));
-} else {
-  items.forEach(el => el.classList.add('show'));
-}
-</script>
-</body>
+    <footer class="site-footer">
+      <div class="shell">
+        <a class="brand" href="#top"><img src="%BASE_URL%brand-mark.png" width="32" height="32" alt="" />上号</a>
+        <a href="#top">返回顶部 ↑</a>
+      </div>
+    </footer>
+  </body>
 </html>

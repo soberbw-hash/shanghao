@@ -109,10 +109,9 @@ await writeFile(
     <main>
       <div class="layout">
         <section class="card main" aria-labelledby="version"><div class="eyebrow">WINDOWS 10 / 11 · X64</div><h1 class="version" id="version">上号 ${escapeHtml(release.tag_name)}</h1><p class="lead">下载后打开安装包，按提示安装或更新。</p><a class="download" href="${escapeHtml(download)}"${pages ? "" : ` download="${escapeHtml(asset.name)}"`}>下载 Windows 安装包 ↓</a><div class="meta"><span>${escapeHtml(size)} MB</span>${publishedDate ? `<span>发布于 ${escapeHtml(publishedDate)}</span>` : ""}</div></section>
-        <aside class="card side"><h2>这一版，更新了什么？</h2><ul>${highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>查看完整更新说明，了解本版修复与改进。</li>"}</ul><a href="${escapeHtml(release.html_url)}" rel="noopener noreferrer">查看完整更新说明 ↗</a></aside>
+        ${highlights.length ? `<aside class="card side"><h2>这一版的更新</h2><ul>${highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></aside>` : ""}
       </div>
       <details class="card checksum"><summary>核对安装包 SHA-256</summary><code>${escapeHtml(asset.sha256)}</code></details>
-      ${pages ? "" : `<p class="foot">也可通过 <a href="${escapeHtml(asset.browser_download_url)}" rel="noopener noreferrer">GitHub 下载安装包</a>。</p>`}
     </main>
   </div>
 </body>
