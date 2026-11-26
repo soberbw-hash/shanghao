@@ -359,7 +359,10 @@ test("native notifications and recording markers use main process IPC", () => {
   const markers = read("apps/desktop/src/main/recording-marker-ipc.ts");
   const roomState = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const room = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
-  assert.equal(ipc.includes("Notification.isSupported"), true);
+  const desktopNotices = read("apps/desktop/src/main/desktop-notifications.ts");
+  assert.match(ipc, /showDesktopNotification\(/);
+  assert.match(desktopNotices, /Notification\.isSupported\(\)/);
+  assert.match(desktopNotices, /new Notification\(/);
   assert.equal(ipc.includes("silent: payload.silent === true"), true);
   assert.equal(ipc.includes("mainWindow.flashFrame(true)"), true);
   assert.equal(ipc.includes('mainWindow.setAlwaysOnTop(true, "floating")'), true);

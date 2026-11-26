@@ -2,6 +2,7 @@ import { isPrivateRoomId, type ChatMessage, type DesktopApi } from "@private-voi
 import { useAppStore } from "../../store/appStore";
 import { useRoomStore } from "../../store/roomStore";
 
+import { createChatNotificationThumbnail } from "../../utils/chatImage";
 import { playUiSound } from "../audio/uiSound";
 
 const SCENE_REACTION_SOUND_COOLDOWN_MS = 320;
@@ -61,7 +62,14 @@ export const sendSystemNotification = (
     }
     return;
   }
-  if (typeof notify === "function") void notify(payload).catch(() => undefined);
+  if (typeof notify !== "function") return;
+  if (room?.imageDataUrl) {
+    void createChatNotificationThumbnail(room.imageDataUrl)
+      .then((imageDataUrl) => notify({ ...payload, room: { ...room, imageDataUrl } }))
+      .catch(() => undefined);
+    return;
+  }
+  void notify(payload).catch(() => undefined);
 };
 
 export const playSceneReactionSound = (sound: "receive-message" | "send-message"): void => {

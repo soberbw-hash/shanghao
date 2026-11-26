@@ -13,7 +13,6 @@ import {
   dialog,
   ipcMain,
   nativeImage,
-  Notification,
   powerMonitor,
   screen,
   session,
@@ -96,7 +95,7 @@ import { readRecordingLibrary, renameRecording, setRecordingFavorite } from "./r
 import { readRelayStatus } from "./relay-status";
 import { buildRuntimeEventTimeline } from "./runtime-event-timeline";
 import { sendToWindow } from "./safe-web-contents";
-import { systemNotificationDelivery } from "./notification-delivery";
+import { showDesktopNotification } from "./desktop-notifications";
 import { notificationWebLink } from "./notification-web-link";
 import { registerOverlayQuickMusicMuteHandler } from "./overlay-quick-music-ipc";
 import { registerRecordingLocationIpcHandlers } from "./recording-location-ipc";
@@ -384,38 +383,8 @@ export const registerIpcHandlers = ({
       if (payload.attention === true && (!room || foreground)) bringWindowToFront(mainWindow, true);
       if (payload.shakeWindow === true && (!room || foreground)) shakeMainWindow(mainWindow);
       if (payload.showNotification === false) return;
-      if (room && (foreground || !settingsStore.getSnapshot().isSystemNotificationEnabled)) return;
-      if (!Notification.isSupported()) return;
+      if (!settingsStore.getSnapshot().isSystemNotificationEnabled || (room && foreground)) return;
       const link = notificationWebLink(room?.link);
-      const thumbnail = room?.imageDataUrl;
-      const image =
-        typeof thumbnail === "string" &&
-        thumbnail.length <= 180000 &&
-        /^data:image\/(?:jpeg|webp|png);base64,[A-Za-z0-9+/=]+$/.test(thumbnail)
-          ? nativeImage.createFromDataURL(thumbnail)
-          : undefined;
-      const actions: Electron.NotificationAction[] = [];
-      if (room)
-        actions.push({ type: "button", text: room.kind === "chat" ? "查看消息" : "进入房间" });
-      if (link) actions.push({ type: "button", text: "打开链接" });
-      const roomIcon =
-        room && room.kind !== "chat"
-          ? app.isPackaged
-            ? path.join(process.resourcesPath, "notices/gamepad.png")
-            : path.join(app.getAppPath(), "src/renderer/src/assets/room-icons/fluent/gamepad.png")
-          : undefined;
-      const notification = new Notification({
-        title,
-        body,
-        silent: payload.silent === true,
-        actions,
-        icon:
-          image && !image.isEmpty()
-            ? image.resize(
-                image.getSize().width >= image.getSize().height ? { width: 96 } : { height: 96 },
-              )
-            : roomIcon,
-      });
       const accountId = accounts.getSnapshot().profile?.userId;
       const server = settingsStore.getSnapshot().relayServerUrl;
       const sameSession = () =>
@@ -434,8 +403,21 @@ export const registerIpcHandlers = ({
                 : undefined,
           });
       };
-      systemNotificationDelivery.show(
-        notification,
+      const actions = [
+        {
+          label: room ? (room.kind === "chat" ? "查看消息" : "进入房间") : "打开上号",
+          run: openRoom,
+        },
+      ];
+      if (link)
+        actions.push({
+          label: "打开链接",
+          run: () => {
+            if (sameSession()) void shell.openExternal(link).catch(() => undefined);
+          },
+        });
+      showDesktopNotification(
+        { title, body, silent: payload.silent === true, actions, imageDataUrl: room?.imageDataUrl },
         openRoom,
         (reason) => {
           sendToWindow(getMainWindow(), IPC_CHANNELS.app.notificationFailed, reason);
@@ -447,11 +429,6 @@ export const registerIpcHandlers = ({
               context: { reason },
             })
             .catch(() => undefined);
-        },
-        (index) => {
-          if (index === 0) openRoom();
-          if (index === 1 && link && sameSession())
-            void shell.openExternal(link).catch(() => undefined);
         },
       );
     },

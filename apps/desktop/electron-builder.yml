@@ -61,8 +61,6 @@ files:
 extraResources:
   - from: src/renderer/src/assets/notices
     to: notices
-  - from: src/renderer/src/assets/room-icons/fluent/gamepad.png
-    to: notices/gamepad.png
   - from: ../../LICENSE.md
     to: licenses/SHANGHAO-LICENSE.md
   - from: ../../NOTICE.md

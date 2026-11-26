@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import type { VoiceMemoryProcessRequest } from "@private-voice/shared";
+import type { VoiceMemoryProcessRequest, VoiceMemoryRecord } from "@private-voice/shared";
 import { AiVoiceMemoryService } from "../src/main/ai-voice-memory-service";
 import { VoiceMemoryStore } from "../src/main/voice-memory-store";
 import { AiTextGateway } from "../src/main/ai-text-gateway";
@@ -38,6 +38,7 @@ const fixture = async () => {
   };
   const services: AiVoiceMemoryService[] = [];
   const failures: string[] = [];
+  const pending = new Set<Promise<VoiceMemoryRecord>>();
   const open = async () => {
     const store = new VoiceMemoryStore(path.join(directory, "records"));
     await store.initialize();
@@ -94,11 +95,16 @@ const fixture = async () => {
     );
     services.push(service);
     const process = service.process.bind(service);
-    service.process = (request) =>
-      process(request).catch((error) => {
-        failures.push(String(error));
-        throw error;
-      });
+    service.process = (request) => {
+      const operation = process(request)
+        .catch((error) => {
+          failures.push(String(error));
+          throw error;
+        })
+        .finally(() => pending.delete(operation));
+      pending.add(operation);
+      return operation;
+    };
     return {
       store,
       service,
@@ -120,6 +126,7 @@ const fixture = async () => {
     request,
     close: async () => {
       services.forEach((service) => service.stop());
+      await Promise.allSettled(pending);
       await rm(directory, { recursive: true, force: true });
     },
   };

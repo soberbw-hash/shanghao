@@ -29,22 +29,3 @@ export function transcriptNotice(record: VoiceMemoryRecord): RecordingNotice {
     body: details.join(" · "),
   };
 }
-
-function escapeXml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("'", "&apos;");
-}
-
-export function recordingToastXml(notice: RecordingNotice, imageUrl: string, tag: string): string {
-  const action = notice.kind === "voice-replay" ? "查看片段" : "查看文字稿";
-  return `<toast launch="type=click&amp;tag=${escapeXml(tag)}"><visual><binding template="ToastGeneric">
-    <text>${escapeXml(notice.title)}</text><text>${escapeXml(notice.body)}</text>
-    <image placement="hero" src="${escapeXml(imageUrl)}"/>
-  </binding></visual><actions>
-    <action content="${action}" arguments="type=action&amp;action=0&amp;tag=${escapeXml(tag)}" activationType="foreground"/>
-  </actions><audio silent="true"/></toast>`;
-}

@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, Notification, Tray, dialog, net, protocol } from "electron";
+import { app, BrowserWindow, Tray, dialog, net, protocol } from "electron";
 
 import { IPC_CHANNELS, type DeepLinkInvite, type RecordingNotice } from "@private-voice/shared";
-import { recordingToastXml, savedReplayNotice, transcriptNotice } from "./recording-notices";
+import { savedReplayNotice, transcriptNotice } from "./recording-notices";
+import { canShowDesktopNotification, showDesktopNotification } from "./desktop-notifications";
 import { systemNotificationDelivery } from "./notification-delivery";
 
 import { DiagnosticsService } from "./diagnostics";
@@ -137,12 +138,14 @@ const showWindow = () => {
 };
 
 const showNetworkPermissionNotice = (title: string, body: string): void => {
-  if (!settingsStore?.getSnapshot().isSystemNotificationEnabled || !Notification.isSupported()) {
+  if (!settingsStore?.getSnapshot().isSystemNotificationEnabled || !canShowDesktopNotification()) {
     return;
   }
-  const notification = new Notification({ title, body, silent: false });
-  notification.on("click", showWindow);
-  notification.show();
+  showDesktopNotification(
+    { title, body, actions: [{ label: "打开上号", run: showWindow }] },
+    showWindow,
+    (reason) => sendToWindow(mainWindow, IPC_CHANNELS.app.notificationFailed, reason),
+  );
 };
 
 function deliverRecordingNotice(notice: RecordingNotice): void {
@@ -151,22 +154,22 @@ function deliverRecordingNotice(notice: RecordingNotice): void {
       sendToWindow(mainWindow, IPC_CHANNELS.app.recordingNotice, notice, false);
       return;
     }
-    if (!settingsStore?.getSnapshot().isSystemNotificationEnabled || !Notification.isSupported())
+    if (!settingsStore?.getSnapshot().isSystemNotificationEnabled || !canShowDesktopNotification())
       return;
-    const notification = new Notification({ title: notice.title, body: notice.body, silent: true });
-    if (platformService.isWindows) {
-      const folder = app.isPackaged
-        ? path.join(process.resourcesPath, "notices")
-        : path.join(app.getAppPath(), "src/renderer/src/assets/notices");
-      const image = pathToFileURL(path.join(folder, notice.kind + ".jpg")).href;
-      notification.toastXml = recordingToastXml(notice, image, notification.id);
-    }
     const open = () => {
       showWindow();
       sendToWindow(mainWindow, IPC_CHANNELS.app.recordingNotice, notice, true);
     };
-    systemNotificationDelivery.show(notification, open, (reason) =>
-      sendToWindow(mainWindow, IPC_CHANNELS.app.notificationFailed, reason),
+    showDesktopNotification(
+      {
+        title: notice.title,
+        body: notice.body,
+        silent: true,
+        artwork: notice.kind,
+        actions: [{ label: notice.kind === "voice-replay" ? "查看片段" : "查看文字稿", run: open }],
+      },
+      open,
+      (reason) => sendToWindow(mainWindow, IPC_CHANNELS.app.notificationFailed, reason),
     );
   } catch {
     // Notification failures must never turn a durable save into a failed recording job.
@@ -937,6 +940,7 @@ const bootstrap = async (): Promise<void> => {
   app.on("before-quit", () => {
     voiceMemory.stop();
     aiModelManager?.stop();
+    systemNotificationDelivery.closeAll();
     prepareForQuit("before-quit");
   });
 
