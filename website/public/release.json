@@ -1,20 +1,20 @@
 {
-  "tag_name": "v3.4.22",
-  "published_at": "2026-11-19T06:45:50Z",
-  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.22",
+  "tag_name": "v3.4.23",
+  "published_at": "2026-11-21T15:16:54Z",
+  "html_url": "https://github.com/soberbw-hash/shanghao/releases/tag/v3.4.23",
   "highlights": [
-    "屏幕分享 Windows 选源时先展示可选窗口和显示器，再加载缩略图。启动采集会等预览释放资源，并重新确认选中的窗口或显示器。Electron 升级至 45.3.4。",
-    "房间纪事 一人开启转录，成员自动参与，每条麦克风音轨按发言者处理。可以随时停止提供自己的语音。房间问答与纪事使用记忆中的明确称呼。",
-    "录音与设置 新设置默认开启录音库自动转录。已手动关闭的设置继续生效。移除了转录稿下方的词汇说明，统一了账号、通用、语音和 AI 页面的内容宽度。",
-    "更新和链接 更新卡片可拖动，下载期间可以继续聊天。单链接消息把文字和站点图标放到一张卡片里。"
+    "屏幕分享 修复正式版选择显示器后无法启动采集的问题。Windows 客户端默认按普通用户权限启动，发布检查直接运行正式包中的程序并读取实际画面。",
+    "聊天与设置 统一链接卡片尺寸，增加 GitHub 站点图标，柔化聊天列表底部的模糊过渡，改善首次打开 AI 设置时的布局稳定性。精简录音复核说明和关于页的外部入口。",
+    "房间纪事 同一房间的成员都可以查看当日内容。纪事在北京时间零点换日。房间当前游戏和记忆中的明确称呼会作为转录语境。",
+    "昨日回顾 优先展示有具体内容的对话、游戏及约定，移除称号。"
   ],
   "assets": [
     {
-      "name": "ShangHao-3.4.22-Setup-x64.exe",
-      "size": 231148787,
-      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.22/ShangHao-3.4.22-Setup-x64.exe",
-      "mirror_path": "/downloads/v3.4.22/ShangHao-3.4.22-Setup-x64.exe",
-      "sha256": "30ba6f81458bf22c098958caf01f407931dcaae7cfcdeddf2bba4b0207e43c84"
+      "name": "ShangHao-3.4.23-Setup-x64.exe",
+      "size": 231109807,
+      "browser_download_url": "https://github.com/soberbw-hash/shanghao/releases/download/v3.4.23/ShangHao-3.4.23-Setup-x64.exe",
+      "mirror_path": "/downloads/v3.4.23/ShangHao-3.4.23-Setup-x64.exe",
+      "sha256": "afc3908084bb23c5b02e9dfa40cb1fe48fced1ea483230a245491844034b823f"
     }
   ]
 }
