@@ -247,7 +247,7 @@ test("deferred ASR preserves each recording's organization opt-out across store 
   }
 });
 
-test("a foreground transcription always follows with a summary even for a legacy false choice", async () => {
+test("a foreground transcription respects an explicit choice to skip organization", async () => {
   const f = await fixture();
   try {
     f.state.asrReady = true;
@@ -255,18 +255,18 @@ test("a foreground transcription always follows with a summary even for a legacy
     const { service, store } = await f.open();
     const finished = new Promise<void>((resolve) => {
       const stop = service.onStatus((record) => {
-        if (record.phase === "ready" && record.organization?.status === "completed") {
+        if (record.phase === "ready" && record.taskStatus === "success") {
           stop();
           resolve();
         }
       });
     });
     const accepted = await service.start({ ...f.request, manual: true, organize: false });
-    assert.equal(accepted.autoOrganizeRequested, true);
+    assert.equal(accepted.autoOrganizeRequested, false);
     await finished;
-    assert.equal((await store.get("synthetic"))?.organization?.status, "completed");
+    assert.notEqual((await store.get("synthetic"))?.organization?.status, "completed");
     assert.equal(f.state.asrCalls, 1);
-    assert.ok(f.state.textCalls > 0);
+    assert.equal(f.state.textCalls, 0);
   } finally {
     await f.close();
   }

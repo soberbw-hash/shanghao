@@ -16,12 +16,16 @@ import { useRoomStore } from "../store/roomStore";
 import { writeRendererLog } from "../utils/logger";
 import { createRecordingGameTimeline } from "../features/recording/recordingGameTimeline";
 
+import { hasRecordingCompanion } from "../features/recording/hasRecordingCompanion";
+
 type MixedCallStream = ReturnType<typeof createMixedCallStream>;
 
 interface RecordingRuntime {
   service: RecordingService;
   mix: MixedCallStream | null;
   finalizing?: Promise<RecordingResult>;
+  source?: "manual" | "automatic";
+  hadMultipleParticipants?: boolean;
   roomName?: string;
   roomId?: string;
   gameTimeline?: ReturnType<typeof createRecordingGameTimeline>;
@@ -116,6 +120,12 @@ export const useRecordingController = () => {
           state.room.members,
           runtime.mix.elapsedMs(),
         );
+      if (
+        recordingService.getState().state === RecordingState.Recording &&
+        runtime.roomId === state.room.roomId &&
+        hasRecordingCompanion(state.room.members)
+      )
+        runtime.hadMultipleParticipants = true;
       if (!changed(state)) return;
       removeMediaListeners();
       const streams = new Set(
@@ -170,72 +180,77 @@ export const useRecordingController = () => {
     }
   }, [recordingService, setStatus]);
 
-  const startRecording = useCallback(() => {
-    const currentState = recordingService.getState().state;
-    if (
-      runtime.finalizing ||
-      recordingService.hasRecording() ||
-      currentState === RecordingState.Stopping ||
-      currentState === RecordingState.Saving
-    ) {
-      const status = recordingService.getState();
+  const startRecording = useCallback(
+    (source: "manual" | "automatic" = "manual") => {
+      const currentState = recordingService.getState().state;
+      if (
+        runtime.finalizing ||
+        recordingService.hasRecording() ||
+        currentState === RecordingState.Stopping ||
+        currentState === RecordingState.Saving
+      ) {
+        const status = recordingService.getState();
+        setStatus(status);
+        return status;
+      }
+
+      runtime.mix?.dispose();
+      const roomState = useRoomStore.getState();
+      runtime.source = source;
+      runtime.hadMultipleParticipants = hasRecordingCompanion(roomState.room.members);
+      runtime.roomId = roomState.room.roomId;
+      runtime.roomName = roomState.room.roomName;
+      runtime.gameTimeline = undefined;
+      runtime.finishedGameTimeline = undefined;
+      runtime.mix = createMixedCallStream(roomState.localStream, roomState.remoteStreams, {
+        loudnessBalanceEnabled: true,
+        finalRemotePlaybackStream: getRemoteAudioMixer().getFinalOutputStream(),
+        sourceIdentities: recordingSourceIdentities(),
+        onDiagnostic: (event, context) => {
+          void writeRendererLog("recording", "info", event, context);
+        },
+        persistSpeakerSegment: async (segment) => {
+          const response = await window.desktopApi.recording.saveSpeakerSegment(segment);
+          if (!response.ok) {
+            throw new Error(response.errorMessage ?? "speaker_segment_save_failed");
+          }
+        },
+        persistParticipantTrack: async (track) => {
+          const response = await window.desktopApi.recording.saveParticipantTrack(track);
+          if (!response.ok) {
+            throw new Error(response.errorMessage ?? "participant_track_save_failed");
+          }
+        },
+        finalizeSpeakerSegments: async (sessionId, recordingId, recordingFilePath) => {
+          await window.desktopApi.recording.finalizeSpeakerSegments({
+            sessionId,
+            recordingId,
+            recordingFilePath,
+          });
+        },
+        finalizeParticipantTracks: async (sessionId, recordingId, recordingFilePath) => {
+          await window.desktopApi.recording.finalizeParticipantTracks({
+            sessionId,
+            recordingId,
+            recordingFilePath,
+            gameTimeline: runtime.finishedGameTimeline,
+          });
+        },
+      });
+      const status = recordingService.start(runtime.mix.stream);
+      if (status.state === RecordingState.Recording && status.startedAt && runtime.roomId) {
+        runtime.gameTimeline = createRecordingGameTimeline(runtime.roomId, 0);
+        runtime.gameTimeline.capture(roomState.room.roomId, roomState.room.members, 0);
+      }
+      if (status.state !== RecordingState.Recording) {
+        runtime.mix.dispose();
+        runtime.mix = null;
+      }
       setStatus(status);
       return status;
-    }
-
-    runtime.mix?.dispose();
-    const roomState = useRoomStore.getState();
-    runtime.roomId = roomState.room.roomId;
-    runtime.roomName = roomState.room.roomName;
-    runtime.gameTimeline = undefined;
-    runtime.finishedGameTimeline = undefined;
-    runtime.mix = createMixedCallStream(roomState.localStream, roomState.remoteStreams, {
-      loudnessBalanceEnabled: true,
-      finalRemotePlaybackStream: getRemoteAudioMixer().getFinalOutputStream(),
-      sourceIdentities: recordingSourceIdentities(),
-      onDiagnostic: (event, context) => {
-        void writeRendererLog("recording", "info", event, context);
-      },
-      persistSpeakerSegment: async (segment) => {
-        const response = await window.desktopApi.recording.saveSpeakerSegment(segment);
-        if (!response.ok) {
-          throw new Error(response.errorMessage ?? "speaker_segment_save_failed");
-        }
-      },
-      persistParticipantTrack: async (track) => {
-        const response = await window.desktopApi.recording.saveParticipantTrack(track);
-        if (!response.ok) {
-          throw new Error(response.errorMessage ?? "participant_track_save_failed");
-        }
-      },
-      finalizeSpeakerSegments: async (sessionId, recordingId, recordingFilePath) => {
-        await window.desktopApi.recording.finalizeSpeakerSegments({
-          sessionId,
-          recordingId,
-          recordingFilePath,
-        });
-      },
-      finalizeParticipantTracks: async (sessionId, recordingId, recordingFilePath) => {
-        await window.desktopApi.recording.finalizeParticipantTracks({
-          sessionId,
-          recordingId,
-          recordingFilePath,
-          gameTimeline: runtime.finishedGameTimeline,
-        });
-      },
-    });
-    const status = recordingService.start(runtime.mix.stream);
-    if (status.state === RecordingState.Recording && status.startedAt && runtime.roomId) {
-      runtime.gameTimeline = createRecordingGameTimeline(runtime.roomId, 0);
-      runtime.gameTimeline.capture(roomState.room.roomId, roomState.room.members, 0);
-    }
-    if (status.state !== RecordingState.Recording) {
-      runtime.mix.dispose();
-      runtime.mix = null;
-    }
-    setStatus(status);
-    return status;
-  }, [recordingService, runtime, setStatus]);
+    },
+    [recordingService, runtime, setStatus],
+  );
 
   const stopRecording = useCallback((): Promise<RecordingResult> => {
     if (runtime.finalizing) return runtime.finalizing;
@@ -267,6 +282,7 @@ export const useRecordingController = () => {
           });
         }
 
+        result.hadMultipleParticipants = runtime.hadMultipleParticipants;
         addHistory(result);
         setStatus(recordingService.getState());
         return result;
@@ -306,6 +322,7 @@ export const useRecordingController = () => {
   }, [recordingService, runtime, setStatus]);
 
   return {
+    recordingSource: runtime.source,
     capability: recordingService.getCapability(),
     startRecording,
     stopRecording,

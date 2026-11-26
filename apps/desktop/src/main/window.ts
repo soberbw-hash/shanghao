@@ -116,11 +116,10 @@ const isTrustedRendererUrl = (value: string): boolean => {
 
 export const getScreenShareViewerWindow = () => screenShareViewerWindow;
 
-export const openScreenShareViewer = async ({
-  title,
-  sessionId,
-  peerId,
-}: ScreenShareViewerOpenRequest): Promise<void> => {
+export const openScreenShareViewer = async (
+  { title, sessionId, peerId }: ScreenShareViewerOpenRequest,
+  onClosed: () => void,
+): Promise<void> => {
   const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   const viewerBounds = {
     width: Math.max(640, Math.round(workArea.width * 0.85)),
@@ -188,6 +187,7 @@ export const openScreenShareViewer = async ({
       screenShareViewerWindow = null;
       screenShareViewerSessionId = undefined;
     }
+    onClosed();
   });
 
   await loadScreenShareViewer(

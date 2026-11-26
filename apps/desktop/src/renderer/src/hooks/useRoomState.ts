@@ -64,9 +64,11 @@ import {
 } from "../features/room/memberVolumePersistence";
 import {
   describeChatNotification,
+  openNotifiedRoom,
   playSceneReactionSound,
   sendSystemNotification,
 } from "../features/room/roomNotifications";
+import { messageLinkCard } from "../features/chat/linkPreview";
 import { useAppStore } from "../store/appStore";
 import { useAccountStore } from "../store/accountStore";
 import { projectRoomMembers } from "../features/room/memberProjection";
@@ -529,6 +531,7 @@ export const useRoomState = () => {
             sendSystemNotification({
               title: "好友上线",
               body: `${member.nickname} 进入了开黑频道`,
+              room: { kind: "presence", id: channelId },
             });
           }
         });
@@ -704,6 +707,7 @@ export const useRoomState = () => {
           sendSystemNotification({
             title: `${message.nickname} 提醒你`,
             body: message.content,
+            room: { kind: "chat", id: channelId },
           });
         }
       },
@@ -724,6 +728,13 @@ export const useRoomState = () => {
             sendSystemNotification({
               title: `${message.nickname} 发来消息`,
               body: describeChatNotification(message),
+              room: {
+                kind: "chat",
+                id: channelId,
+                link: messageLinkCard(message.content)?.url,
+                messageId: message.id,
+                imageDataUrl: message.image?.dataUrl,
+              },
             });
           }
         }
@@ -760,11 +771,15 @@ export const useRoomState = () => {
           pushToast({
             tone: "warning",
             title: `${message.nickname} 敲了敲你`,
-            description: "快来上号，朋友正在等你。",
+            description: roomName || "朋友在房间里等你。",
+            actionLabel: "进入房间",
+            cardKind: "knock",
+            onAction: () => openNotifiedRoom(channelId, false),
           });
           sendSystemNotification({
             title: `${message.nickname} 敲了敲你`,
-            body: "快来上号，朋友正在等你。",
+            body: roomName || "朋友在房间里等你。",
+            room: { kind: "knock", id: channelId },
             attention: true,
             shakeWindow: true,
             showNotification:

@@ -30,9 +30,7 @@ import {
 import { buildVibeVoiceArguments } from "../src/main/vibevoice-runtime";
 import {
   AiVoiceMemoryService,
-  AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS,
   applySpeakingTimeline,
-  canAutomaticallyTranscribeDuration,
   completedTranscriptionUnits,
   isRecoverableFfmpegFailure,
   MOSS_CPP_TRANSCRIPTION_CHUNK_MS,
@@ -1287,14 +1285,6 @@ test("a later ASR failure keeps already saved chunks available for continuing", 
   assert.equal(durable.progress, 60);
   assert.equal(durable.transcript[0]?.text, "周六晚上七点吃饭");
   assert.match(durable.errorMessage ?? "", /asr_runtime_failed/);
-});
-
-test("automatic transcription leaves recordings longer than thirty minutes for manual action", () => {
-  assert.equal(canAutomaticallyTranscribeDuration(AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS), true);
-  assert.equal(
-    canAutomaticallyTranscribeDuration(AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS + 1),
-    false,
-  );
 });
 
 test("a manual transcription runs before already queued background recordings", async () => {

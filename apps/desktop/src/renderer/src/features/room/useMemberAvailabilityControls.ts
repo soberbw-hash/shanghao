@@ -108,7 +108,12 @@ export function useMemberAvailabilityControls(
         }),
     });
     controller.current = next;
+    const resume = (event: Event) => {
+      if (next.resumeMicrophone()) event.preventDefault();
+    };
+    window.addEventListener("shanghao:resume-microphone", resume);
     return () => {
+      window.removeEventListener("shanghao:resume-microphone", resume);
       active = false;
       next.dispose();
       if (controller.current === next) controller.current = undefined;

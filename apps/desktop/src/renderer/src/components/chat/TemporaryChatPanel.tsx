@@ -39,6 +39,7 @@ import { Input } from "../base/Input";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { isSupportedChatImageFile } from "../../utils/chatImage";
 import { ChatImageLightbox } from "./ChatImageLightbox";
+import { useNoticeMessageFocus } from "../../features/chat/useNoticeMessageFocus";
 import type { AssistantBotMood } from "../../features/ai/useAssistantBotState";
 import { ChatPanelHeader } from "./ChatPanelHeader";
 import { ChatContentSwitcher } from "./ChatContentSwitcher";
@@ -113,6 +114,7 @@ export const TemporaryChatPanel = ({
   alternateContent,
   alternateContentActive = !!alternateContent,
   contentTabId,
+  focusedMessage,
 }: {
   messages: ChatMessage[];
   chatInput: string;
@@ -139,6 +141,7 @@ export const TemporaryChatPanel = ({
   alternateContent?: ReactNode;
   alternateContentActive?: boolean;
   contentTabId?: string;
+  focusedMessage?: { messageId?: string };
 }) => {
   const pushToast = useAppStore((state) => state.pushToast);
   const audioSnapshot = useSyncExternalStore(
@@ -151,15 +154,17 @@ export const TemporaryChatPanel = ({
   const lastQuickSendAt = useRef(0);
   const lastQuickCooldownMs = useRef(3_000);
   const quickSendCooldownTimer = useRef<number | undefined>(undefined);
-  const listRef = useRef<HTMLDivElement>(null);
+  const { listStart, listRef } = useNoticeMessageFocus(
+    messages,
+    focusedMessage,
+    alternateContentActive,
+  );
   const latestMessageElementRef = useRef<HTMLDivElement>(null);
-  const isNearBottomRef = useRef(true);
   const sendControlRef = useRef<HTMLSpanElement>(null);
   const dragDepthRef = useRef(0);
   // The first render can already contain restored history. Treat it as an
   // initial batch so the chat opens at the newest message rather than the top.
   const previousMessageCount = useRef(0);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [previewMessageId, setPreviewMessageId] = useState<string | null>(null);
@@ -231,32 +236,18 @@ export const TemporaryChatPanel = ({
     [],
   );
 
+  const newestId = messages.at(-1)?.id;
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && newestId) list.scrollTop = list.scrollHeight;
+  }, [newestId, listRef]);
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
 
     const previous = previousMessageCount.current;
     previousMessageCount.current = messages.length;
-    const wasNearBottom = isNearBottomRef.current;
-    const latestMessage = messages[messages.length - 1];
-    if (wasNearBottom || latestMessage?.isLocal || previous === 0) {
-      window.requestAnimationFrame(() => {
-        const behavior =
-          shouldReduceMotion || previous === 0 || latestMessage?.isLocal ? "auto" : "smooth";
-        list.scrollTo({ top: list.scrollHeight, behavior });
-        isNearBottomRef.current = true;
-        // Link cards and compressed-image previews can finish layout one frame
-        // after the message row. Pin a locally sent message to the true bottom
-        // again so the composer never clips its lower half.
-        window.requestAnimationFrame(() => {
-          if (latestMessage?.isLocal || previous === 0) list.scrollTop = list.scrollHeight;
-        });
-      });
-      setUnreadCount(0);
-    } else if (messages.length > previous) {
-      setUnreadCount((count) => count + messages.length - previous);
-    }
-
+    const latestMessage = messages.at(-1);
     if (shouldReduceMotion || messages.length <= previous) return;
 
     const latest = latestMessageElementRef.current;
@@ -324,7 +315,7 @@ export const TemporaryChatPanel = ({
     }, list);
     // Restore inline styles when message updates interrupt the entry animation.
     return () => context.revert();
-  }, [messages, shouldReduceMotion]);
+  }, [messages, shouldReduceMotion, listRef]);
 
   const animateSendFeedback = (source?: HTMLElement) => {
     if (shouldReduceMotion) return;
@@ -559,22 +550,17 @@ export const TemporaryChatPanel = ({
           idPrefix={contentTabId}
         >
           <div className="room-list-viewport" data-room-list-edge={messages.length > 0}>
+            <span className="room-list-top-edge" aria-hidden="true" />
             <div
               ref={listRef}
               className="chat-message-list flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto pr-1"
-              onScroll={(event) => {
-                const list = event.currentTarget;
-                isNearBottomRef.current =
-                  list.scrollHeight - list.scrollTop - list.clientHeight < 64;
-                if (isNearBottomRef.current) setUnreadCount(0);
-              }}
             >
               {messages.length === 0 ? (
                 <div className="chat-empty-state grid h-full min-h-[100px] place-items-center px-4 text-center text-[13px] leading-5 text-[#536c87]">
                   {canSend ? emptyMessage : "连接恢复后可以发送消息。"}
                 </div>
               ) : (
-                messages.slice(-100).map((message, index, visibleMessages) => {
+                messages.slice(listStart).map((message, index, visibleMessages) => {
                   const previousMessage = visibleMessages[index - 1];
                   const showDate =
                     !previousMessage ||
@@ -614,6 +600,7 @@ export const TemporaryChatPanel = ({
                           }
                           data-gsap-chat-message
                           className="chat-system-message mx-auto w-fit max-w-[90%] rounded-full px-3 py-1 text-center text-[12px] leading-4"
+                          data-message-id={message.id}
                           onContextMenu={(event) => {
                             event.preventDefault();
                             copyText(message.content);
@@ -634,6 +621,7 @@ export const TemporaryChatPanel = ({
                               ? "outgoing"
                               : "incoming"
                           }
+                          data-message-id={message.id}
                           className={`chat-message-row flex min-w-0 items-start gap-2 ${isGrouped ? "is-grouped" : ""}`}
                         >
                           {isGrouped ? (
@@ -777,19 +765,6 @@ export const TemporaryChatPanel = ({
                 })
               )}
             </div>
-            {unreadCount > 0 ? (
-              <button
-                type="button"
-                className="chat-unread-button"
-                onClick={() => {
-                  const list = listRef.current;
-                  if (list) list.scrollTop = list.scrollHeight;
-                  setUnreadCount(0);
-                }}
-              >
-                {unreadCount} 条新消息
-              </button>
-            ) : null}
           </div>
 
           <div

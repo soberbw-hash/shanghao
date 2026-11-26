@@ -113,6 +113,12 @@ const desktopApi: DesktopApi = {
     getSystemIdleSeconds: () => ipcRenderer.invoke(IPC_CHANNELS.app.getSystemIdleSeconds),
     writeLog: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.writeLog, payload),
     notify: (payload) => ipcRenderer.invoke(IPC_CHANNELS.app.notify, payload),
+    onRecordingNotice: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, ...args: Parameters<typeof listener>) =>
+        listener(...args);
+      ipcRenderer.on(IPC_CHANNELS.app.recordingNotice, wrapped);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.app.recordingNotice, wrapped);
+    },
     onNotificationFailed: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, reason: "blocked" | "failed") =>
         listener(reason);
@@ -250,8 +256,6 @@ const desktopApi: DesktopApi = {
       ipcRenderer.invoke(IPC_CHANNELS.ai.selectTranscription, recordingId, modelId),
     clearTranscriptionResults: (recordingId) =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.clearTranscriptionResults, recordingId),
-    publishOrganization: (recordingId) =>
-      ipcRenderer.invoke(IPC_CHANNELS.ai.publishOrganization, recordingId),
     pauseTask: (recordingId) => ipcRenderer.invoke(IPC_CHANNELS.ai.pauseTask, recordingId),
     resumeTask: (recordingId) => ipcRenderer.invoke(IPC_CHANNELS.ai.resumeTask, recordingId),
     assignSpeaker: (recordingId, speakerId, memberId, nickname) =>
@@ -428,8 +432,14 @@ const desktopApi: DesktopApi = {
     chooseDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.recording.chooseDirectory),
     saveMarkers: (filePath, markers) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.saveMarkers, filePath, markers),
-    saveOrigin: (filePath, roomId, roomName) =>
-      ipcRenderer.invoke(IPC_CHANNELS.recording.saveOrigin, filePath, roomId, roomName),
+    saveOrigin: (filePath, roomId, roomName, hadMultipleParticipants) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.recording.saveOrigin,
+        filePath,
+        roomId,
+        roomName,
+        hadMultipleParticipants,
+      ),
     applyAutomaticCleanup: (filePath) =>
       ipcRenderer.invoke(IPC_CHANNELS.recording.applyAutomaticCleanup, filePath),
     list: () => ipcRenderer.invoke(IPC_CHANNELS.recording.list),

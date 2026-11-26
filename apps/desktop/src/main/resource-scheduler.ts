@@ -23,9 +23,6 @@ export const RESOURCE_PRIORITY = {
   maintenance: 100,
 } as const;
 
-// This is one aggregate limit shared by every active model download. Keep the
-// idle ceiling above typical home broadband while retaining explicit headroom
-// when realtime voice, screen sharing, or a game needs the network.
 export {
   NORMAL_DOWNLOAD_BYTES_PER_SECOND,
   GAMING_DOWNLOAD_BYTES_PER_SECOND,
@@ -379,20 +376,22 @@ export class ResourceScheduler {
     this.state = { ...this.state, ...update };
     if (this.state.pressure.recordingActive || this.backgroundDownloadDecision().defer)
       this.workLane.cancelBackgroundScan();
-    if (this.activeCompute && !this.activeCompute.manualRequest) {
+    if (this.activeCompute) {
       const reason = this.state.realtimePressureHigh
         ? "realtime_pressure"
         : this.state.pressure.recordingActive
           ? "recording_priority"
-          : this.state.processingMode === "manual"
+          : !this.activeCompute.manualRequest && this.state.processingMode === "manual"
             ? "manual_only"
-            : this.state.gameActive && this.state.processingMode === "after_game"
+            : !this.activeCompute.manualRequest &&
+                this.state.gameActive &&
+                this.state.processingMode === "after_game"
               ? "waiting_for_game_to_finish"
               : undefined;
       if (reason && !this.activeCompute.controller.signal.aborted) {
         this.activeCompute.stoppingReason = reason;
         this.recordComputeEvent(this.activeCompute, "stopping", reason);
-        this.activeCompute.controller.abort();
+        this.activeCompute.controller.abort(new Error(reason));
       }
     }
   }

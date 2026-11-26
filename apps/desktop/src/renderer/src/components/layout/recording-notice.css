@@ -1,0 +1,141 @@
+.recording-notice {
+  --surface: #103243;
+  --light: #87ebdf;
+  --button: #11666b;
+  pointer-events: auto;
+  overflow: hidden;
+  color: #f8fcff;
+  border: 1px solid color-mix(in srgb, var(--light) 35%, var(--surface));
+  border-radius: 20px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--light) 9%, var(--surface)),
+    var(--surface) 70%
+  );
+  box-shadow: 0 10px 28px #11274738;
+}
+.recording-notice[data-kind="voice-replay"] {
+  --surface: #242653;
+  --light: #c8bcff;
+  --button: #51428d;
+}
+.recording-notice header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px 0 17px;
+  font-size: 13px;
+}
+.recording-notice header > svg {
+  color: var(--light);
+}
+.recording-notice header > span {
+  color: #d3e0ec;
+}
+.recording-notice header button {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.recording-notice header button:hover {
+  background: #ffffff20;
+}
+.recording-notice-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(148px, 27vh);
+  object-fit: contain;
+  mask-image: linear-gradient(transparent, black 15%, black 82%, transparent);
+}
+.recording-notice-copy {
+  padding: 2px 17px 16px;
+}
+.recording-notice-copy h3 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.recording-notice-copy p {
+  margin: 5px 0 13px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #dee8f3;
+}
+.recording-notice-copy button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--light) 55%, var(--button));
+  background: var(--button);
+  font-size: 13px;
+  font-weight: 700;
+}
+.recording-notice-copy button:hover {
+  background: color-mix(in srgb, var(--button) 82%, var(--light));
+}
+.recording-notice button {
+  cursor: pointer;
+}
+.recording-notice button:focus-visible {
+  outline: 2px solid white;
+  outline-offset: -4px;
+}
+
+.toast-stack-front .toast-icon {
+  border-radius: 10px;
+  background-color: color-mix(in srgb, currentColor 9%, transparent);
+}
+
+.toast-stack-front.toast-knock {
+  background: linear-gradient(110deg, #fff0d7, #fffaf0 68%);
+  border-color: #e3c79c;
+}
+
+.toast-knock .toast-icon {
+  width: 42px;
+  height: 42px;
+  background: transparent;
+}
+.toast-knock .toast-icon img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+.toast-knock .toast-copy + button {
+  background: #75470f;
+  border: 0;
+  color: white;
+}
+.toast-knock .toast-copy + button:hover {
+  background: #58360c;
+}
+.toast-chat-picture {
+  display: block;
+  max-width: 100%;
+  max-height: 96px;
+  margin-top: 6px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+.toast-chat-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 0;
+  color: #205da6;
+  font-weight: 650;
+  font-size: 12px;
+  cursor: pointer;
+}
+.toast-chat-link:hover {
+  text-decoration: underline;
+}

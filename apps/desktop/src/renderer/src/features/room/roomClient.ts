@@ -1182,7 +1182,7 @@ export class RoomClient {
         const hasPlayableAudio = hasPlayableAudioTrack(stream);
         const hasLiveScreen = stream
           .getVideoTracks()
-          .some((track) => track.readyState === "live" && track.enabled);
+          .some((track) => track.readyState === "live" && track.enabled && !track.muted);
         if (hasPlayableAudio) {
           this.webrtcAudioPeerIds.add(targetPeerId);
         } else {

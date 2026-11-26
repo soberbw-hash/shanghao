@@ -210,3 +210,18 @@ test("leaving releases the send hold immediately and late native completion cann
   assert.equal(f.holds(), 0);
   assert.deepEqual(f.published, []);
 });
+
+test("explicit mic resume clears every availability status even when previously manually muted", async () => {
+  for (const choice of ["away", "phone", "eating", "restroom"] as const) {
+    const f = fixture(true);
+    f.control.choose(choice);
+    await flush();
+    assert.equal(f.control.resumeMicrophone(), true);
+    await flush();
+    assert.equal(f.audio.isMuted, false);
+    assert.equal(f.audio.phoneModeActive, false);
+    assert.equal(f.audio.isDeafened, false);
+    assert.equal(f.published.at(-1), undefined);
+    assert.equal(f.control.resumeMicrophone(), false);
+  }
+});

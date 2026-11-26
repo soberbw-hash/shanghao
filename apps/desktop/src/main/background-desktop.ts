@@ -79,16 +79,21 @@ export const registerBackgroundDesktop = ({
     window.show();
     window.focus();
   };
-  const preview = (roomId: string) => {
+  const openRoom = (roomId: string, kind: "preview-room" | "enter-room" = "preview-room") => {
     if (!isPrivateRoomId(roomId)) return;
     showWindow();
-    sendToWindow(window, IPC_CHANNELS.app.backgroundCommand, { kind: "preview-room", roomId });
+    sendToWindow(window, IPC_CHANNELS.app.backgroundCommand, { kind, roomId, chat: false });
   };
-  const updateTray = () => updateTrayPresence(getTray(), online, activity, preview);
-  const notify = (title: string, body: string, click: () => void) => {
+  const updateTray = () => updateTrayPresence(getTray(), online, activity, openRoom);
+  const notify = (title: string, body: string, click: () => void, action?: string) => {
     if (!settings.getSnapshot().isSystemNotificationEnabled || !Notification.isSupported())
       return false;
-    const notification = new Notification({ title, body, silent: false });
+    const notification = new Notification({
+      title,
+      body,
+      silent: false,
+      actions: action ? [{ type: "button", text: action }] : [],
+    });
     notifications.show(notification, click, (reason) => {
       trace(`background_notification_failed:${reason}`);
       sendToWindow(window, IPC_CHANNELS.app.notificationFailed, reason);
@@ -108,9 +113,14 @@ export const registerBackgroundDesktop = ({
     },
     notify: (room) => {
       const scope = context().scope;
-      notify(`${cleanTrayRoomName(room.name)}有 ${room.onlineCount} 人在线`, "点击查看房间", () => {
-        if (scope && scope === context().scope) preview(room.roomId);
-      });
+      notify(
+        "好友上线",
+        `${cleanTrayRoomName(room.name)} · ${room.onlineCount} 人在线`,
+        () => {
+          if (scope && scope === context().scope) openRoom(room.roomId, "enter-room");
+        },
+        "进入房间",
+      );
     },
   });
   const sender = (event: IpcMainEvent | IpcMainInvokeEvent) => {

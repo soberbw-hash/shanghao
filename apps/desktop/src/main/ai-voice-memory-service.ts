@@ -14,7 +14,7 @@ import { withTranscriptionModelLabel } from "./voice-memory-model-label";
 import {
   AI_ASR_MODEL_NAMES,
   DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
-  CURRENT_TRANSCRIPTION_PIPELINE_VERSION,
+  CURRENT_TRANSCRIPTION_PIPELINE_VERSION as TRANSCRIPTION_PIPELINE_VERSION,
   evaluateVoiceMemoryTranscriptionValidity,
   hasInvalidVoiceMemoryResult,
   mergeTranscriptIntoSentences,
@@ -105,7 +105,6 @@ export {
   type TranscriptionUnitDefinition,
 } from "./voice-memory-transcription-units";
 import {
-  canAutomaticallyTranscribeDuration,
   completedTranscriptionUnits,
   isRecoverableFfmpegFailure,
   prepareTranscriptionInput,
@@ -113,17 +112,14 @@ import {
   resolveTranscriptionRunRange,
 } from "./voice-memory-transcription-preparation";
 export {
-  AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS,
   benchmarkDurationForMode,
   benchmarkRangeForMode,
-  canAutomaticallyTranscribeDuration,
   completedTranscriptionUnits,
   isRecoverableFfmpegFailure,
   resolveTranscriptionRunRange,
   transcriptionModelMetadata,
 } from "./voice-memory-transcription-preparation";
 export { isFatalTranscriptionRuntimeFailure } from "./voice-memory-transcription-retry";
-const TRANSCRIPTION_PIPELINE_VERSION = CURRENT_TRANSCRIPTION_PIPELINE_VERSION;
 /** Runs resumable transcription and organization while persisting every completed unit. */
 export class AiVoiceMemoryService {
   private readonly listeners = new Set<(record: VoiceMemoryRecord) => void>();
@@ -168,6 +164,7 @@ export class AiVoiceMemoryService {
     private readonly getCloudLocalAsrModel: () => AiAsrModelId = () =>
       DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID,
     private readonly getAsrGameLexicon: () => readonly AsrGameLexiconEntry[] = () => [],
+    private readonly onTranscriptReady?: (record: VoiceMemoryRecord) => void,
   ) {}
 
   async initialize(): Promise<void> {
@@ -228,8 +225,7 @@ export class AiVoiceMemoryService {
   async getRuntimeStatus(): Promise<AiRuntimeStatus> {
     // Lazy discovery keeps settings/manual mode from launching Python workers.
     await this.refreshRuntimeStatus();
-    const status = await this.runtime.status();
-    return { ...status, lastTask: this.lastTask };
+    return { ...(await this.runtime.status()), lastTask: this.lastTask };
   }
 
   async get(recordingId: string): Promise<VoiceMemoryRecord | undefined> {
@@ -512,7 +508,10 @@ export class AiVoiceMemoryService {
   async start(request: VoiceMemoryProcessRequest, historical = false): Promise<VoiceMemoryRecord> {
     request = {
       ...request,
-      organize: request.retryUnitIds ? false : !request.benchmark,
+      organize:
+        !request.retryUnitIds &&
+        !request.benchmark &&
+        (request.organize ?? this.isAutomaticOrganizationEnabled()),
     };
     if (this.deletingRecordings.has(request.recordingId)) throw new Error("voice_memory_deleted");
     const allowRecreate = this.deletedRecordings.has(request.recordingId);
@@ -783,7 +782,7 @@ export class AiVoiceMemoryService {
     if (request.organize !== false) {
       void transcription
         .then(async (record) => {
-          if (!canAutomaticallySummarize(record) || !this.isAutomaticTranscriptionEnabled()) return;
+          if (!canAutomaticallySummarize(record) || !this.isAutomaticOrganizationEnabled()) return;
           const current = await this.store.get(record.recordingId);
           if (!ownsAutomaticSummary(current, record, request.taskId)) return;
           return this.process({ ...request, transcribe: false, organize: true });
@@ -1021,6 +1020,8 @@ export class AiVoiceMemoryService {
         recordingId: record.recordingId,
         transcriptSegments: record.transcript.length,
       });
+      if (shouldTranscribe && !request.benchmark && !partialTranscription)
+        this.onTranscriptReady?.(record);
       if (automaticCloudAssistRetryState(record, this.automaticAssistModel()))
         this.scheduleDeferredRetry();
       return record;
@@ -1028,9 +1029,7 @@ export class AiVoiceMemoryService {
       const paused = controller.signal.aborted || (error as Error).message === "ai_task_paused";
       const reason = automaticCloudFailure(error instanceof Error ? error.message : String(error));
       if (isVoiceMemoryOwnershipError(error)) throw error;
-      const requiresManual =
-        !request.manual && reason === "automatic_long_recording_requires_manual";
-      this.log(paused || requiresManual ? "info" : "error", "Voice memory processing stopped", {
+      this.log(paused ? "info" : "error", "Voice memory processing stopped", {
         recordingId: record.recordingId,
         reason,
         paused,
@@ -1039,7 +1038,7 @@ export class AiVoiceMemoryService {
       const durableRecord = await this.requireRecord(request.recordingId, true);
       const recovery = planAutomaticRecordingRecovery(durableRecord, reason, {
         manual: request.manual,
-        paused: paused || requiresManual,
+        paused: paused,
         enabled: this.isAutomaticTranscriptionEnabled(),
       });
       const deferred =
@@ -1058,22 +1057,20 @@ export class AiVoiceMemoryService {
         ...recoverAutomaticOrganization(durableRecord, reason, deferred),
         transcriptionStats: interruptedStats,
         taskId,
-        taskStatus: paused || deferred || requiresManual ? "pending" : "failed",
+        taskStatus: paused || deferred ? "pending" : "failed",
         processingStage: currentStage,
         diagnostic: createDiagnostic(
           request,
-          paused || deferred || requiresManual ? "pending" : "failed",
+          paused || deferred ? "pending" : "failed",
           currentStage,
           { errorCode: classifyLocalModelRuntimeError(error), errorMessage: reason },
         ),
-        phase: paused || deferred || requiresManual ? "paused" : "error",
-        errorMessage: requiresManual
-          ? "manual_required:long_recording"
-          : deferred
-            ? `deferred:${this.stopped && paused ? "app_restarted" : reason}`
-            : paused
-              ? undefined
-              : reason,
+        phase: paused || deferred ? "paused" : "error",
+        errorMessage: deferred
+          ? `deferred:${this.stopped && paused ? "app_restarted" : reason}`
+          : paused
+            ? undefined
+            : reason,
       });
       if (deferred) this.scheduleDeferredRetry();
       if (!paused && !deferred) throw error;
@@ -1198,6 +1195,8 @@ export class AiVoiceMemoryService {
         ? "local"
         : this.getTranscriptionProvider();
     if (transcriptionProvider !== "local") {
+      const admission = this.models.remoteTranscriptionDecision?.(manual);
+      if (admission && !admission.runnable) throw new Error(admission.reason);
       if (retryUnitIds) throw new Error("transcription_retry_local_required");
       return transcribeWithRemoteProvider({
         record,
@@ -1293,9 +1292,6 @@ export class AiVoiceMemoryService {
           ],
         },
       };
-    }
-    if (!manual && !forceLocal && !canAutomaticallyTranscribeDuration(totalDuration)) {
-      throw new Error("automatic_long_recording_requires_manual");
     }
     const { knownSpeakerSegments, resumeParticipantSources, speechSources, unexamined } =
       await prepareKnownSpeakerSources(
@@ -1913,8 +1909,9 @@ export class AiVoiceMemoryService {
     return retryDeferredRecordings(
       !this.stopped && this.isAutomaticTranscriptionEnabled(),
       this.controllers.size > 0,
-      this.getTranscriptionProvider() === "local" &&
-        !this.models.canRunTask("transcription", false).runnable,
+      this.getTranscriptionProvider() === "local"
+        ? !this.models.canRunTask("transcription", false).runnable
+        : this.models.remoteTranscriptionDecision?.(false).runnable === false,
       () => this.store.list(),
       (record) =>
         withCurrentDeferredRecording(

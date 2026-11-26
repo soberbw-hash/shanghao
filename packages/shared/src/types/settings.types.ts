@@ -70,7 +70,6 @@ export interface AppSettings {
   aiOrganizerProvider: AiTextProvider;
   aiRoomAskProvider: AiTextProvider;
   aiProcessingMode: AiProcessingMode;
-  isAiAutoTranscribeEnabled: boolean;
   isAiAutoOrganizeEnabled: boolean;
   /** Opt-in: publish completed summaries to the recording's matching room only. */
   isAiAutoUploadEnabled?: boolean;

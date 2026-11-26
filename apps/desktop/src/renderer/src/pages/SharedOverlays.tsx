@@ -52,6 +52,34 @@ export const SharedOverlays = () => {
   );
   const roomEntryRef = useRef<string | undefined>(undefined);
   const [roomEntryKey, setRoomEntryKey] = useState<string | undefined>(undefined);
+  useEffect(
+    () =>
+      window.desktopApi.app.onRecordingNotice?.((notice, openImmediately) => {
+        const open = () => {
+          if (notice.kind === "voice-replay") {
+            window.dispatchEvent(
+              new CustomEvent("shanghao:open-voice-replay-library", { detail: notice.clipId }),
+            );
+            return;
+          }
+          const state = useAppStore.getState();
+          if (state.currentPage !== "settings") state.setSettingsReturnTo(state.currentPage);
+          state.setVoiceMemoryOpenTarget({ filePath: notice.filePath, startMs: 0 });
+          state.navigate("settings");
+        };
+        if (openImmediately) open();
+        else
+          useAppStore.getState().pushToast({
+            tone: "success",
+            cardKind: notice.kind,
+            title: notice.title,
+            description: notice.body,
+            actionLabel: notice.kind === "voice-replay" ? "查看片段" : "查看文字稿",
+            onAction: open,
+          });
+      }),
+    [],
+  );
   const version = runtimeInfo?.version ?? "";
   const releasePending = Boolean(
     settings?.hasCompletedProfileSetup &&

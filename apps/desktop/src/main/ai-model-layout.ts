@@ -5,6 +5,17 @@ import type { AiModelId } from "@private-voice/shared";
 
 import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
 
+export interface RemoteModelFile {
+  rfilename: string;
+  size?: number;
+  sha256?: string;
+  lfs?: { sha256?: string; size?: number };
+}
+export interface RemoteModelManifest {
+  sha: string;
+  siblings: RemoteModelFile[];
+}
+
 const REQUIRED_MODEL_FILES: Readonly<Partial<Record<AiModelId, readonly string[]>>> = {
   "fun-asr-nano-2512": ["model.pt", "config.yaml", "configuration.json", "multilingual.tiktoken"],
   "fireredasr2-aed": [
@@ -62,3 +73,22 @@ export const requiredWeightFiles = (
     (file) => file.endsWith(".safetensors") || file.endsWith(".gguf") || file.endsWith("model.pt"),
   );
 };
+
+export const safeRelativeModelPath = (value: string): string => {
+  const normalized = value.replaceAll("\\", "/");
+  const segments = normalized.split("/");
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    normalized.includes("\0") ||
+    segments.some(
+      (segment) => !segment || segment === "." || segment === ".." || segment.includes(":"),
+    )
+  ) {
+    throw new Error("unsafe_ai_model_path");
+  }
+  return normalized;
+};
+
+export const buildResumeHeaders = (offset: number): Record<string, string> | undefined =>
+  offset > 0 ? { Range: `bytes=${offset}-` } : undefined;

@@ -39,7 +39,6 @@
   "apps/desktop/src/main/voice-memory-publication.ts": 28,
   "apps/desktop/src/main/recording-recap-upload.ts": 43,
   "apps/desktop/src/main/recording-process-origin.ts": 28,
-  "apps/desktop/src/renderer/src/components/settings/RecordingUploadAction.tsx": 65,
   "apps/desktop/src/renderer/src/styles/parts/120-recording-ai-workflow.css": 19,
   "packages/signaling/src/recording-recap-handler.ts": 36,
   "apps/desktop/src/renderer/src/components/room/PrivateRoomColorPicker.tsx": 38,

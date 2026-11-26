@@ -62,7 +62,7 @@ test("resource scheduler throttles and yields background work during realtime pr
     reason: "peer_recovery",
     resourceMode: "low",
   });
-  assert.equal(scheduler.aiDecision("transcription", true).runnable, true);
+  assert.equal(scheduler.aiDecision("transcription", true).runnable, false);
   assert.deepEqual(scheduler.shouldReleaseQwen(), { release: true, reason: "peer_recovery" });
 });
 
@@ -75,10 +75,11 @@ test("recording protects the capture path from automatic AI while manual work st
     resourceMode: "low",
   });
   assert.deepEqual(scheduler.aiDecision("transcription", true), {
-    runnable: true,
+    reason: "recording_priority",
+    runnable: false,
     resourceMode: "low",
   });
-  assert.equal(scheduler.getDenialSnapshot().byReason.recording_priority, 1);
+  assert.equal(scheduler.getDenialSnapshot().byReason.recording_priority, 2);
   scheduler.update({ pressure: pressure({ recordingActive: false }) });
   assert.deepEqual(scheduler.aiDecision("transcription", false), {
     runnable: true,
@@ -174,12 +175,14 @@ test("running automatic AI yields when room pressure rises while manual work kee
   assert.equal(scheduler.getComputeSnapshot().activeKind, "transcription");
   assert.equal(scheduler.getComputeSnapshot().activePhase, "stopping");
   assert.equal(scheduler.getComputeSnapshot().stoppingReason, "realtime_pressure");
-  const manual = scheduler.acquireCompute("summary", true);
+  const waiting = scheduler.acquireCompute("summary", true);
   automatic.release();
-  const granted = await manual;
+  await assert.rejects(waiting, /peer_recovery/);
+  scheduler.update({ realtimePressureHigh: false });
+  const granted = await scheduler.acquireCompute("summary", true);
   assert.equal(granted.signal.aborted, false);
   scheduler.update({ pressure: pressure({ recordingActive: true }) });
-  assert.equal(granted.signal.aborted, false);
+  assert.equal(granted.signal.aborted, true);
   granted.release();
   assert.equal(scheduler.getComputeSnapshot().activeKind, undefined);
 });
@@ -189,7 +192,7 @@ test("Qwen pressure release waits for an active manual text job", async () => {
   const manual = await scheduler.acquireCompute("summary", true);
   scheduler.update({ pressure: pressure({ recordingActive: true, peerRecovering: true }) });
   assert.deepEqual(scheduler.shouldReleaseQwen(), { release: false });
-  assert.equal(manual.signal.aborted, false);
+  assert.equal(manual.signal.aborted, true);
   manual.release();
   assert.deepEqual(scheduler.shouldReleaseQwen(), { release: true, reason: "peer_recovery" });
 });
@@ -202,12 +205,11 @@ test("AI compute timeline is bounded and contains only scheduling transitions", 
   scheduler.update({ pressure: pressure({ recordingActive: true }) });
   assert.equal(first.signal.aborted, true);
   first.release();
-  const manual = await waiting;
-  manual.release();
+  await assert.rejects(waiting, /recording_priority/);
   const events = scheduler.getComputeTimeline();
   assert.deepEqual(
     events.map(({ phase }) => phase),
-    ["started", "queued", "stopping", "released", "started", "released"],
+    ["started", "queued", "stopping", "released", "denied"],
   );
   assert.equal(events[0]?.id, events[3]?.id);
   assert.equal(events[1]?.id, events[4]?.id);

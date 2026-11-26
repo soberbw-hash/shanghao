@@ -25,14 +25,26 @@ export function registerScreenShareViewerIpc(
       if (!main || event.sender !== main || event.senderFrame !== main.mainFrame)
         throw Error("invalid_screen_viewer_host");
       if (!request || typeof request !== "object") throw new Error("invalid_screen_viewer_open");
-      await openScreenShareViewer({
-        title: requireString(request.title, 160, "screen_viewer_title"),
-        sessionId: requireString(request.sessionId, 128, "screen_viewer_session"),
-        peerId:
-          request.peerId === undefined
-            ? undefined
-            : requireString(request.peerId, 160, "screen_viewer_peer"),
-      });
+      const sessionId = requireString(request.sessionId, 128, "screen_viewer_session");
+      await openScreenShareViewer(
+        {
+          title: requireString(request.title, 160, "screen_viewer_title"),
+          sessionId,
+          peerId:
+            request.peerId === undefined
+              ? undefined
+              : requireString(request.peerId, 160, "screen_viewer_peer"),
+        },
+        () => {
+          if (!main.isDestroyed()) {
+            main.send(IPC_CHANNELS.screenShareViewer.signal, {
+              sessionId,
+              sender: "viewer",
+              type: "closed",
+            } satisfies ScreenShareViewerSignal);
+          }
+        },
+      );
     },
   );
   ipcMain.handle(

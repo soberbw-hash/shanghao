@@ -6,6 +6,7 @@ import { useRecordingStore } from "../store/recordingStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useAppStore } from "../store/appStore";
 import { subscribeToSystemNotificationFailures } from "../features/notifications/systemNotificationFeedback";
+import { openNotifiedRoom } from "../features/room/roomNotifications";
 
 export const trayBackgroundActivity = () => ({
   inRoom: ![RoomLifecycleState.Idle, RoomLifecycleState.Closed].includes(
@@ -44,6 +45,8 @@ export const useTrayBackground = (): void => {
           publish();
       }),
       shanghaoCore.app.onBackgroundCommand((command) => {
+        if (command.kind === "enter-room")
+          return openNotifiedRoom(command.roomId, command.chat, command.messageId);
         if (command.kind !== "preview-room") return;
         const app = useAppStore.getState();
         app.setPendingRoomInvite(command.roomId);
@@ -63,10 +66,8 @@ export const useTrayRoomCommands = (
   useEffect(
     () =>
       shanghaoCore.app.onBackgroundCommand((command) => {
-        if (command.kind === "preview-room") {
-          handlers.current.openPicker();
-          return;
-        }
+        if (command.kind === "preview-room") return handlers.current.openPicker();
+        if (command.kind !== "leave-and-hide") return;
         void (async () => {
           try {
             await handlers.current.leaveRoom();

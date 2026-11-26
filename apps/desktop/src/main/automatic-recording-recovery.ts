@@ -170,20 +170,25 @@ export function planAutomaticRecordingRecovery(
       };
     return { deferred: false, retry: previous ? { attempts } : undefined };
   }
+  const resourceWait =
+    /^(?:recording_priority|realtime_pressure|memory_pressure|cpu_pressure|gpu_memory_pressure|voice_[a-z_]+|screen_share[a-z_]*|peer_recovery[a-z_]*|network_quality[a-z_]*|renderer_memory[a-z_]*)$/.test(
+      reason,
+    );
   const deferred =
-    !options.manual &&
-    (reason === "manual_only" ||
-      reason === "cloud_asr_key_required" ||
-      reason === "cloud_asr_not_configured" ||
-      reason === "cloud_asr_backend_upgrade_required" ||
-      reason === "account_session_expired" ||
-      reason === "custom_asr_key_required" ||
-      reason === "custom_ai_not_configured" ||
-      reason === "cloud_ai_not_configured" ||
-      /^model_.+_(?:not_installed|runtime_not_ready)$/.test(reason) ||
-      reason === "waiting_for_game_to_finish" ||
-      reason === "realtime_pressure" ||
-      /^(?:voice_|screen_share|peer_recovery|network_quality|renderer_memory)/.test(reason));
+    resourceWait ||
+    (!options.manual &&
+      (reason === "manual_only" ||
+        reason === "cloud_asr_key_required" ||
+        reason === "cloud_asr_not_configured" ||
+        reason === "cloud_asr_backend_upgrade_required" ||
+        reason === "account_session_expired" ||
+        reason === "custom_asr_key_required" ||
+        reason === "custom_ai_not_configured" ||
+        reason === "cloud_ai_not_configured" ||
+        /^model_.+_(?:not_installed|runtime_not_ready)$/.test(reason) ||
+        reason === "waiting_for_game_to_finish" ||
+        reason === "realtime_pressure" ||
+        /^(?:voice_|screen_share|peer_recovery|network_quality|renderer_memory)/.test(reason)));
   return { deferred, retry: previous };
 }
 

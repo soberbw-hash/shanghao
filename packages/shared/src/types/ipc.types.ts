@@ -1,3 +1,8 @@
+export type RecordingNotice = {
+  title: string;
+  body: string;
+} & ({ kind: "voice-replay"; clipId: string } | { kind: "transcription"; filePath: string });
+
 import type {
   AppSettings,
   ProfileAvatarSelection,
@@ -321,7 +326,9 @@ export interface DesktopApi {
     onBackgroundCommand: (
       listener: (
         command:
-          { kind: "leave-and-hide"; requestId: string } | { kind: "preview-room"; roomId: string },
+          | { kind: "leave-and-hide"; requestId: string }
+          | { kind: "preview-room"; roomId: string }
+          | { kind: "enter-room"; roomId: string; chat: boolean; messageId?: string },
       ) => void,
     ) => () => void;
     getRuntimeInfo: () => Promise<RuntimeInfo>;
@@ -336,9 +343,17 @@ export interface DesktopApi {
       shakeWindow?: boolean;
       showNotification?: boolean;
       silent?: boolean;
+      room?: {
+        kind: "knock" | "chat" | "presence";
+        id: string;
+        link?: string;
+        imageDataUrl?: string;
+        messageId?: string;
+      };
     }) => Promise<void>;
     onLifecycleRecovery: (listener: (notice: { reason: string; at: string }) => void) => () => void;
     onNotificationFailed: (listener: (reason: "blocked" | "failed") => void) => () => void;
+    onRecordingNotice?: (listener: (notice: RecordingNotice, open: boolean) => void) => () => void;
     readChatHistory: (payload: {
       serverUrl: string;
       channelId: string;
@@ -434,7 +449,6 @@ export interface DesktopApi {
     processRecording: (request: VoiceMemoryProcessRequest) => Promise<VoiceMemoryRecord>;
     selectTranscription: (recordingId: string, modelId: AiAsrModelId) => Promise<VoiceMemoryRecord>;
     clearTranscriptionResults: (recordingId: string) => Promise<VoiceMemoryRecord>;
-    publishOrganization: (recordingId: string) => Promise<VoiceMemoryRecord>;
     pauseTask: (recordingId: string) => Promise<void>;
     resumeTask: (recordingId: string) => Promise<VoiceMemoryRecord>;
     assignSpeaker: (
@@ -550,7 +564,12 @@ export interface DesktopApi {
     ) => Promise<void>;
     chooseDirectory: () => Promise<string | undefined>;
     saveMarkers: (filePath: string, markers: RecordingMarker[]) => Promise<string>;
-    saveOrigin: (filePath: string, roomId: string, roomName: string) => Promise<void>;
+    saveOrigin: (
+      filePath: string,
+      roomId: string,
+      roomName: string,
+      hadMultipleParticipants?: boolean,
+    ) => Promise<void>;
     applyAutomaticCleanup: (filePath: string) => Promise<RecordingAutomaticCleanupResult>;
     list: () => Promise<RecordingLibrarySnapshot>;
     scanWaste: () => Promise<RecordingCleanupScan>;

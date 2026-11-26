@@ -29,6 +29,8 @@ import {
   IPC_CHANNELS,
   getQuickMessageShortcutSlots,
   isAccountAvatarPresetId,
+  isStoredRoomId,
+  isTemporaryRoomSessionId,
   type AccountAvatarUpdateRequest,
   type AccountLoginRequest,
   type AccountPasswordResetRequest,
@@ -95,6 +97,7 @@ import { readRelayStatus } from "./relay-status";
 import { buildRuntimeEventTimeline } from "./runtime-event-timeline";
 import { sendToWindow } from "./safe-web-contents";
 import { systemNotificationDelivery } from "./notification-delivery";
+import { notificationWebLink } from "./notification-web-link";
 import { registerOverlayQuickMusicMuteHandler } from "./overlay-quick-music-ipc";
 import { registerRecordingLocationIpcHandlers } from "./recording-location-ipc";
 import { registerRecordingMarkerIpcHandler } from "./recording-marker-ipc";
@@ -111,7 +114,6 @@ import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { AiModelManager } from "./ai-model-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
-import { createRecordingRecapUpload } from "./recording-recap-upload";
 import { bindRecordingProcessOrigin } from "./recording-process-origin";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
@@ -327,9 +329,6 @@ export const registerIpcHandlers = ({
   aiModelConfigurationUsage.onChange(() => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.ai.status, aiModels.getSnapshot());
   });
-  const recapUpload = createRecordingRecapUpload({ voiceMemory, signalingClient }, () =>
-    settingsStore.getSnapshot(),
-  );
   voiceMemory.onStatus((record) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.ai.voiceMemoryStatus, record);
   });
@@ -368,18 +367,76 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(
     IPC_CHANNELS.app.notify,
-    async (_event, payload: Parameters<DesktopApi["app"]["notify"]>[0]): Promise<void> => {
+    async (event, payload: Parameters<DesktopApi["app"]["notify"]>[0]): Promise<void> => {
       const title = requireString(payload?.title, 80, "notification_title");
       const body = requireString(payload?.body, 180, "notification_body");
       const mainWindow = getMainWindow();
-      if (payload.attention === true) bringWindowToFront(mainWindow, true);
-      if (payload.shakeWindow === true) shakeMainWindow(mainWindow);
+      const room = payload.room;
+      const foreground = mainWindow?.isFocused() && mainWindow.isVisible();
+      if (
+        room &&
+        (event.sender !== mainWindow?.webContents ||
+          event.senderFrame !== event.sender.mainFrame ||
+          (!isStoredRoomId(room.id) && !isTemporaryRoomSessionId(room.id)) ||
+          !["knock", "chat", "presence"].includes(room.kind))
+      )
+        return;
+      if (payload.attention === true && (!room || foreground)) bringWindowToFront(mainWindow, true);
+      if (payload.shakeWindow === true && (!room || foreground)) shakeMainWindow(mainWindow);
       if (payload.showNotification === false) return;
+      if (room && (foreground || !settingsStore.getSnapshot().isSystemNotificationEnabled)) return;
       if (!Notification.isSupported()) return;
-      const notification = new Notification({ title, body, silent: payload.silent === true });
+      const link = notificationWebLink(room?.link);
+      const thumbnail = room?.imageDataUrl;
+      const image =
+        typeof thumbnail === "string" &&
+        thumbnail.length <= 180000 &&
+        /^data:image\/(?:jpeg|webp|png);base64,[A-Za-z0-9+/=]+$/.test(thumbnail)
+          ? nativeImage.createFromDataURL(thumbnail)
+          : undefined;
+      const actions: Electron.NotificationAction[] = [];
+      if (room)
+        actions.push({ type: "button", text: room.kind === "chat" ? "查看消息" : "进入房间" });
+      if (link) actions.push({ type: "button", text: "打开链接" });
+      const roomIcon =
+        room && room.kind !== "chat"
+          ? app.isPackaged
+            ? path.join(process.resourcesPath, "notices/gamepad.png")
+            : path.join(app.getAppPath(), "src/renderer/src/assets/room-icons/fluent/gamepad.png")
+          : undefined;
+      const notification = new Notification({
+        title,
+        body,
+        silent: payload.silent === true,
+        actions,
+        icon:
+          image && !image.isEmpty()
+            ? image.resize(
+                image.getSize().width >= image.getSize().height ? { width: 96 } : { height: 96 },
+              )
+            : roomIcon,
+      });
+      const accountId = accounts.getSnapshot().profile?.userId;
+      const server = settingsStore.getSnapshot().relayServerUrl;
+      const sameSession = () =>
+        accountId === accounts.getSnapshot().profile?.userId &&
+        server === settingsStore.getSnapshot().relayServerUrl;
+      const openRoom = () => {
+        bringWindowToFront(getMainWindow());
+        if (room && sameSession())
+          sendToWindow(getMainWindow(), IPC_CHANNELS.app.backgroundCommand, {
+            kind: "enter-room",
+            roomId: room.id,
+            chat: room.kind === "chat",
+            messageId:
+              typeof room.messageId === "string" && room.messageId.length <= 160
+                ? room.messageId
+                : undefined,
+          });
+      };
       systemNotificationDelivery.show(
         notification,
-        () => bringWindowToFront(getMainWindow()),
+        openRoom,
         (reason) => {
           sendToWindow(getMainWindow(), IPC_CHANNELS.app.notificationFailed, reason);
           void diagnostics
@@ -390,6 +447,11 @@ export const registerIpcHandlers = ({
               context: { reason },
             })
             .catch(() => undefined);
+        },
+        (index) => {
+          if (index === 0) openRoom();
+          if (index === 1 && link && sameSession())
+            void shell.openExternal(link).catch(() => undefined);
         },
       );
     },
@@ -694,7 +756,7 @@ export const registerIpcHandlers = ({
           );
           if (
             [
-              "isAiAutoTranscribeEnabled",
+              "isAiAutoOrganizeEnabled",
               "recordingSaveDirectory",
               "aiTranscriptionProvider",
               "isAiCloudLocalAssistEnabled",
@@ -942,7 +1004,7 @@ export const registerIpcHandlers = ({
       localWeather.getSnapshot(request),
   );
   ipcMain.handle(IPC_CHANNELS.ai.getSnapshot, async (): Promise<AiVoiceMemorySnapshot> =>
-    aiModels.getSnapshot(),
+    aiModels.refreshHardwareSnapshot(),
   );
   ipcMain.handle(
     IPC_CHANNELS.ai.controlModel,
@@ -998,11 +1060,6 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.ai.clearTranscriptionResults,
     async (_event, recordingId: string): Promise<VoiceMemoryRecord> =>
       voiceMemory.clearTranscriptionResults(requireString(recordingId, 2_048, "recording_id")),
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.ai.publishOrganization,
-    async (_event, recordingIdValue: string): Promise<VoiceMemoryRecord> =>
-      recapUpload.upload(requireString(recordingIdValue, 2_048, "recording_id")),
   );
   ipcMain.handle(IPC_CHANNELS.ai.pauseTask, async (_event, recordingId: string): Promise<void> => {
     await voiceMemory.pause(requireString(recordingId, 2_048, "recording_id"));

@@ -1,4 +1,6 @@
-import type { ChatMessage } from "@private-voice/shared";
+import { isPrivateRoomId, type ChatMessage, type DesktopApi } from "@private-voice/shared";
+import { useAppStore } from "../../store/appStore";
+import { useRoomStore } from "../../store/roomStore";
 
 import { playUiSound } from "../audio/uiSound";
 
@@ -13,15 +15,53 @@ export const describeChatNotification = (message: ChatMessage): string => {
   return "发来了一条消息";
 };
 
-export const sendSystemNotification = (payload: {
-  title: string;
-  body: string;
-  attention?: boolean;
-  shakeWindow?: boolean;
-  showNotification?: boolean;
-}): void => {
+export const openNotifiedRoom = (roomId: string, chat: boolean, messageId?: string): void => {
+  const app = useAppStore.getState();
+  const inRoom =
+    app.currentPage === "room" ||
+    (app.currentPage === "settings" && app.settingsReturnTo === "room");
+  const sameRoom = inRoom && useRoomStore.getState().room.roomId === roomId;
+  if (chat && (sameRoom || isPrivateRoomId(roomId))) {
+    useAppStore.setState({ chatNoticeTarget: { roomId, messageId } });
+  }
+  if (sameRoom) {
+    app.navigate("room");
+  } else if (isPrivateRoomId(roomId)) {
+    app.setPendingRoomInvite(roomId, true);
+    app.navigate(inRoom ? "room" : "home");
+  } else {
+    app.pushToast({ title: "这次房间会话已结束", tone: "neutral" });
+  }
+};
+
+export const sendSystemNotification = (
+  payload: Parameters<DesktopApi["app"]["notify"]>[0],
+): void => {
   const notify = window.desktopApi?.app?.notify;
-  if (typeof notify === "function") void notify(payload);
+  const room = payload.room;
+  if (
+    room &&
+    room.kind !== "knock" &&
+    document.hasFocus() &&
+    document.visibilityState === "visible"
+  ) {
+    const app = useAppStore.getState();
+    const readingChat =
+      app.currentPage === "room" &&
+      document.querySelector('[role="tabpanel"][aria-hidden="false"] .chat-message-list');
+    if (!readingChat) {
+      const chat = room.kind === "chat";
+      app.pushToast({
+        title: payload.title,
+        description: payload.body,
+        chatPreview: chat ? { image: room.imageDataUrl, link: room.link } : undefined,
+        actionLabel: chat ? "查看消息" : "进入房间",
+        onAction: () => openNotifiedRoom(room.id, chat, room.messageId),
+      });
+    }
+    return;
+  }
+  if (typeof notify === "function") void notify(payload).catch(() => undefined);
 };
 
 export const playSceneReactionSound = (sound: "receive-message" | "send-message"): void => {

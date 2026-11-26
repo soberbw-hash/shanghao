@@ -6,6 +6,8 @@ import test from "node:test";
 
 import { DailyRoomReportStore } from "../../../packages/signaling/src/daily-room-report-store";
 
+import { DailyRoomCommentaryService } from "../../../packages/signaling/src/daily-room-commentary-service";
+
 const at = (value: string): number => Date.parse(`${value}+08:00`);
 
 test("special game names remain own data across persistence and reload", async () => {
@@ -259,4 +261,41 @@ test("recording recaps exist only after explicit publish and replace the same re
   assert.equal(report?.recordingRecaps?.length, 1);
   assert.equal(report?.recordingRecaps?.[0]?.description, "更新后的本地整理。");
   assert.equal(report?.commentary, undefined);
+});
+
+test("two readers receive the same updated daily overview after one generation", async () => {
+  const store = await DailyRoomReportStore.create();
+  store.publishChronicleRecap(
+    "main",
+    "yesterday",
+    "大家先等队友，后来开了一局。",
+    Date.now() - 86_400_000,
+  );
+  let finish!: (result: string) => void;
+  let calls = 0;
+  const service = new DailyRoomCommentaryService(Promise.resolve(store), {
+    isConfigured: () => true,
+    execute: async () => {
+      calls++;
+      return new Promise<string>((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  const seen: string[] = [];
+  const published = new Promise<void>((resolve) => {
+    const update = (reports: ReturnType<typeof store.getHistory>) => {
+      seen.push(reports[0]!.commentary!);
+      if (seen.length === 2) resolve();
+    };
+    void Promise.all([service.getReports("main", update), service.getReports("main", update)]).then(
+      (initial) => {
+        assert.equal(calls, 1);
+        assert.ok(initial.every((reports) => !reports[0]?.commentary));
+        finish(JSON.stringify({ commentary: "大家先等队友，随后一起开了一局。" }));
+      },
+    );
+  });
+  await published;
+  assert.deepEqual(seen, Array(2).fill("大家先等队友，随后一起开了一局。"));
 });

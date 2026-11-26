@@ -43,16 +43,6 @@ export const AudioSettingsCard = ({
         </div>
       </SettingsItemRow>
       <SettingsItemRow
-        label="静音说话提醒"
-        description="手动静音后持续说话时轻声提醒，每分钟最多一次；按键说话时不提醒。"
-      >
-        <Switch
-          ariaLabel="静音说话提醒"
-          isChecked={settings.isMutedSpeechReminderEnabled !== false}
-          onChange={(isMutedSpeechReminderEnabled) => onChange({ isMutedSpeechReminderEnabled })}
-        />
-      </SettingsItemRow>
-      <SettingsItemRow
         label="精彩时刻录制"
         description="录音中按一下，在录音旁生成可直接阅读的精彩时刻文本。"
       >
@@ -64,23 +54,11 @@ export const AudioSettingsCard = ({
         />
       </SettingsItemRow>
       <SettingsItemRow
-        label="自动标记游戏"
-        description="启动或退出游戏时，自动标记录音位置。仅保存在本机。"
+        label="自动录音"
+        description="两人同房时开始，独处满五分钟或离开房间时保存。"
       >
         <Switch
-          ariaLabel="自动标记游戏"
-          isChecked={settings.isRecordingAutoGameMarkerEnabled !== false}
-          onChange={(isRecordingAutoGameMarkerEnabled) =>
-            onChange({ isRecordingAutoGameMarkerEnabled })
-          }
-        />
-      </SettingsItemRow>
-      <SettingsItemRow
-        label="自动录音并保存"
-        description="房间中有两人或以上时自动开始，退出时保存到录音库；独处时可手动录音。"
-      >
-        <Switch
-          ariaLabel="自动录音并保存"
+          ariaLabel="自动录音"
           isChecked={settings.isAutoRecordOnJoinEnabled}
           onChange={(isAutoRecordOnJoinEnabled) => onChange({ isAutoRecordOnJoinEnabled })}
         />

@@ -61,6 +61,8 @@ export class ScreenShareManager {
   private detachedStream?: MediaStream;
   private detachedTrackId?: string;
   private detachedSessionId?: string;
+  private unsubscribeDetachedWindow?: () => void;
+  private detachedWindowReady = false;
   private operationId = 0;
   private isDisposed = false;
   private shutdownPromise?: Promise<void>;
@@ -360,26 +362,38 @@ export class ScreenShareManager {
   async openDetachedViewer(item: ScreenShareItem): Promise<void> {
     if (this.isDisposed || this.shutdownPromise) throw Error("screen_share_closed");
     this.closeDetachedPublisher(false);
+    this.unsubscribeDetachedWindow?.();
+    this.detachedWindowReady = false;
     const sessionId = crypto.randomUUID();
     this.detachedSessionId = sessionId;
-    this.patch({ displayMode: "detached", detachedItemId: item.id });
+    this.unsubscribeDetachedWindow = window.desktopApi.screenShareViewer.onSignal((signal) => {
+      if (
+        signal.sessionId === this.detachedSessionId &&
+        signal.sender === "viewer" &&
+        signal.type === "closed"
+      ) {
+        this.clearDetachedWindow(false);
+      }
+    });
     try {
       await window.desktopApi.screenShareViewer.open({
         title: item.title,
         sessionId,
-        peerId: item.isLocal ? undefined : item.id,
+        peerId: item.isLocal || item.transport === "relay" ? undefined : item.id,
       });
     } catch (error) {
       if (this.detachedSessionId === sessionId) this.closeDetachedViewer();
       throw error;
     }
     if (this.detachedSessionId !== sessionId || this.isDisposed) return;
+    this.detachedWindowReady = true;
+    this.patch({ displayMode: "detached", detachedItemId: item.id });
     await this.syncDetachedItem(item);
   }
 
   async syncDetachedItem(item?: ScreenShareItem): Promise<void> {
     const sessionId = this.detachedSessionId;
-    if (!sessionId) return;
+    if (!sessionId || !this.detachedWindowReady) return;
     if (!item) {
       this.closeDetachedViewer();
       return;
@@ -417,9 +431,16 @@ export class ScreenShareManager {
   }
 
   closeDetachedViewer(): void {
-    this.closeDetachedPublisher(true);
+    this.clearDetachedWindow(true);
+  }
+
+  private clearDetachedWindow(closeWindow: boolean): void {
+    this.unsubscribeDetachedWindow?.();
+    this.unsubscribeDetachedWindow = undefined;
+    this.detachedWindowReady = false;
+    this.closeDetachedPublisher(closeWindow);
     this.detachedSessionId = undefined;
-    void window.desktopApi.screenShareViewer.close().catch(() => undefined);
+    if (closeWindow) void window.desktopApi.screenShareViewer.close().catch(() => undefined);
     this.patch({ displayMode: "inline", detachedItemId: undefined });
   }
 
@@ -455,6 +476,9 @@ export class ScreenShareManager {
         .catch(() => undefined);
     }
     this.stopLocalTracks();
+    this.unsubscribeDetachedWindow?.();
+    this.unsubscribeDetachedWindow = undefined;
+    this.detachedWindowReady = false;
     this.closeDetachedPublisher(true);
     this.detachedSessionId = undefined;
     void shanghaoCore.screenCapture.setContentProtection(false).catch(() => undefined);

@@ -4,10 +4,9 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, type MotionStyle } from "framer-motion";
 
 import { Eye, GripHorizontal } from "lucide-react";
 
@@ -33,6 +32,8 @@ interface ScreenPresentationStats {
   ambientColor?: string;
   sampledAt: number;
 }
+
+type PresentedScreen = Pick<ScreenShareItem, "id" | "stream">;
 
 const sampleMediaAmbientColor = (source: CanvasImageSource): string | undefined => {
   try {
@@ -84,13 +85,23 @@ const ScreenShareVideo = ({
       ) => number;
       cancelVideoFrameCallback?: (id: number) => void;
     };
-    if (!measuredVideo.requestVideoFrameCallback || !onPresentation) return;
     let callbackId = 0;
     let frames = 0;
+    let hasPresented = false;
     let windowStartedAt = performance.now();
     let ambientColor: string | undefined;
     let ambientSampledAt = 0;
+    const reportFirstFrame = () => {
+      if (hasPresented || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+      hasPresented = true;
+      onPresentation?.({
+        width: video.videoWidth,
+        height: video.videoHeight,
+        sampledAt: Date.now(),
+      });
+    };
     const measure = (now: number, metadata: VideoFrameCallbackMetadata) => {
+      reportFirstFrame();
       frames += 1;
       if (now - ambientSampledAt >= 2_500) {
         ambientColor = sampleMediaAmbientColor(video) ?? ambientColor;
@@ -98,7 +109,7 @@ const ScreenShareVideo = ({
       }
       const elapsedMs = now - windowStartedAt;
       if (elapsedMs >= 1_000) {
-        onPresentation({
+        onPresentation?.({
           framesPerSecond: (frames * 1_000) / elapsedMs,
           width: metadata.width || video.videoWidth || undefined,
           height: metadata.height || video.videoHeight || undefined,
@@ -110,8 +121,15 @@ const ScreenShareVideo = ({
       }
       callbackId = measuredVideo.requestVideoFrameCallback?.(measure) ?? 0;
     };
-    callbackId = measuredVideo.requestVideoFrameCallback(measure);
-    return () => measuredVideo.cancelVideoFrameCallback?.(callbackId);
+    video.addEventListener("loadeddata", reportFirstFrame);
+    reportFirstFrame();
+    if (measuredVideo.requestVideoFrameCallback && onPresentation) {
+      callbackId = measuredVideo.requestVideoFrameCallback(measure);
+    }
+    return () => {
+      video.removeEventListener("loadeddata", reportFirstFrame);
+      measuredVideo.cancelVideoFrameCallback?.(callbackId);
+    };
   }, [onPresentation, stream]);
 
   return <video ref={videoRef} autoPlay playsInline muted className="screen-share-video" />;
@@ -122,26 +140,22 @@ const ScreenShareMedia = ({
   onPresentation,
 }: {
   item: ScreenShareItem;
-  onPresentation: (item: ScreenShareItem, stats: ScreenPresentationStats) => void;
+  onPresentation: (item: PresentedScreen, stats: ScreenPresentationStats) => void;
 }) => {
+  const { id, stream } = item;
+  const reportVideo = useCallback(
+    (stats: ScreenPresentationStats) => onPresentation({ id, stream }, stats),
+    [id, stream, onPresentation],
+  );
   if (item.isLocal && item.stream) {
     return (
       <div className="screen-share-self-preview" data-testid="local-share-safe-preview">
-        <ScreenShareVideo
-          stream={item.stream}
-          onPresentation={(stats) => onPresentation(item, stats)}
-        />
+        <ScreenShareVideo stream={item.stream} onPresentation={reportVideo} />
         <span className="screen-share-self-badge">你的分享</span>
       </div>
     );
   }
-  if (item.stream)
-    return (
-      <ScreenShareVideo
-        stream={item.stream}
-        onPresentation={(stats) => onPresentation(item, stats)}
-      />
-    );
+  if (item.stream) return <ScreenShareVideo stream={item.stream} onPresentation={reportVideo} />;
   return <ScreenShareFallbackFrame item={item} onPresentation={onPresentation} />;
 };
 
@@ -150,7 +164,7 @@ const ScreenShareFallbackFrame = ({
   onPresentation,
 }: {
   item: ScreenShareItem;
-  onPresentation: (item: ScreenShareItem, stats: ScreenPresentationStats) => void;
+  onPresentation: (item: PresentedScreen, stats: ScreenPresentationStats) => void;
 }) => {
   const measurementRef = useRef({
     startedAt: performance.now(),
@@ -226,7 +240,7 @@ const ScreenSharePanelSurface = ({
     scaleY: number;
   }>();
   const [presentationByItem, setPresentationByItem] = useState<
-    Record<string, ScreenPresentationStats>
+    Record<string, ScreenPresentationStats & { stream?: MediaStream }>
   >({});
   const dragStateRef = useRef<
     | {
@@ -279,7 +293,9 @@ const ScreenSharePanelSurface = ({
     const timer = window.setTimeout(() => setQualityNotice(undefined), 2_600);
     return () => window.clearTimeout(timer);
   }, [primaryItem.quality]);
-  const primaryPresentation = presentationByItem[primaryItem.id];
+  const lastPresentation = presentationByItem[primaryItem.id];
+  const primaryPresentation =
+    lastPresentation?.stream === primaryItem.stream ? lastPresentation : undefined;
   const resolutionLabel =
     primaryPresentation?.width && primaryPresentation.height
       ? `${primaryPresentation.width}×${primaryPresentation.height}`
@@ -343,9 +359,12 @@ const ScreenSharePanelSurface = ({
   };
 
   const handlePresentation = useCallback(
-    (item: ScreenShareItem, stats: ScreenPresentationStats) => {
-      setPresentationByItem((current) => ({ ...current, [item.id]: stats }));
-      recordScreenSharePresentation(item.id.replace(/-relay$/, ""), stats);
+    (item: PresentedScreen, stats: ScreenPresentationStats) => {
+      setPresentationByItem((current) => ({
+        ...current,
+        [item.id]: { ...stats, stream: item.stream },
+      }));
+      recordScreenSharePresentation(item.id, stats);
     },
     [],
   );
@@ -376,7 +395,7 @@ const ScreenSharePanelSurface = ({
           ...(primaryPresentation?.ambientColor
             ? { "--share-ambient": primaryPresentation.ambientColor }
             : {}),
-        } as CSSProperties & Record<string, string | number>
+        } as MotionStyle & Record<`--${string}`, string | number>
       }
     >
       <AnimatePresence>
@@ -459,7 +478,12 @@ const ScreenSharePanelSurface = ({
         aria-busy={!primaryPresentation}
         onDoubleClick={() => setIsExpanded(true)}
       >
-        <ScreenShareMedia item={primaryItem} onPresentation={handlePresentation} />
+        <ScreenShareMedia
+          key={primaryItem.id}
+          item={primaryItem}
+          onPresentation={handlePresentation}
+        />
+        {!primaryPresentation && <span className="screen-share-waiting">正在接收共享画面…</span>}
         {!primaryItem.isLocal && primaryItem.transport === "webrtc" && (
           <RemoteControlViewer peerId={primaryItem.id} />
         )}

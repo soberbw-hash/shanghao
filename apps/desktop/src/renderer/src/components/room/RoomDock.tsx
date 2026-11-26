@@ -59,6 +59,8 @@ interface RoomDockProps {
   isNoiseSuppressionSwitching: boolean;
   microphoneTest: MicrophoneTestControls;
   recordingState: RecordingState;
+  recordingSource?: "automatic" | "manual";
+  autoStopAt?: number;
   recordingEncoderState: RecordingEncoderState;
   localScreenShareActive: boolean;
   isScreenShareStarting: boolean;
@@ -103,6 +105,8 @@ export const RoomDock = ({
   isNoiseSuppressionSwitching,
   microphoneTest,
   recordingState,
+  recordingSource,
+  autoStopAt,
   recordingEncoderState,
   localScreenShareActive,
   isScreenShareStarting,
@@ -346,6 +350,11 @@ export const RoomDock = ({
         </Button>
         <RecordingButton
           isRecording={recordingState === RecordingState.Recording}
+          automatic={recordingSource === "automatic"}
+          deadline={autoStopAt}
+          saving={
+            recordingState === RecordingState.Saving || recordingState === RecordingState.Stopping
+          }
           onClick={onToggleRecording}
           disabled={recordingEncoderState === RecordingEncoderState.Unsupported}
         />

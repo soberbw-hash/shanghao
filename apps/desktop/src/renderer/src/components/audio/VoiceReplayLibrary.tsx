@@ -1,8 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { VoiceReplayClip, VoiceReplayTranscript } from "@private-voice/shared";
 import { Button } from "../base/Button";
 
-export function VoiceReplayLibrary({ revision }: { revision: string | number }) {
+export function VoiceReplayLibrary({
+  revision,
+  initialClipId,
+}: {
+  revision: string | number;
+  initialClipId?: string;
+}) {
   const [clips, setClips] = useState<VoiceReplayClip[]>([]);
   const [selected, setSelected] = useState<VoiceReplayClip>();
   const [title, setTitle] = useState("");
@@ -40,21 +46,6 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
     const result = await api.list();
     if (owner.active && id === listRequest.current) setClips(result);
   };
-  useEffect(() => {
-    let active = true;
-    const id = ++listRequest.current;
-    void api
-      ?.list()
-      .then((result) => {
-        if (active && id === listRequest.current) setClips(result);
-      })
-      .catch(() => {
-        if (active && id === listRequest.current) setError("片段库暂时无法读取，原文件已保留。");
-      });
-    return () => {
-      active = false;
-    };
-  }, [api, revision]);
   useEffect(() => {
     const term = query.trim().toLocaleLowerCase();
     let active = true;
@@ -110,63 +101,87 @@ export function VoiceReplayLibrary({ revision }: { revision: string | number }) 
     },
     [url],
   );
-  const select = async (clip: VoiceReplayClip, fromAction = false) => {
-    if (operation.current && !fromAction) return;
-    const current = ++request.current;
-    const transcriptVersion = ++transcriptRequest.current;
-    const owner = lifecycle.current;
-    setSelected(clip);
-    previewGeneration.current += 1;
-    previewEnd.current = undefined;
-    setTranscript(undefined);
-    setTranscriptDetail(undefined);
-    setEditing(undefined);
-    setError("");
-    setTitle(clip.title);
-    // Never round the default past the actual end: the store rejects out-of-range cuts.
-    setFrom("0");
-    setTo(String(Math.floor(clip.durationMs * 1000) / 1_000_000));
-    setUrl("");
-    if (api?.readTranscript)
-      void (
-        api.readTranscriptDetail
-          ? api.readTranscriptDetail(clip.id)
-          : api
-              .readTranscript(clip.id)
-              .then((text) =>
-                text === undefined
-                  ? undefined
-                  : { version: 1 as const, createdAt: clip.createdAt, text },
-              )
-      )
-        .then((detail) => {
-          if (
-            owner.active &&
-            current === request.current &&
-            transcriptVersion === transcriptRequest.current &&
-            detail !== undefined
-          ) {
-            setTranscriptDetail(detail);
-            setTranscript(detail.text || "没有识别到语音。");
-          }
-        })
-        .catch(() => {
-          if (
-            owner.active &&
-            current === request.current &&
-            transcriptVersion === transcriptRequest.current
-          )
-            setError("本地文字暂时无法读取，原文件已保留。");
-        });
-    try {
-      const data = await api?.read(clip.id);
-      if (owner.active && current === request.current && data)
-        setUrl(URL.createObjectURL(new Blob([Uint8Array.from(data)], { type: "audio/wav" })));
-    } catch {
-      if (owner.active && current === request.current)
-        setError("这个片段暂时无法回听，原文件已保留。");
-    }
-  };
+  const select = useCallback(
+    async (clip: VoiceReplayClip, fromAction = false) => {
+      if (operation.current && !fromAction) return;
+      const current = ++request.current;
+      const transcriptVersion = ++transcriptRequest.current;
+      const owner = lifecycle.current;
+      setSelected(clip);
+      previewGeneration.current += 1;
+      previewEnd.current = undefined;
+      setTranscript(undefined);
+      setTranscriptDetail(undefined);
+      setEditing(undefined);
+      setError("");
+      setTitle(clip.title);
+      // Never round the default past the actual end: the store rejects out-of-range cuts.
+      setFrom("0");
+      setTo(String(Math.floor(clip.durationMs * 1000) / 1_000_000));
+      setUrl("");
+      if (api?.readTranscript)
+        void (
+          api.readTranscriptDetail
+            ? api.readTranscriptDetail(clip.id)
+            : api
+                .readTranscript(clip.id)
+                .then((text) =>
+                  text === undefined
+                    ? undefined
+                    : { version: 1 as const, createdAt: clip.createdAt, text },
+                )
+        )
+          .then((detail) => {
+            if (
+              owner.active &&
+              current === request.current &&
+              transcriptVersion === transcriptRequest.current &&
+              detail !== undefined
+            ) {
+              setTranscriptDetail(detail);
+              setTranscript(detail.text || "没有识别到语音。");
+            }
+          })
+          .catch(() => {
+            if (
+              owner.active &&
+              current === request.current &&
+              transcriptVersion === transcriptRequest.current
+            )
+              setError("本地文字暂时无法读取，原文件已保留。");
+          });
+      try {
+        const data = await api?.read(clip.id);
+        if (owner.active && current === request.current && data)
+          setUrl(URL.createObjectURL(new Blob([Uint8Array.from(data)], { type: "audio/wav" })));
+      } catch {
+        if (owner.active && current === request.current)
+          setError("这个片段暂时无法回听，原文件已保留。");
+      }
+    },
+    [api],
+  );
+  useEffect(() => {
+    let active = true;
+    const id = ++listRequest.current;
+    void api
+      ?.list()
+      .then((result) => {
+        if (!active || id !== listRequest.current) return;
+        setClips(result);
+        if (initialClipId) {
+          const clip = result.find((item) => item.id === initialClipId);
+          if (clip) void select(clip);
+          else setError("这条片段已移出精彩片段。");
+        }
+      })
+      .catch(() => {
+        if (active && id === listRequest.current) setError("片段库暂时无法读取，原文件已保留。");
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, revision, initialClipId, select]);
   const action = async (run: (active: () => boolean) => Promise<unknown>) => {
     if (operation.current) return;
     operation.current = true;

@@ -22,6 +22,7 @@ export function useListenOnlyRecovery(
         if (
           switched &&
           useRoomStore.getState().room.roomId === roomId &&
+          window.dispatchEvent(new Event("shanghao:resume-microphone", { cancelable: true })) &&
           !audio.isDeafened &&
           !audio.phoneModeActive
         )
@@ -53,6 +54,8 @@ export function useListenOnlyRecovery(
     if (useAudioStore.getState().listenOnly) return recoverMicrophone();
     const audio = useAudioStore.getState();
     if (audio.isDeafened && audio.isMuted) {
+      if (!window.dispatchEvent(new Event("shanghao:resume-microphone", { cancelable: true })))
+        return;
       useAppStore.getState().pushToast({
         tone: "warning",
         title: "先打开扬声器后才能开麦。",

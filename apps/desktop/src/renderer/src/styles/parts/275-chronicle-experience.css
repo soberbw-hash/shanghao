@@ -47,10 +47,16 @@
   box-shadow: 0 4px 12px rgb(41 68 100 / 14%);
   color: #4d6681;
   font-size: 12px;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chronicle-source-tooltip > span {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chronicle-source-tooltip > span + span {
   margin-block-start: 3px;
 }
 .chronicle-source-help:not([data-dismissed="true"]):is(:hover, :focus-within)

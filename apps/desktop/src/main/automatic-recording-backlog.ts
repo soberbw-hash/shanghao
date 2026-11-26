@@ -18,10 +18,7 @@ import { isTransientRemoteTranscriptionError } from "./remote-transcription-retr
 import { isTranscriptionExecutionComplete } from "./remote-transcription";
 type BacklogSettings = Pick<
   AppSettings,
-  | "isAiAutoTranscribeEnabled"
-  | "isAiAutoOrganizeEnabled"
-  | "recordingSaveDirectory"
-  | "recordingLibraryQuotaGb"
+  "isAiAutoOrganizeEnabled" | "recordingSaveDirectory" | "recordingLibraryQuotaGb"
 >;
 
 export interface BacklogRecording {
@@ -32,6 +29,7 @@ export interface BacklogRecording {
   modifiedAt?: string;
   roomId?: string;
   roomName?: string;
+  hadMultipleParticipants?: boolean;
   markers?: Array<{ id: string; offsetMs: number }>;
 }
 
@@ -59,6 +57,7 @@ export async function queueUntranscribedRecordings(
     try {
       let record =
         (await host.get(id)) ?? (id !== item.filePath ? await host.get(item.filePath) : undefined);
+      if (!record && item.hadMultipleParticipants !== true) continue;
       if (record && (record.recordingId !== id || record.filePath !== item.filePath)) {
         if (!canRecoverLegacyRecording(record, item)) continue;
         await host.reconcile(item, id);
@@ -141,19 +140,17 @@ export function createAutomaticRecordingBacklog(host: {
         while (requested) {
           requested = false;
           const settings = host.settings();
-          if (!settings.isAiAutoTranscribeEnabled) continue;
           const needCatalog =
             catalogRequested || !cached || cached.directory !== settings.recordingSaveDirectory;
           catalogRequested = false;
           const library = needCatalog ? await host.read(settings) : cached!.library;
           cached = { directory: settings.recordingSaveDirectory, library };
           const current = host.settings();
-          if (!current.isAiAutoTranscribeEnabled) continue;
           if (current.recordingSaveDirectory !== settings.recordingSaveDirectory) {
             requested = true;
             continue;
           }
-          await host.queue(library.items, true);
+          await host.queue(library.items, current.isAiAutoOrganizeEnabled);
         }
       })
       .catch(host.onError)

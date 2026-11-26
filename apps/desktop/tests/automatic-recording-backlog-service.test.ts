@@ -27,6 +27,7 @@ const fixture = async (withOrganization = false) => {
     recordingId,
     filePath: path.join(directory, `${recordingId}.wav`),
     roomId: `room-${recordingId}`,
+    hadMultipleParticipants: true,
   }));
   await Promise.all(
     items.map((item, index) => {

@@ -118,14 +118,6 @@ export function useVoiceReplay() {
       );
       setStatus("片段已保存在本机。");
       setRevision((value) => value + 1);
-      useAppStore.getState().pushToast({
-        title: `已保存刚才的 ${seconds} 秒`,
-        description: "片段仅保存在本机，可回听或转成文字。",
-        tone: "success",
-        cardKind: "voice-replay",
-        actionLabel: "立即查看",
-        onAction: () => window.dispatchEvent(new Event("shanghao:open-voice-replay-library")),
-      });
     } catch (error) {
       const message =
         error instanceof Error &&

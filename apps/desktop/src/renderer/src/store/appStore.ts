@@ -27,7 +27,8 @@ export interface ToastMessage {
   persistent?: boolean;
   dedupeKey?: string;
   clipFilePath?: string;
-  cardKind?: "voice-replay" | "transcription" | "chronicle";
+  chatPreview?: { image?: string; link?: string };
+  cardKind?: "voice-replay" | "transcription" | "chronicle" | "knock";
 }
 
 export interface StartupIssue {
@@ -48,6 +49,7 @@ interface AppStoreState {
   startupIssue?: StartupIssue;
   requiredUpdate?: { requiredVersion: string; currentVersion: string };
   voiceMemoryOpenTarget?: VoiceMemoryOpenTarget;
+  chatNoticeTarget?: { roomId: string; messageId?: string };
   pendingRoomInvite?: string;
   pendingRoomInviteAutoJoin: boolean;
   setPendingRoomInvite: (roomId?: string, autoJoin?: boolean) => void;

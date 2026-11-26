@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown, Coffee, History, RefreshCw } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
+import { OFFICIAL_WEBSITE_URL } from "@private-voice/shared";
 import type { RuntimeInfo, UpdateCheckResult, UpdateStatus } from "@private-voice/shared";
 
 import brandMark from "../../assets/brand-mark.png";
@@ -119,6 +120,12 @@ export const AboutSettingsCard = ({
               {updateMessage}
             </span>
           </div>
+          <Button
+            variant="ghost"
+            onClick={() => void window.desktopApi.app.openExternal(OFFICIAL_WEBSITE_URL)}
+          >
+            官方网站
+          </Button>
           <Button
             className="about-check-update"
             variant="secondary"

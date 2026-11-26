@@ -75,8 +75,7 @@ export const defaultSettings: AppSettings = {
   aiOrganizerProvider: "cloud",
   aiRoomAskProvider: "cloud",
   aiTextModelPreset: "cloud",
-  aiProcessingMode: "low_resource",
-  isAiAutoTranscribeEnabled: true,
+  aiProcessingMode: "after_game",
   isAiAutoOrganizeEnabled: true,
   isAiAutoUploadEnabled: false,
   isNoiseSuppressionEnabled: true,
@@ -85,7 +84,7 @@ export const defaultSettings: AppSettings = {
   isVoiceEnhancementEnabled: true,
   isPushToTalkEnabled: false,
   isMutedSpeechReminderEnabled: true,
-  isAutoRecordOnJoinEnabled: true,
+  isAutoRecordOnJoinEnabled: false,
   isRecordingAutoGameMarkerEnabled: true,
   micMonitorMode: "processed",
   relayServerUrl: OFFICIAL_RELAY_SERVER_URL,
@@ -379,21 +378,10 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     aiRoomAskProvider:
       previousVersion < 36 || raw.aiOrganizerProvider !== "custom" ? "cloud" : "custom",
     aiProcessingMode:
-      previousVersion < 35 &&
-      raw.aiProcessingMode === "after_game" &&
-      normalizeBoolean(raw.isAiAutoTranscribeEnabled, false) === false
-        ? "manual"
-        : raw.aiProcessingMode === "after_game" ||
-            raw.aiProcessingMode === "low_resource" ||
-            raw.aiProcessingMode === "immediate" ||
-            raw.aiProcessingMode === "manual"
-          ? raw.aiProcessingMode
-          : defaultSettings.aiProcessingMode,
-    isAiAutoTranscribeEnabled: normalizeBoolean(
-      raw.isAiAutoTranscribeEnabled,
-      defaultSettings.isAiAutoTranscribeEnabled,
-    ),
-    isAiAutoOrganizeEnabled: true,
+      raw.aiProcessingMode === "immediate" || raw.aiProcessingMode === "low_resource"
+        ? raw.aiProcessingMode
+        : "after_game",
+    isAiAutoOrganizeEnabled: normalizeBoolean(raw.isAiAutoOrganizeEnabled, true),
     isAiAutoUploadEnabled: false,
     relayServerUrl:
       normalizeRelayServerUrl(trimUnknownText(raw.relayServerUrl)) ??
@@ -433,9 +421,9 @@ export const migrateSettings = (raw: RawSettings): MigrationResult => {
     isAutoGainControlEnabled: raw.isAutoGainControlEnabled !== false,
     isVoiceEnhancementEnabled: raw.isVoiceEnhancementEnabled !== false,
     isPushToTalkEnabled: raw.isPushToTalkEnabled === true,
-    isMutedSpeechReminderEnabled: normalizeBoolean(raw.isMutedSpeechReminderEnabled, true),
-    isAutoRecordOnJoinEnabled: normalizeBoolean(raw.isAutoRecordOnJoinEnabled, true),
-    isRecordingAutoGameMarkerEnabled: normalizeBoolean(raw.isRecordingAutoGameMarkerEnabled, true),
+    isMutedSpeechReminderEnabled: true,
+    isAutoRecordOnJoinEnabled: normalizeBoolean(raw.isAutoRecordOnJoinEnabled, false),
+    isRecordingAutoGameMarkerEnabled: true,
     isUiSoundEnabled: true,
     quickMessages: normalizeQuickMessages(raw.quickMessages, previousVersion),
     isBackgroundUpdateCheckEnabled: raw.isBackgroundUpdateCheckEnabled !== false,

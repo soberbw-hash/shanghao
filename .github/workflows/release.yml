@@ -64,7 +64,24 @@ jobs:
       - run: pnpm test:five-peer-audio
       - run: pnpm test:five-peer-media
       - run: pnpm build
-      - run: pnpm dist:win
+      - name: Build Windows installer
+        shell: pwsh
+        env:
+          WINDOWS_PFX: ${{ secrets.WIN_CSC_LINK }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if ($env:WINDOWS_PFX) {
+            $env:WIN_CSC_LINK = $env:WINDOWS_PFX
+            $env:WIN_CSC_KEY_PASSWORD = $env:WINDOWS_PFX_PASSWORD
+          }
+          pnpm dist:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:WINDOWS_PFX) {
+            $installer = Get-ChildItem apps/desktop/release/*-Setup-x64.exe -File
+            if (@($installer).Count -ne 1 -or (Get-AuthenticodeSignature $installer.FullName).Status -ne 'Valid') {
+              throw 'The configured Windows signing certificate did not produce a valid installer signature.'
+            }
+          }
       - run: pnpm release:verify-package
       # Hosted Windows agents inherit an administrator token even with an asInvoker manifest.
       - run: node scripts/verify-packaged-screen-capture.mjs --allow-elevated

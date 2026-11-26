@@ -23,14 +23,28 @@ app.whenReady().then(async () => {
       const pause=ms=>new Promise(r=>setTimeout(r,ms));
       for(let i=0;i<100;i++){
         const error=document.querySelector('#fixture-error')?.textContent;if(error)throw Error(error);
-        const video=document.querySelector('video');
+        const video=document.querySelector('.screen-share-viewer-page video');
+        const panel=document.querySelector('.screen-share-panel');
+        const preview=panel?.querySelector('video');
+        if(preview?.readyState>=2&&!panel.classList.contains('has-presented-frame')) {
+          if(!document.querySelector('.screen-share-waiting'))throw Error('missing inline waiting status');
+          await pause(70);
+          if(!panel.classList.contains('has-presented-frame'))throw Error('decoded preview remained covered');
+        }
         if(video&&video.videoWidth>0&&video.currentTime>.3){
+          if(document.querySelector('#fixture-close-signals').textContent!=='0')throw Error('strict mode mount closed the viewer');
+          const action=panel?.querySelector('button[aria-label="在独立窗口中观看"]');
+          if(!action||action.disabled)throw Error('detach action unavailable');
+          const bounds=action.getBoundingClientRect();
+          if(!action.contains(document.elementFromPoint(bounds.x+bounds.width/2,bounds.y+bounds.height/2)))throw Error('detach action is covered');
+          action.click();await pause(40);
+          if(document.querySelector('#fixture-open-count').textContent!=='1')throw Error('detach callback was not invoked');
           const before=video.currentTime;await pause(250);
           if(video.currentTime>before){
             const old=video.srcObject;document.querySelector('#fixture-restart').click();
             for(let retry=0;retry<80;retry++){
               const error=document.querySelector('#fixture-error')?.textContent;if(error)throw Error(error);
-              if(video.srcObject!==old&&video.videoWidth>0&&video.currentTime>.3)return {passed:true,width:video.videoWidth,height:video.videoHeight,framesAdvancing:true,forwardedRemoteTrack:true,replacementTransportDecoded:true};
+              if(video.srcObject!==old&&video.videoWidth>0&&video.currentTime>.3)return {passed:true,width:video.videoWidth,height:video.videoHeight,framesAdvancing:true,forwardedRemoteTrack:true,replacementTransportDecoded:true,inlinePreviewVisible:true,detachAction:true};
               await pause(100);
             }
             throw Error('replacement publisher did not recover enlarged viewing');

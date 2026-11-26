@@ -25,7 +25,6 @@ export {
   findFingerprintMatchedSourcePlan,
   selectSpeakerSourcesForResume,
 } from "./voice-memory-source-plan";
-export const AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS = 30 * 60_000;
 export const benchmarkDurationForMode = (
   mode: "smoke" | "standard" | "long" | undefined,
   sourceDurationMs: number,
@@ -77,10 +76,6 @@ export const resolveTranscriptionRunRange = (
   return { sourceStartMs, sourceEndMs, clipDurationMs: sourceEndMs - sourceStartMs };
 };
 const LEGACY_TRANSCRIPTION_CHUNK_MS = 10 * 60_000;
-// Version 8 binds speaker identity to independent participant streams. Partial mixed-stream
-// results must never be merged into this speaker-aware pipeline.
-export const canAutomaticallyTranscribeDuration = (durationMs: number): boolean =>
-  durationMs <= AUTOMATIC_TRANSCRIPTION_MAX_DURATION_MS;
 
 export const isRecoverableFfmpegFailure = (record: VoiceMemoryRecord): boolean =>
   record.phase === "error" &&

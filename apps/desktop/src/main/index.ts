@@ -5,7 +5,9 @@ import { pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, Notification, Tray, dialog, net, protocol } from "electron";
 
-import { IPC_CHANNELS, type DeepLinkInvite } from "@private-voice/shared";
+import { IPC_CHANNELS, type DeepLinkInvite, type RecordingNotice } from "@private-voice/shared";
+import { recordingToastXml, savedReplayNotice, transcriptNotice } from "./recording-notices";
+import { systemNotificationDelivery } from "./notification-delivery";
 
 import { DiagnosticsService } from "./diagnostics";
 import { AccountDesktopService } from "./account-service";
@@ -142,6 +144,35 @@ const showNetworkPermissionNotice = (title: string, body: string): void => {
   notification.on("click", showWindow);
   notification.show();
 };
+
+function deliverRecordingNotice(notice: RecordingNotice): void {
+  try {
+    if (mainWindow?.isFocused() && mainWindow.isVisible()) {
+      sendToWindow(mainWindow, IPC_CHANNELS.app.recordingNotice, notice, false);
+      return;
+    }
+    if (!settingsStore?.getSnapshot().isSystemNotificationEnabled || !Notification.isSupported())
+      return;
+    const notification = new Notification({ title: notice.title, body: notice.body, silent: true });
+    if (platformService.isWindows) {
+      const folder = app.isPackaged
+        ? path.join(process.resourcesPath, "notices")
+        : path.join(app.getAppPath(), "src/renderer/src/assets/notices");
+      const image = pathToFileURL(path.join(folder, notice.kind + ".jpg")).href;
+      notification.toastXml = recordingToastXml(notice, image, notification.id);
+    }
+    const open = () => {
+      showWindow();
+      sendToWindow(mainWindow, IPC_CHANNELS.app.recordingNotice, notice, true);
+    };
+    systemNotificationDelivery.show(notification, open, (reason) =>
+      sendToWindow(mainWindow, IPC_CHANNELS.app.notificationFailed, reason),
+    );
+  } catch {
+    // Notification failures must never turn a durable save into a failed recording job.
+    sendToWindow(mainWindow, IPC_CHANNELS.app.notificationFailed, "failed");
+  }
+}
 
 const inspectWindowsNetworkPermissions = async (): Promise<void> => {
   if (!app.isPackaged || !platformService.isWindows || !diagnostics) return;
@@ -599,6 +630,7 @@ const bootstrap = async (): Promise<void> => {
           })),
       };
     },
+    (clip) => deliverRecordingNotice(savedReplayNotice(clip)),
   );
   const freeTokenRuntime = new FreeTokenManagedRuntime(aiRuntimeDirectory, {
     fetcher: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
@@ -668,13 +700,14 @@ const bootstrap = async (): Promise<void> => {
       ),
     ),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
-    () => settingsStore?.getSnapshot().isAiAutoTranscribeEnabled ?? false,
+    () => true,
     transcriptionProvider,
     () => settingsStore?.getSnapshot().aiTranscriptionProvider ?? "cloud",
-    () => true,
+    () => settingsStore?.getSnapshot().isAiAutoOrganizeEnabled ?? true,
     () => settingsStore?.getSnapshot().isAiCloudLocalAssistEnabled === true,
     () => settingsStore?.getSnapshot().aiCloudLocalAsrModel ?? "qwen3-asr-0.6b-force",
     () => settingsStore?.getSnapshot().aiAsrGameLexicon ?? [],
+    (record) => deliverRecordingNotice(transcriptNotice(record)),
   );
   const automaticBacklog = createAutomaticRecordingBacklog({
     settings: () => settingsStore!.getSnapshot(),

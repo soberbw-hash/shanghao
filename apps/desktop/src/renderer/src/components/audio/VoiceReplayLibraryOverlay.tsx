@@ -6,9 +6,15 @@ import { VoiceReplayLibrary } from "./VoiceReplayLibrary";
 /** App-wide target for content-card actions, including when the room dialog is closed. */
 export function VoiceReplayLibraryOverlay() {
   const [open, setOpen] = useState(false);
+  const [clipId, setClipId] = useState<string>();
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    const requestOpen = () => setOpen(true);
+    const requestOpen = (event: Event) => {
+      setClipId(
+        event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : undefined,
+      );
+      setOpen(true);
+    };
     window.addEventListener("shanghao:open-voice-replay-library", requestOpen);
     return () => window.removeEventListener("shanghao:open-voice-replay-library", requestOpen);
   }, []);
@@ -36,7 +42,7 @@ export function VoiceReplayLibraryOverlay() {
         </div>
         <DialogCloseButton label="关闭精彩片段" onClick={() => setOpen(false)} />
       </header>
-      <VoiceReplayLibrary revision="global-library" />
+      <VoiceReplayLibrary key={clipId} revision="global-library" initialClipId={clipId} />
     </dialog>,
     document.body,
   );

@@ -7,7 +7,7 @@ interface FinishOptions {
   roomId: string;
   roomName: string;
   speakingTimeline: VoiceMemoryProcessRequest["speakingTimeline"];
-  autoTranscribe?: boolean;
+  hadMultipleParticipants?: boolean;
   autoOrganize?: boolean;
   api: DesktopApi;
   toast: (message: Omit<ToastMessage, "id">) => void;
@@ -46,12 +46,12 @@ const finishOnce = async ({
   roomId,
   roomName,
   speakingTimeline,
-  autoTranscribe,
+  hadMultipleParticipants,
   autoOrganize,
   api,
   toast,
 }: FinishOptions): Promise<void> => {
-  await api.recording.saveOrigin(result.filePath, roomId, roomName);
+  await api.recording.saveOrigin(result.filePath, roomId, roomName, hadMultipleParticipants);
   if (markers.length) await api.recording.saveMarkers(result.filePath, markers);
   let deletedCurrentRecording = false;
   try {
@@ -75,7 +75,7 @@ const finishOnce = async ({
     });
     return;
   }
-  if (autoTranscribe && api.ai?.processRecording) {
+  if (hadMultipleParticipants && api.ai?.processRecording) {
     void api.ai
       .processRecording({
         recordingId: result.recordingId ?? result.filePath,

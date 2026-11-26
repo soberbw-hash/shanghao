@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ScreenShareViewerSignal } from "@private-voice/shared";
 import { ScreenShareViewerPage } from "../../src/renderer/src/pages/ScreenShareViewerPage";
+import { ScreenSharePanel } from "../../src/renderer/src/components/room/ScreenSharePanel";
 import { DetachedScreenSharePublisher } from "../../src/renderer/src/features/screen-share/DetachedScreenSharePublisher";
 import "../../src/renderer/src/styles/index.css";
 
 const hostListeners = new Set<(signal: ScreenShareViewerSignal) => void>();
 const viewerListeners = new Set<(signal: ScreenShareViewerSignal) => void>();
+let earlyCloseSignals = 0;
 window.desktopApi = {
   screenShareViewer: {
     onSignal: (callback: (signal: ScreenShareViewerSignal) => void) => {
@@ -25,6 +27,7 @@ window.screenShareViewerApi = {
     return () => viewerListeners.delete(callback);
   },
   sendSignal: async (signal: ScreenShareViewerSignal) => {
+    if (signal.type === "closed") earlyCloseSignals++;
     queueMicrotask(() => hostListeners.forEach((callback) => callback(signal)));
     return true;
   },
@@ -47,6 +50,8 @@ const gather = (peer: RTCPeerConnection) =>
 const Fixture = () => {
   const [error, setError] = useState("");
   const [generation, setGeneration] = useState(0);
+  const [inlineStream, setInlineStream] = useState<MediaStream>();
+  const [openCount, setOpenCount] = useState(0);
   useEffect(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 480;
@@ -80,6 +85,7 @@ const Fixture = () => {
       await sender.setRemoteDescription(receiver.localDescription!);
       const received = await remote;
       if (disposed) return;
+      setInlineStream(received);
       publisher = new DetachedScreenSharePublisher({
         sessionId: "fixture-share",
         title: "远端屏幕测试",
@@ -104,6 +110,23 @@ const Fixture = () => {
   return (
     <>
       <ScreenShareViewerPage />
+      {inlineStream && (
+        <ScreenSharePanel
+          items={[
+            {
+              id: "fixture-peer",
+              title: "远端屏幕测试",
+              stream: inlineStream,
+              transport: "webrtc",
+            },
+          ]}
+          localViewerNames={[]}
+          onStopLocalShare={() => {}}
+          onOpenDetached={async () => setOpenCount((value) => value + 1)}
+        />
+      )}
+      <output id="fixture-open-count">{openCount}</output>
+      <output id="fixture-close-signals">{earlyCloseSignals}</output>
       <button id="fixture-restart" onClick={() => setGeneration((value) => value + 1)}>
         切换测试轨道
       </button>
@@ -113,4 +136,8 @@ const Fixture = () => {
 };
 const runtime = globalThis as typeof globalThis & { detachedFixtureRoot?: Root };
 runtime.detachedFixtureRoot ??= createRoot(document.getElementById("root")!);
-runtime.detachedFixtureRoot.render(<Fixture />);
+runtime.detachedFixtureRoot.render(
+  <StrictMode>
+    <Fixture />
+  </StrictMode>,
+);

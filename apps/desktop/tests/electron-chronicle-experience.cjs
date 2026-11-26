@@ -105,6 +105,9 @@ app.whenReady().then(async () => {
         await new Promise(r=>setTimeout(r,20));
         if(getComputedStyle(tooltip).visibility!=='visible'||!tooltip.textContent.includes('参与：林小川'))
           throw Error('room memory alias not shown in the explanation: '+tooltip.textContent+' / '+getComputedStyle(tooltip).visibility+' / '+(document.activeElement===info));
+        const description=tooltip.querySelector('.chronicle-source-tooltip-line');
+        if(description.getBoundingClientRect().height>Math.ceil(parseFloat(getComputedStyle(description).lineHeight)))
+          throw Error('transcription explanation wrapped');
         info.blur();
         if(status.querySelector('input, summary')) throw Error('obsolete status controls remain');
         if(!panel.querySelector('article p').textContent.startsWith('林小川说这把稳了'))
@@ -165,6 +168,19 @@ app.whenReady().then(async () => {
       exportButton.click();
       await pause(50);
       if(fixture.result.exportedDay?.entries[0]?.id!==entry.id) throw Error('export did not use the server day');
+      const entries=n=>Array.from({length:n},(_,i)=>({...entry,id:'chronicle-'+i,at:entry.at-60000+i,text:'纪事 '+i}));
+      const checkScroll=async(list,append)=>{
+        await pause(120);
+        if(list.scrollHeight<=list.clientHeight) throw Error('fixture did not overflow: '+list.className);
+        list.scrollTop=0; append(); await pause(160);
+        if(list.scrollHeight-list.scrollTop-list.clientHeight>2) throw Error('did not follow the latest entry: '+list.className);
+      };
+      fixture.setServerDay(day,entries(29));
+      await checkScroll(panel.querySelector('.room-chronicle-entries'),()=>fixture.setServerDay(day,entries(30)));
+      document.querySelectorAll('[role="tab"]')[0].click();
+      fixture.setChatCount(45); await pause(220);
+      await checkScroll(document.querySelector('.chat-message-list'),()=>fixture.setChatCount(46));
+      document.querySelectorAll('[role="tab"]')[1].click();
       fixture.setServerDay(following, []);
       await pause(80);
       if(stories().length||!panel.textContent.includes('今天还没有纪事')) throw Error('midnight reused previous room entries');

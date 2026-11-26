@@ -89,7 +89,6 @@ export const settingsSectionSignature = (
         settings.aiAsrModel,
         settings.aiOrganizerProvider,
         settings.aiProcessingMode,
-        settings.isAiAutoTranscribeEnabled,
         settings.isAiAutoOrganizeEnabled,
         settings.isAiAutoUploadEnabled,
       ]);

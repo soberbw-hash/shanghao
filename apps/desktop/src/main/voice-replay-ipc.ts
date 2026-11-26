@@ -9,7 +9,11 @@ import {
 } from "electron";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { IPC_CHANNELS, type VoiceReplayTranscript } from "@private-voice/shared";
+import {
+  IPC_CHANNELS,
+  type VoiceReplayClip,
+  type VoiceReplayTranscript,
+} from "@private-voice/shared";
 import { VoiceReplayStore } from "./voice-replay-store";
 
 export function registerVoiceReplayIpc(
@@ -20,6 +24,7 @@ export function registerVoiceReplayIpc(
   ) => Promise<
     string | Omit<Extract<VoiceReplayTranscript, { version: 2 }>, "version" | "createdAt">
   >,
+  onSaved?: (clip: VoiceReplayClip) => void,
 ): void {
   const store = new VoiceReplayStore(path.join(app.getPath("userData"), "voice-replay"), (target) =>
     shell.trashItem(target),
@@ -44,7 +49,11 @@ export function registerVoiceReplayIpc(
     });
   };
   bind(channels.list, () => store.list());
-  bind(channels.save, (title: string, bytes: Uint8Array) => store.save(title, bytes));
+  bind(channels.save, async (title: string, bytes: Uint8Array) => {
+    const clip = await store.save(title, bytes);
+    onSaved?.(clip);
+    return clip;
+  });
   bind(channels.read, (id: string) => store.read(id));
   bind(channels.readTranscript, (id: string) => store.readTranscript(id));
   bind(channels.readTranscriptDetail, (id: string) => store.readTranscriptDetail(id));

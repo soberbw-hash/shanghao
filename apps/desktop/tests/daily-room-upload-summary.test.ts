@@ -3,7 +3,10 @@ import test from "node:test";
 import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { DailyRoomReportStore } from "../../../packages/signaling/src/daily-room-report-store";
+import {
+  DailyRoomReportStore,
+  sampleChronicles,
+} from "../../../packages/signaling/src/daily-room-report-store";
 import { DailyRoomCommentaryService } from "../../../packages/signaling/src/daily-room-commentary-service";
 
 const roomA = `room_${"a".repeat(32)}`,
@@ -87,4 +90,18 @@ test("real disk failures reject durable upload confirmation", async (t) => {
   const store = await DailyRoomReportStore.create(destination);
   store.publishRecordingRecap(roomA, "2026-10-01", recap("不能假称已保存"), now);
   await assert.rejects(store.flushWrites(), /storage_failed/);
+});
+
+test("a dense last game cannot displace both the morning wait and evening outcome", () => {
+  const at = (minute: number) => new Date(now + minute * 60000).toISOString();
+  const entries = [
+    { createdAt: at(0), text: "集合等人" },
+    { createdAt: at(120), text: "仍在等待" },
+    ...Array.from({ length: 180 }, (_, i) => ({ createdAt: at(300 + i / 6), text: "对局报点" })),
+    { createdAt: at(420), text: "散场" },
+  ];
+  const sample = sampleChronicles(sampleChronicles(entries.reverse(), 60), 24);
+  assert.equal(sample[0]?.text, "集合等人");
+  assert.ok(sample.some((e) => e.text === "仍在等待"));
+  assert.equal(sample.at(-1)?.text, "散场");
 });

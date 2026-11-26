@@ -94,11 +94,11 @@ test("manual microphone toggles are distinguished from automatic, phone, and dea
   }
 });
 
-test("reminders default on for older settings and an explicit saved off preference survives", () => {
+test("reminders default on for older settings and the retired preference cannot disable the built-in reminder", () => {
   assert.equal(migrateSettings({}).settings.isMutedSpeechReminderEnabled, true);
   assert.equal(
     migrateSettings({ isMutedSpeechReminderEnabled: false }).settings.isMutedSpeechReminderEnabled,
-    false,
+    true,
   );
   assert.equal(
     migrateSettings({ isMutedSpeechReminderEnabled: "false" } as never).settings

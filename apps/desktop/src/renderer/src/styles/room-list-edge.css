@@ -9,19 +9,30 @@
 
 .room-list-viewport[data-room-list-edge="true"] {
   --room-list-edge-depth: 36px;
+  --room-list-top-edge-depth: 28px;
 }
 
 .room-list-viewport[data-room-list-edge="true"] > :is(.chat-message-list, .room-chronicle-entries) {
   padding-block-end: var(--room-list-edge-depth);
+  padding-block-start: var(--room-list-top-edge-depth);
   scroll-padding-block-end: var(--room-list-edge-depth);
+  scroll-padding-block-start: var(--room-list-top-edge-depth);
   /* Fade the messages themselves before the scroll clip, including on a busy background. */
   mask-image: linear-gradient(
     to bottom,
+    transparent,
+    #000 calc(var(--room-list-top-edge-depth) * 0.65),
     #000 calc(100% - var(--room-list-edge-depth) * 0.65),
     transparent
   );
 }
 
+.room-list-top-edge {
+  display: contents;
+}
+
+.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::before,
+.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::after,
 .room-list-viewport[data-room-list-edge="true"]::before,
 .room-list-viewport[data-room-list-edge="true"]::after {
   position: absolute;
@@ -32,7 +43,7 @@
   backdrop-filter: blur(5px);
   /* Taper the blur back to the real room background before the composer. */
   mask-image:
-    linear-gradient(to bottom, transparent, #000 58%, transparent),
+    linear-gradient(var(--room-list-edge-direction, to bottom), transparent, #000 58%, transparent),
     linear-gradient(to right, transparent, #000 8px calc(100% - 8px), transparent);
   mask-composite: intersect;
   pointer-events: none;
@@ -41,6 +52,19 @@
 
 .room-list-viewport[data-room-list-edge="true"]::after {
   height: calc(var(--room-list-edge-depth) * 0.62);
+  backdrop-filter: blur(15px);
+}
+
+.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::before,
+.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::after {
+  --room-list-edge-direction: to top;
+  top: 0;
+  bottom: auto;
+  height: var(--room-list-top-edge-depth);
+}
+
+.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::after {
+  height: calc(var(--room-list-top-edge-depth) * 0.62);
   backdrop-filter: blur(15px);
 }
 
@@ -120,6 +144,7 @@
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
   .room-list-viewport[data-room-list-edge="true"] {
     --room-list-edge-depth: 8px;
+    --room-list-top-edge-depth: 8px;
   }
 
   .room-list-viewport[data-room-list-edge="true"]
@@ -128,6 +153,8 @@
   }
 
   .room-list-viewport[data-room-list-edge="true"]::before,
+  .room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::before,
+  .room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::after,
   .room-list-viewport[data-room-list-edge="true"]::after {
     display: none;
   }

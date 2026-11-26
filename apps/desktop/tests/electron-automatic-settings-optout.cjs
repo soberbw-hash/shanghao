@@ -23,12 +23,12 @@ app.whenReady().then(async () => {
       const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
       for(let i=0;i<80&&!document.querySelector('button[aria-label="自动整理"]');i++)await pause(50);
       await pause(100);
-      const button=document.querySelector('button[aria-label="自动转录"]');
-      if(!button||button.disabled||button.getAttribute('aria-pressed')!=='true')throw Error('unconfigured active transcription switch cannot be disabled');
-      button.click();await pause(40);
-      if(button.getAttribute('aria-pressed')!=='false'||!button.disabled)throw Error('unconfigured transcription switch did not preserve opt-out');
-      if(document.querySelector('button[aria-label="自动整理"]'))throw Error('obsolete standalone organization switch returned');
-      return {passed:true,unconfiguredTranscriptionCanBeDisabled:true,obsoleteOrganizationSwitchAbsent:true};
+      const button=document.querySelector('button[aria-label="自动整理"]');
+      if(!button || button.disabled) throw Error('organization setting missing');
+      const before=button.getAttribute('aria-pressed');button.click();await pause(100);
+      if(before===button.getAttribute('aria-pressed'))throw Error('organization switch did not persist');
+      if(document.querySelector('button[aria-label="自动转录"]'))throw Error('obsolete transcription switch returned');
+      return {passed:true,organizationIndependent:true};
     })()`,
       true,
     );

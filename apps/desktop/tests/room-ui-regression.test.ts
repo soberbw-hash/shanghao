@@ -45,6 +45,7 @@ test("automatic recording requires a joined companion and ignores empty seats an
     false,
   );
   assert.equal(hasRecordingCompanion([local, member()]), true);
+  assert.equal(hasRecordingCompanion([member()]), false);
   assert.equal(hasRecordingCompanion([local, { ...member(), joinState: undefined }]), true);
   assert.equal(
     hasRecordingCompanion([local, { ...member(), speakingState: MemberSpeakingState.Speaking }]),
@@ -511,7 +512,7 @@ test("locally sent link previews stay fully visible above the composer", () => {
   );
   const styles = readRendererCss();
 
-  assert.equal(chatSource.includes('latestMessage?.isLocal ? "auto" : "smooth"'), true);
+  assert.equal(chatSource.includes("if (list && newestId)"), true);
   assert.equal(chatSource.includes("list.scrollTop = list.scrollHeight"), true);
   assert.match(styles, /\.chat-message-list \{[\s\S]*?padding-bottom: 12px;/);
   assert.equal(styles.includes("contain-intrinsic-size: auto 64px"), false);
@@ -766,24 +767,15 @@ test("stopping a recording suppresses automatic restart for the current room", (
     roomPageSource.indexOf("const changeRecordingDirectory"),
   );
 
-  assert.equal(roomPageSource.includes("const isAutoRecordSuppressedRef = useRef(false)"), true);
-  assert.equal(roomPageSource.includes("isAutoRecordSuppressedRef.current = false"), true);
-  assert.equal(
-    roomPageSource.includes(
-      "!canAutoRecord || hasAutoStartedRecordingRef.current || isAutoRecordSuppressedRef.current",
-    ),
-    true,
+  const lifecycle = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/recording/useAutomaticRoomRecording.ts"),
+    "utf8",
   );
-  assert.equal(finalizeBlock.includes('if (intent === "stop")'), true);
-  assert.equal(finalizeBlock.includes("isAutoRecordSuppressedRef.current = true"), true);
-  assert.equal(
-    finalizeBlock.includes("window.clearTimeout(autoRecordRetryTimerRef.current)"),
-    true,
-  );
-  assert.equal(
-    finalizeBlock.indexOf("isAutoRecordSuppressedRef.current = true") <
+  assert.match(lifecycle, /isAutoRecordSuppressedRef\.current/);
+  assert.match(finalizeBlock, /automaticRecording\.suppress\(\)/);
+  assert.ok(
+    finalizeBlock.indexOf("automaticRecording.suppress()") <
       finalizeBlock.indexOf("await discardRecording()"),
-    true,
   );
 });
 

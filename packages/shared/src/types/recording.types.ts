@@ -8,6 +8,7 @@ export interface RecordingOptions {
 }
 
 export interface RecordingResult {
+  hadMultipleParticipants?: boolean;
   recordingId?: string;
   filePath: string;
   mimeType: string;
@@ -144,6 +145,7 @@ export interface RecordingSpeakerSegmentFinalizePayload {
 
 export interface RecordingLibraryItem {
   roomName?: string;
+  hadMultipleParticipants?: boolean;
   /** A legacy transcript exists, but its recording identity could not be verified. */
   voiceMemoryRecovery?: "legacy_unverified";
   id: string;

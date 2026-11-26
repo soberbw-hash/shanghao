@@ -17,6 +17,7 @@ export class NotificationDelivery {
     notice: NativeNotification,
     onClick: () => void,
     onFailure: (reason: NotificationFailureReason) => void,
+    onAction?: (index: number) => void,
   ): void {
     const failed = (error: unknown) => {
       this.pending.delete(notice);
@@ -26,9 +27,16 @@ export class NotificationDelivery {
       onFailure(/2143420140|803e0114|settings prevent/i.test(text) ? "blocked" : "failed");
     };
     this.pending.add(notice);
-    notice.once("click", () => {
+    let activated = false;
+    const activate = (callback: () => void) => {
+      if (activated) return;
+      activated = true;
       this.pending.delete(notice);
-      onClick();
+      callback();
+    };
+    notice.once("click", () => activate(onClick));
+    notice.once("action", (event: { actionIndex?: number }, index: number) => {
+      activate(() => (onAction ? onAction(event.actionIndex ?? index) : onClick()));
     });
     notice.once("close", () => this.pending.delete(notice));
     notice.once("failed", (_event, error: unknown) => failed(error));
