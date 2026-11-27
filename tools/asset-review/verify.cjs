@@ -131,9 +131,15 @@ app
     };
     await run(`window.assetStudio.saveNotes(${JSON.stringify(notes)})`);
     assert.deepEqual(await run("window.assetStudio.readNotes()"), notes);
+    // Exercise the playback controls even when the Windows runner prefers reduced motion.
+    window.webContents.debugger.attach();
+    await window.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
+    });
     await window.reload();
     await waitFor(() => !window.webContents.isLoading());
     await waitFor(() => run("document.body.textContent.includes('导出意见（1）')"));
+    assert.equal(await run("matchMedia('(prefers-reduced-motion: reduce)').matches"), false);
     output = path.join(profile, "export.json");
     assert.equal(await run(`window.assetStudio.exportNotes(${JSON.stringify(notes)})`), true);
     assert.deepEqual(await run("window.assetStudio.importNotes()"), notes);
@@ -291,12 +297,11 @@ app
     );
     checks++;
     await run("document.querySelector('.review-controls button[aria-pressed]').click()");
-    await delay();
-    assert.equal(
-      await run(
-        "getComputedStyle(document.querySelector('.review-walk-right')).animationPlayState",
-      ),
-      "running",
+    await waitFor(
+      async () =>
+        (await run(
+          "getComputedStyle(document.querySelector('.review-walk-right')).animationPlayState",
+        )) === "running",
     );
     checks++;
     await select("角色动作", "idle");
