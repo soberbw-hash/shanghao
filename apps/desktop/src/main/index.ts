@@ -981,11 +981,13 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
 ]);
-if (process.defaultApp) {
-  app.removeAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
-  app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL, process.execPath, [app.getAppPath()]);
-} else {
-  app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
+if (!isVisualCapture()) {
+  if (process.defaultApp) {
+    app.removeAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
+    app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL, process.execPath, [app.getAppPath()]);
+  } else {
+    app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
+  }
 }
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.commandLine.appendSwitch(

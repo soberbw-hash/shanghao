@@ -206,6 +206,10 @@ test("windows executable and shortcut use approved v4 icons", () => {
     read("apps/desktop/src/main/index.ts"),
     /platformService\.isWindows && !isVisualCapture\(\)\)\s+app\.setAppUserModelId/,
   );
+  assert.match(
+    read("apps/desktop/src/main/index.ts"),
+    /if \(!isVisualCapture\(\)\) \{\s+if \(process\.defaultApp\) \{\s+app\.removeAsDefaultProtocolClient/,
+  );
 });
 
 test("AI voice memory remains local and legacy server LLM proxy paths stay removed", () => {
