@@ -188,6 +188,7 @@ export const RoomDock = ({
       }
       onPointerLeave={(event) => clearGlassPointerHighlight(event.currentTarget)}
     >
+      <span className="room-glass-light" aria-hidden="true" />
       <div className="voice-primary-controls">
         <div
           className={`voice-segmented-control audio-control-anchor microphone-meter-shell${isMuted ? " is-muted" : ""}`}

@@ -69,7 +69,7 @@ export const WeatherCityPicker = ({
 
       <dialog
         ref={dialogRef}
-        className="weather-city-dialog"
+        className="room-dialog-motion weather-city-dialog"
         aria-labelledby="weather-city-dialog-title"
         aria-describedby="weather-city-dialog-description"
         onClick={(event) => {

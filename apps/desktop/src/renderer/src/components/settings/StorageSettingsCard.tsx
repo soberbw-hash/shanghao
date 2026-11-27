@@ -100,7 +100,7 @@ export const StorageSettingsCard = ({ isActive }: { isActive: boolean }) => {
             if (busy) event.preventDefault();
             else setConfirming(false);
           }}
-          className="island-panel m-auto max-w-sm rounded-3xl bg-[#f7fbff] p-6 backdrop:bg-slate-900/20"
+          className="room-dialog-motion island-panel m-auto max-w-sm rounded-3xl bg-[#f7fbff] p-6 backdrop:bg-slate-900/20"
         >
           <h2 id="storage-clean-title" className="font-semibold">
             清理临时文件？

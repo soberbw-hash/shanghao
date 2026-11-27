@@ -32,8 +32,10 @@ export function ChatContentSwitcher({
             inert={!visible}
             initial={false}
             animate={{
+              visibility: "visible",
               opacity: visible ? 1 : 0,
-              x: reduceMotion || visible ? 0 : tab === "chat" ? -10 : 10,
+              x: reduceMotion || visible ? 0 : tab === "chat" ? -5 : 5,
+              transitionEnd: { visibility: visible ? "visible" : "hidden" },
             }}
             transition={{
               duration: reduceMotion ? motionDuration.instant : motionDuration.compact,

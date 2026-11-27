@@ -99,27 +99,46 @@ html:not(.is-app-window-focused) .window-frame {
   overflow: visible;
 }
 
-.room-page .room-topbar::after,
-.room-page .voice-dock::after {
+.room-page :is(.room-topbar, .voice-dock) > .room-glass-light {
   position: absolute;
   z-index: 0;
   inset: 0;
-  background: radial-gradient(
-    150px circle at var(--glass-pointer-x, 50%) var(--glass-pointer-y, 50%),
-    rgba(255, 255, 255, 0.76),
-    rgba(206, 231, 255, 0.2) 42%,
-    transparent 72%
-  );
-  opacity: 0;
+  overflow: hidden;
   border-radius: inherit;
-  transition: opacity 240ms ease;
-  content: "";
   pointer-events: none;
 }
 
-.room-page .room-topbar[data-glass-pointer-active="true"]::after,
-.room-page .voice-dock[data-glass-pointer-active="true"]::after {
+.room-glass-light::before {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 188px;
+  height: 108px;
+  background: radial-gradient(
+    ellipse,
+    rgb(255 255 255 / 68%),
+    rgb(206 231 255 / 22%) 43%,
+    transparent 72%
+  );
+  transform: translate3d(
+    calc(var(--glass-pointer-x, 0px) - 94px),
+    calc(var(--glass-pointer-y, 0px) - 54px),
+    0
+  );
+  opacity: 0;
+  transition: opacity 160ms ease;
+  content: "";
+}
+
+[data-glass-pointer-active="true"] > .room-glass-light::before {
   opacity: 0.78;
+}
+
+@media (prefers-reduced-motion: reduce),
+  (prefers-reduced-transparency: reduce),
+  (forced-colors: active) {
+  .room-glass-light {
+    display: none;
+  }
 }
 
 .room-page .room-topbar > *,

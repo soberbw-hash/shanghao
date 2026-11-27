@@ -306,10 +306,14 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(rendererMainSource.includes("overlay-renderer"), true);
   assert.equal(stylesSource.includes("html.overlay-renderer"), true);
   assert.equal(stylesSource.includes("background: transparent !important"), true);
-  assert.equal(chatSource.includes('message.kind === "system"'), true);
-  assert.equal(chatSource.includes("ChatAccountAvatar"), true);
-  assert.equal(chatSource.includes("MessageLinkPreview"), true);
-  assert.equal(chatSource.includes("formatCompactUrl"), true);
+  const rows = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
+    "utf8",
+  );
+  assert.equal(rows.includes('message.kind === "system"'), true);
+  assert.equal(rows.includes("ChatAccountAvatar"), true);
+  assert.equal(rows.includes("MessageLinkPreview"), true);
+  assert.equal(rows.includes("formatCompactUrl"), true);
   assert.equal(chatLinkPreviewSource.includes("getMessageUrlDetails"), true);
   assert.equal(
     readFileSync(

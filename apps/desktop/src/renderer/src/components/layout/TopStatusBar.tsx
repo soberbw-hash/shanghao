@@ -11,6 +11,7 @@ import { PrivateRoomIcon } from "../room/PrivateRoomIcon";
 import { TemporaryRoomControls } from "../room/TemporaryRoomControls";
 import {
   clearGlassPointerHighlight,
+  refreshGlassPointerHighlightBounds,
   updateGlassPointerHighlight,
 } from "../../features/motion/glassPointerHighlight";
 
@@ -79,11 +80,13 @@ export const TopStatusBar = ({
     <header
       className="room-topbar flex min-h-14 items-center gap-3 px-4 py-2.5"
       data-testid="channel-status-bar"
+      onPointerEnter={(event) => refreshGlassPointerHighlightBounds(event.currentTarget)}
       onPointerMove={(event) =>
         updateGlassPointerHighlight(event.currentTarget, event.clientX, event.clientY)
       }
       onPointerLeave={(event) => clearGlassPointerHighlight(event.currentTarget)}
     >
+      <span className="room-glass-light" aria-hidden="true" />
       <div className="topbar-channel min-w-0 flex-1">
         <div className="topbar-channel-title flex items-center gap-2.5">
           <h1

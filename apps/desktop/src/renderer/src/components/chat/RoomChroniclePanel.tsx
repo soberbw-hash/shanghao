@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useScrollEdgeFade } from "../../features/motion/useScrollEdgeFade";
 import {
   applyRoomMemoryNames,
   isPrivateRoomId,
@@ -67,6 +68,7 @@ export function RoomChroniclePanel({
     };
   }, [room.roomId]);
   const listRef = useRef<HTMLDivElement>(null);
+  useScrollEdgeFade(listRef, archive.entries.length > 0);
   const newest = archive.entries.at(-1)?.id;
   useEffect(() => {
     const list = listRef.current;

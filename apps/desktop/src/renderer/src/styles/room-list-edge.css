@@ -17,12 +17,20 @@
   padding-block-start: var(--room-list-top-edge-depth);
   scroll-padding-block-end: var(--room-list-edge-depth);
   scroll-padding-block-start: var(--room-list-top-edge-depth);
-  /* Fade the messages themselves before the scroll clip, including on a busy background. */
+}
+.room-list-viewport[data-content-above] {
+  --room-list-top-mask-depth: 18px;
+}
+.room-list-viewport[data-content-below] {
+  --room-list-bottom-mask-depth: 23px;
+}
+.room-list-viewport:is([data-content-above], [data-content-below])
+  > :is(.chat-message-list, .room-chronicle-entries) {
   mask-image: linear-gradient(
     to bottom,
     transparent,
-    #000 calc(var(--room-list-top-edge-depth) * 0.65),
-    #000 calc(100% - var(--room-list-edge-depth) * 0.65),
+    #000 var(--room-list-top-mask-depth, 0px),
+    #000 calc(100% - var(--room-list-bottom-mask-depth, 0px)),
     transparent
   );
 }
@@ -31,10 +39,10 @@
   display: contents;
 }
 
-.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::before,
-.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::after,
-.room-list-viewport[data-room-list-edge="true"]::before,
-.room-list-viewport[data-room-list-edge="true"]::after {
+.room-list-viewport[data-content-above] > .room-list-top-edge::before,
+.room-list-viewport[data-content-above] > .room-list-top-edge::after,
+.room-list-viewport[data-content-below]::before,
+.room-list-viewport[data-content-below]::after {
   position: absolute;
   z-index: 2;
   inset-inline: 0 8px;
@@ -50,20 +58,20 @@
   content: "";
 }
 
-.room-list-viewport[data-room-list-edge="true"]::after {
+.room-list-viewport[data-content-below]::after {
   height: calc(var(--room-list-edge-depth) * 0.62);
   backdrop-filter: blur(15px);
 }
 
-.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::before,
-.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::after {
+.room-list-viewport[data-content-above] > .room-list-top-edge::before,
+.room-list-viewport[data-content-above] > .room-list-top-edge::after {
   --room-list-edge-direction: to top;
   top: 0;
   bottom: auto;
   height: var(--room-list-top-edge-depth);
 }
 
-.room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::after {
+.room-list-viewport[data-content-above] > .room-list-top-edge::after {
   height: calc(var(--room-list-top-edge-depth) * 0.62);
   backdrop-filter: blur(15px);
 }
@@ -75,7 +83,7 @@
   gap: 6px;
   width: min(86%, 480px);
   max-width: 100%;
-  margin: 2px auto 0;
+  margin: 2px 0 0 auto;
   padding: 3px;
   border: 1px solid rgb(166 196 230 / 65%);
   border-radius: 28px;
@@ -110,9 +118,34 @@
 
 .temporary-chat-panel .chat-composer .chat-send-button {
   border-radius: 14px;
+  display: grid;
+  place-items: center;
   transition:
     transform var(--duration-fast) var(--ease-out),
     opacity var(--duration-fast) var(--ease-out);
+}
+
+.chat-composer-glyphs {
+  display: grid;
+  place-items: center;
+}
+.chat-send-button :is(.chat-send-icon, .chat-attach-icon) {
+  grid-area: 1 / 1;
+  transition:
+    opacity 120ms ease,
+    transform 180ms var(--ease-out-soft);
+}
+.chat-send-button[data-attachment="true"] .chat-send-icon,
+.chat-send-button[data-attachment="false"] .chat-attach-icon {
+  opacity: 0;
+  transform: scale(0.72) rotate(-18deg);
+}
+.chat-send-button[data-attachment="true"]:not(:disabled) {
+  background: #e5f1ff;
+  color: #2b639e;
+}
+.chat-composer[data-reduce-motion="true"] .chat-send-button svg {
+  transition: none;
 }
 
 .temporary-chat-panel .chat-composer .chat-send-button:disabled {
@@ -130,7 +163,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .temporary-chat-panel .chat-composer,
-  .temporary-chat-panel .chat-composer .chat-send-button {
+  .temporary-chat-panel .chat-composer .chat-send-button,
+  .chat-send-button :is(.chat-send-icon, .chat-attach-icon) {
     transition: none;
   }
 }
@@ -147,15 +181,15 @@
     --room-list-top-edge-depth: 8px;
   }
 
-  .room-list-viewport[data-room-list-edge="true"]
+  .room-list-viewport:is([data-content-above], [data-content-below])
     > :is(.chat-message-list, .room-chronicle-entries) {
     mask-image: none;
   }
 
-  .room-list-viewport[data-room-list-edge="true"]::before,
-  .room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::before,
-  .room-list-viewport[data-room-list-edge="true"] > .room-list-top-edge::after,
-  .room-list-viewport[data-room-list-edge="true"]::after {
+  .room-list-viewport[data-content-below]::before,
+  .room-list-viewport[data-content-above] > .room-list-top-edge::before,
+  .room-list-viewport[data-content-above] > .room-list-top-edge::after,
+  .room-list-viewport[data-content-below]::after {
     display: none;
   }
 }

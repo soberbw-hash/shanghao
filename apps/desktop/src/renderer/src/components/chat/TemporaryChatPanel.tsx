@@ -1,5 +1,5 @@
 import {
-  Fragment,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { LoaderCircle, RotateCcw, Send } from "lucide-react";
+import { LoaderCircle, Plus, Send } from "lucide-react";
 import { gsap } from "gsap";
 
 import {
@@ -19,13 +19,9 @@ import {
   type ChatMessage,
 } from "@private-voice/shared";
 
-import { ChatAccountAvatar } from "./ChatAccountAvatar";
-import { MessageLinkPreview } from "./MessageLinkPreview";
-import { chatDisplayName, isGameAssistantMessage } from "../../features/chat/gameAssistantMessage";
+import { ChatMessageRows } from "./ChatMessageRows";
 import { QuickMessageRow } from "./QuickMessageRow";
-import { formatCompactUrl, messageLinkCard } from "../../features/chat/linkPreview";
-import { writeRoomCollectionDragPayload } from "../../features/chat/collectionDrag";
-import { preloadAdjacentChatImages, preloadChatImage } from "../../features/chat/chatImagePreload";
+import { preloadAdjacentChatImages } from "../../features/chat/chatImagePreload";
 import { quickMessageCooldownMs } from "../../features/chat/quickReplies";
 import {
   getQuickMessageAudioSnapshot,
@@ -43,50 +39,7 @@ import { useNoticeMessageFocus } from "../../features/chat/useNoticeMessageFocus
 import type { AssistantBotMood } from "../../features/ai/useAssistantBotState";
 import { ChatPanelHeader } from "./ChatPanelHeader";
 import { ChatContentSwitcher } from "./ChatContentSwitcher";
-
-const urlPattern = /https?:\/\/[^\s<，。！？；：）】》」]+/gi;
-const trailingUrlPunctuation = /[.,!?，。！？;；:：)\]}>》」】]+$/;
-
-const formatMessageDate = (value?: string) => {
-  const date = value ? new Date(value) : new Date();
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
-};
-
-const renderMessageContent = (content: string, onCopyLink: (url: string) => void) => {
-  const result: ReactNode[] = [];
-  let cursor = 0;
-
-  for (const match of content.matchAll(urlPattern)) {
-    const start = match.index ?? 0;
-    const rawValue = match[0];
-    const url = rawValue.replace(trailingUrlPunctuation, "");
-    const suffix = rawValue.slice(url.length);
-    if (start > cursor) result.push(content.slice(cursor, start));
-    result.push(
-      <a
-        key={`${start}-${url}`}
-        href={url}
-        className="chat-message-link"
-        onClick={(event) => {
-          event.preventDefault();
-          void window.desktopApi.app.openExternal(url);
-        }}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          onCopyLink(url);
-        }}
-      >
-        {formatCompactUrl(url)}
-      </a>,
-    );
-    if (suffix) result.push(suffix);
-    cursor = start + rawValue.length;
-  }
-
-  if (cursor < content.length) result.push(content.slice(cursor));
-  return result.length > 0 ? result : content;
-};
+import { useScrollEdgeFade } from "../../features/motion/useScrollEdgeFade";
 
 export const TemporaryChatPanel = ({
   messages,
@@ -161,6 +114,10 @@ export const TemporaryChatPanel = ({
   );
   const latestMessageElementRef = useRef<HTMLDivElement>(null);
   const sendControlRef = useRef<HTMLSpanElement>(null);
+  const imagePicker = useRef<HTMLInputElement>(null);
+  const hasDraft = chatInput.trim().length > 0;
+  const attachImage = !hasDraft && Boolean(onSendImage);
+  useScrollEdgeFade(listRef, !alternateContentActive && messages.length > 0);
   const dragDepthRef = useRef(0);
   // The first render can already contain restored history. Treat it as an
   // initial batch so the chat opens at the newest message rather than the top.
@@ -411,42 +368,55 @@ export const TemporaryChatPanel = ({
     return imageItem?.getAsFile() ?? undefined;
   };
 
-  const copyLink = (url: string) => {
-    void window.desktopApi.clipboard.writeText(url).then(
-      () => pushToast({ tone: "success", title: "已复制链接" }),
-      () => pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" }),
-    );
-  };
+  const copyLink = useCallback(
+    (url: string) => {
+      void window.desktopApi.clipboard.writeText(url).then(
+        () => pushToast({ tone: "success", title: "已复制链接" }),
+        () => pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" }),
+      );
+    },
+    [pushToast],
+  );
 
-  const copyText = (text: string) => {
-    if (!text.trim()) return;
-    void window.desktopApi.clipboard.writeText(text).then(
-      () => pushToast({ tone: "success", title: "已复制消息" }),
-      () => pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" }),
-    );
-  };
+  const copyText = useCallback(
+    (text: string) => {
+      if (!text.trim()) return;
+      void window.desktopApi.clipboard.writeText(text).then(
+        () => pushToast({ tone: "success", title: "已复制消息" }),
+        () => pushToast({ tone: "danger", title: "复制失败", description: "请稍后再试。" }),
+      );
+    },
+    [pushToast],
+  );
 
-  const copyImage = (dataUrl: string) => {
-    if (!dataUrl) return;
-    void (async () => {
-      const source = new Image();
-      source.decoding = "async";
-      source.src = dataUrl;
-      await source.decode();
-      const canvas = document.createElement("canvas");
-      canvas.width = source.naturalWidth;
-      canvas.height = source.naturalHeight;
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("clipboard_canvas_unavailable");
-      context.drawImage(source, 0, 0);
-      await window.desktopApi.clipboard.writeImage(canvas.toDataURL("image/png"));
-    })().then(
-      () => pushToast({ tone: "success", title: "已复制图片" }),
-      () =>
-        pushToast({ tone: "danger", title: "复制失败", description: "图片暂时无法写入剪贴板。" }),
-    );
-  };
+  const copyImage = useCallback(
+    (dataUrl: string) => {
+      if (!dataUrl) return;
+      void (async () => {
+        const source = new Image();
+        source.decoding = "async";
+        source.src = dataUrl;
+        await source.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = source.naturalWidth;
+        canvas.height = source.naturalHeight;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("clipboard_canvas_unavailable");
+        context.drawImage(source, 0, 0);
+        await window.desktopApi.clipboard.writeImage(canvas.toDataURL("image/png"));
+      })().then(
+        () => pushToast({ tone: "success", title: "已复制图片" }),
+        () =>
+          pushToast({ tone: "danger", title: "复制失败", description: "图片暂时无法写入剪贴板。" }),
+      );
+    },
+    [pushToast],
+  );
 
+  const openPreview = useCallback((messageId: string) => {
+    setPreviewDirection(0);
+    setPreviewMessageId(messageId);
+  }, []);
   const previewItems = useMemo(
     () =>
       messages.flatMap((message) =>
@@ -560,216 +530,25 @@ export const TemporaryChatPanel = ({
                   {canSend ? emptyMessage : "连接恢复后可以发送消息。"}
                 </div>
               ) : (
-                messages.slice(listStart).map((message, index, visibleMessages) => {
-                  const previousMessage = visibleMessages[index - 1];
-                  const showDate =
-                    !previousMessage ||
-                    formatMessageDate(previousMessage.createdAt) !==
-                      formatMessageDate(message.createdAt);
-                  const linkCard =
-                    message.content && !isGameAssistantMessage(message)
-                      ? messageLinkCard(message.content)
-                      : undefined;
-                  const shouldShowMessageBubble = Boolean(message.content && !linkCard);
-                  const previousCreatedAt = Date.parse(previousMessage?.createdAt ?? "");
-                  const createdAt = Date.parse(message.createdAt);
-                  const isGrouped = Boolean(
-                    previousMessage &&
-                    previousMessage.kind !== "system" &&
-                    previousMessage.peerId === message.peerId &&
-                    isGameAssistantMessage(previousMessage) === isGameAssistantMessage(message) &&
-                    formatMessageDate(previousMessage.createdAt) ===
-                      formatMessageDate(message.createdAt) &&
-                    Number.isFinite(previousCreatedAt) &&
-                    Number.isFinite(createdAt) &&
-                    createdAt - previousCreatedAt <= 5 * 60 * 1_000,
-                  );
-                  return (
-                    <Fragment key={message.id}>
-                      {showDate ? (
-                        <div className="chat-date-divider">
-                          {formatMessageDate(message.createdAt)}
-                        </div>
-                      ) : null}
-                      {message.kind === "system" ? (
-                        <div
-                          ref={
-                            index === visibleMessages.length - 1
-                              ? latestMessageElementRef
-                              : undefined
-                          }
-                          data-gsap-chat-message
-                          className="chat-system-message mx-auto w-fit max-w-[90%] rounded-full px-3 py-1 text-center text-[12px] leading-4"
-                          data-message-id={message.id}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            copyText(message.content);
-                          }}
-                        >
-                          {message.content}
-                        </div>
-                      ) : (
-                        <div
-                          ref={
-                            index === visibleMessages.length - 1
-                              ? latestMessageElementRef
-                              : undefined
-                          }
-                          data-gsap-chat-message
-                          data-chat-direction={
-                            message.isLocal && !isGameAssistantMessage(message)
-                              ? "outgoing"
-                              : "incoming"
-                          }
-                          data-message-id={message.id}
-                          className={`chat-message-row flex min-w-0 items-start gap-2 ${isGrouped ? "is-grouped" : ""}`}
-                        >
-                          {isGrouped ? (
-                            <span className="chat-message-avatar-spacer h-7 w-7 shrink-0" />
-                          ) : (
-                            <ChatAccountAvatar message={message} />
-                          )}
-                          <div className="chat-message-copy relative flex min-w-0 max-w-[82%] flex-col items-start">
-                            {!isGrouped ? (
-                              <span className="chat-message-meta mb-0.5 flex min-w-0 items-center gap-2 px-1">
-                                <span className="chat-message-name min-w-0 truncate text-[12px] font-medium leading-4 text-[#718096]">
-                                  {chatDisplayName(message)}
-                                </span>
-                              </span>
-                            ) : null}
-                            {message.isLocal && onRecall ? (
-                              <button
-                                type="button"
-                                className="chat-message-recall-button inline-flex items-center gap-1 text-[11px] text-[#8a9ab0] hover:text-[#3974d8]"
-                                onClick={() => void onRecall(message.id)}
-                                title="撤回这条消息"
-                              >
-                                <RotateCcw className="h-3 w-3" aria-hidden="true" />
-                                撤回
-                              </button>
-                            ) : null}
-                            {message.image ? (
-                              <button
-                                ref={(element) => {
-                                  if (element)
-                                    previewOriginElements.current.set(message.id, element);
-                                  else previewOriginElements.current.delete(message.id);
-                                }}
-                                type="button"
-                                className="chat-image-thumbnail-button"
-                                draggable
-                                onPointerEnter={() =>
-                                  void preloadChatImage(message.image?.dataUrl ?? "")
-                                }
-                                onPointerDown={() =>
-                                  void preloadChatImage(message.image?.dataUrl ?? "")
-                                }
-                                onClick={() => {
-                                  setPreviewDirection(0);
-                                  setPreviewMessageId(message.id);
-                                }}
-                                onContextMenu={(event) => {
-                                  event.preventDefault();
-                                  copyImage(message.image?.dataUrl ?? "");
-                                }}
-                                onDragStart={(event) => {
-                                  writeRoomCollectionDragPayload(event.dataTransfer, {
-                                    kind: "image",
-                                    title: message.image?.fileName || `${message.nickname} 的图片`,
-                                    content: message.image?.dataUrl ?? "",
-                                  });
-                                }}
-                                aria-label={`查看图片：${message.image.fileName || "聊天图片"}`}
-                              >
-                                <img
-                                  src={message.image.dataUrl}
-                                  alt={message.image.fileName || "聊天图片"}
-                                  width={message.image.width}
-                                  height={message.image.height}
-                                  className="chat-image-thumbnail"
-                                  loading="lazy"
-                                  onLoad={() => void preloadChatImage(message.image?.dataUrl ?? "")}
-                                  draggable={false}
-                                />
-                              </button>
-                            ) : null}
-                            {shouldShowMessageBubble ? (
-                              <span
-                                className={`chat-message-bubble max-w-full whitespace-pre-wrap break-words rounded-[14px] px-3 py-1.5 text-[13px] leading-[1.4] [overflow-wrap:anywhere] ${
-                                  message.isLocal && !isGameAssistantMessage(message)
-                                    ? "is-local rounded-tl-[4px] bg-[#EAF4FF] text-[#2F6FCC] border border-[rgba(126,184,249,0.25)]"
-                                    : `${isGameAssistantMessage(message) ? "is-assistant rounded-tl-[4px]" : "rounded-bl-[4px]"} is-remote bg-white text-[#374151] border border-[rgba(220,230,242,0.5)]`
-                                }`}
-                                draggable
-                                onDragStart={(event) => {
-                                  writeRoomCollectionDragPayload(event.dataTransfer, {
-                                    kind: "text",
-                                    title: message.content.slice(0, 36),
-                                    content: message.content,
-                                  });
-                                }}
-                                onContextMenu={(event) => {
-                                  event.preventDefault();
-                                  copyText(message.content);
-                                }}
-                              >
-                                {isGameAssistantMessage(message) &&
-                                message.content.startsWith("【提问】") &&
-                                message.content.includes("\n【回答】") ? (
-                                  (() => {
-                                    const split = message.content.indexOf("\n【回答】");
-                                    return (
-                                      <>
-                                        <span className="mb-2 block rounded-lg bg-[#e8f2ff] px-2 py-1 text-[12px] font-semibold text-[#34699e]">
-                                          {message.content.slice(4, split)}
-                                        </span>
-                                        <span className="block">
-                                          {renderMessageContent(
-                                            message.content.slice(split + 5),
-                                            copyLink,
-                                          )}
-                                        </span>
-                                      </>
-                                    );
-                                  })()
-                                ) : isGameAssistantMessage(message) &&
-                                  message.content.startsWith("【相关记录】") ? (
-                                  <>
-                                    <span className="mb-1 block text-[12px] font-semibold text-[#3974d8]">
-                                      相关记录
-                                    </span>
-                                    {renderMessageContent(message.content.slice(6), copyLink)}
-                                  </>
-                                ) : (
-                                  renderMessageContent(message.content, copyLink)
-                                )}
-                              </span>
-                            ) : null}
-                            {linkCard ? (
-                              <MessageLinkPreview {...linkCard} onCopy={copyLink} />
-                            ) : null}
-                            {message.isLocal && message.deliveryState === "failed" ? (
-                              <button
-                                type="button"
-                                className="chat-delivery-state is-failed"
-                                onClick={() => void onRetry?.(message)}
-                              >
-                                发送失败 · 重新发送
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      )}
-                    </Fragment>
-                  );
-                })
+                <ChatMessageRows
+                  messages={messages}
+                  listStart={listStart}
+                  latestMessageElementRef={latestMessageElementRef}
+                  previewOriginElements={previewOriginElements}
+                  openPreview={openPreview}
+                  copyLink={copyLink}
+                  copyText={copyText}
+                  copyImage={copyImage}
+                  onRecall={onRecall}
+                  onRetry={onRetry}
+                />
               )}
             </div>
           </div>
 
           <div
             className="chat-composer"
-            data-has-draft={chatInput.trim().length > 0}
+            data-has-draft={hasDraft}
             data-reduce-motion={shouldReduceMotion}
           >
             {isSendingImage ? (
@@ -791,21 +570,44 @@ export const TemporaryChatPanel = ({
                 sendImageFile(file);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.ctrlKey && canSend) {
+                if (
+                  event.key === "Enter" &&
+                  !event.nativeEvent.isComposing &&
+                  !event.shiftKey &&
+                  !event.ctrlKey &&
+                  canSend
+                ) {
                   event.preventDefault();
                   handleSend();
                 }
               }}
             />
+            {onSendImage && (
+              <input
+                ref={imagePicker}
+                type="file"
+                hidden
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => {
+                  sendImageFile(event.currentTarget.files?.[0]);
+                  event.currentTarget.value = "";
+                }}
+              />
+            )}
             <span ref={sendControlRef} className="inline-flex shrink-0">
               <Button
-                onClick={handleSend}
-                disabled={!chatInput.trim() || !canSend}
+                onClick={attachImage ? () => imagePicker.current?.click() : handleSend}
+                disabled={!canSend || (attachImage ? isSendingImage : !hasDraft)}
+                data-attachment={attachImage}
                 data-icon-motion="send"
                 className="chat-send-button h-9 w-9 shrink-0 rounded-[10px] bg-[#4DA3FF] p-0 text-white hover:bg-[#3D8FEE]"
-                aria-label="发送消息"
+                aria-label={attachImage ? "选择并发送图片" : "发送消息"}
+                title={attachImage ? "选择并发送图片" : "发送消息"}
               >
-                <Send className="h-4 w-4" />
+                <span className="chat-composer-glyphs" aria-hidden="true">
+                  <Send className="chat-send-icon h-4 w-4" />
+                  {onSendImage && <Plus className="chat-attach-icon h-4 w-4" />}
+                </span>
               </Button>
             </span>
           </div>

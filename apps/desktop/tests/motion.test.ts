@@ -136,7 +136,11 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(homeSource.includes("hasPlayedHomeEntrance"), true);
   assert.equal(roomSource.includes("data-gsap-room"), false);
   assert.equal(settingsSource.includes("data-gsap-settings"), true);
-  assert.equal(chatSource.includes("data-gsap-chat-message"), true);
+  const rows = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
+    "utf8",
+  );
+  assert.equal(rows.includes("data-gsap-chat-message"), true);
   assert.equal(sceneCharacterSource.includes("data-gsap-character"), true);
   assert.equal(hookSource.includes("prefers-reduced-motion: reduce"), false);
   assert.equal(hookSource.includes("return appReduceMotion"), true);

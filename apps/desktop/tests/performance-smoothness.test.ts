@@ -82,6 +82,7 @@ test("high-frequency chat, telemetry, and pressure paths avoid broad invalidatio
   assert.equal(room.includes("}, [room.connectionState, recordingStatus.state]);"), true);
   assert.equal(room.includes("<RoomChatPanel"), true);
   assert.equal(chat.includes("latestMessageElementRef"), true);
+  assert.match(read("components/chat/ChatMessageRows.tsx"), /memo\(function ChatMessageRows/);
   assert.equal(chat.includes("[newestId, listRef]"), true);
   assert.equal(chat.includes('querySelectorAll("[data-gsap-chat-message]")'), false);
   assert.equal(store.includes("hasSameVisibleConnectionHealth"), true);
@@ -101,7 +102,7 @@ test("AI runtime discovery batches model status updates", () => {
 test("room entry waits for signaling while chat image decode uses visible loading feedback", () => {
   const roomState = read("hooks/useRoomState.ts");
   const lightbox = read("components/chat/ChatImageLightbox.tsx");
-  const chat = read("components/chat/TemporaryChatPanel.tsx");
+  const chat = read("components/chat/ChatMessageRows.tsx");
   const preload = read("features/chat/chatImagePreload.ts");
 
   const navigateIndex = roomState.indexOf('navigate("room")');

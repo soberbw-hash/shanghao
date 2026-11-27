@@ -524,8 +524,12 @@ test("fast chat acknowledgements do not flash a transient sending label", () => 
     "utf8",
   );
 
-  assert.equal(chatSource.includes("发送中…"), false);
-  assert.equal(chatSource.includes("发送失败 · 重新发送"), true);
+  const rows = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
+    "utf8",
+  );
+  assert.equal((chatSource + rows).includes("发送中…"), false);
+  assert.equal(rows.includes("发送失败 · 重新发送"), true);
 });
 
 test("the shanghao quick reply uses its own voice sound for every avatar", () => {
@@ -671,10 +675,14 @@ test("chat messages are uniformly left aligned with avatar and no per-message cl
     path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
     "utf8",
   );
-  assert.equal(source.includes('message.isLocal ? "justify-end"'), false);
-  assert.equal(source.includes("formatMessageTime"), false);
-  assert.equal(source.includes("ChatAccountAvatar"), true);
-  assert.equal(source.includes("chat-date-divider"), true);
+  const rows = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
+    "utf8",
+  );
+  assert.equal(rows.includes('message.isLocal ? "justify-end"'), false);
+  assert.equal(rows.includes("formatMessageTime"), false);
+  assert.equal(rows.includes("ChatAccountAvatar"), true);
+  assert.equal(rows.includes("chat-date-divider"), true);
   assert.equal(source.includes("animateSendFeedback"), true);
   assert.equal(source.includes('clearProps: "transform,opacity,visibility"'), true);
 });

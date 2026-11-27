@@ -2,6 +2,7 @@
 /* global require, __dirname, process, console, setTimeout, clearTimeout */
 const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
+const os = require("node:os");
 const { mkdir, writeFile } = require("node:fs/promises");
 require("./electron-isolated-profile.cjs").configureIsolatedProfile(app, "room-effects");
 
@@ -13,16 +14,26 @@ app.whenReady().then(async () => {
     height: 730,
     webPreferences: { offscreen: true, backgroundThrottling: false },
   });
+  window.webContents.setFrameRate(60);
+  window.webContents.startPainting();
   try {
     const fixture = path.resolve(
       process.env.SHANGHAO_ROOM_EFFECTS_FIXTURE ??
         path.join(__dirname, "../../../artifacts/native-ui/room-effects.static.html"),
     );
-    const previews = path.dirname(fixture);
+    const previews =
+      process.env.SHANGHAO_ROOM_EFFECTS_PREVIEWS ?? path.join(os.tmpdir(), "shanghao-room-effects");
     const capture = async (name) =>
       writeFile(path.join(previews, name), (await window.webContents.capturePage()).toPNG());
     await mkdir(previews, { recursive: true });
-    await window.loadFile(fixture);
+    if (process.env.SHANGHAO_TEST_ORIGIN) {
+      const page = path.join(__dirname, "visual/room-effects.html").replaceAll("\\", "/");
+      await window.loadURL(`${process.env.SHANGHAO_TEST_ORIGIN}/@fs/${page}`);
+    } else await window.loadFile(fixture);
+    window.webContents.debugger.attach();
+    await window.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", {
+      enabled: true,
+    });
     const result = await window.webContents.executeJavaScript(`(async () => {
       const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const $ = (selector) => document.querySelector(selector);
@@ -33,6 +44,11 @@ app.whenReady().then(async () => {
       const composerWidth = () => composer.getBoundingClientRect().width;
       const idleWidth = composerWidth();
       const idleRadius = parseFloat(getComputedStyle(composer).borderTopLeftRadius);
+      list.scrollTop = Math.floor((list.scrollHeight - list.clientHeight) / 2);
+      list.dispatchEvent(new Event('scroll'));
+      await pause(100);
+      if (!edge.hasAttribute('data-content-above') || !edge.hasAttribute('data-content-below'))
+        throw Error('both clipped edges should fade while scrolling through history: '+ JSON.stringify({ scrollTop: list.scrollTop, scrollHeight: list.scrollHeight, clientHeight: list.clientHeight, flags: edge.getAttributeNames() }));
       if (getComputedStyle(edge, '::before').backdropFilter !== 'blur(5px)' ||
           getComputedStyle(edge, '::after').backdropFilter !== 'blur(15px)' ||
           getComputedStyle(edge, '::after').pointerEvents !== 'none')
@@ -40,10 +56,33 @@ app.whenReady().then(async () => {
       if (getComputedStyle(list.closest('.temporary-chat-panel'), '::after').filter !== 'blur(20px)')
         throw Error('the chat sidebar lacks a softened room background');
       list.scrollTop = list.scrollHeight;
+      list.dispatchEvent(new Event('scroll'));
+      await pause(100);
+      if (!edge.hasAttribute('data-content-above') || edge.hasAttribute('data-content-below'))
+        throw Error('latest message still has a bottom blur');
       const last = list.querySelector('.chat-message-row:last-child').getBoundingClientRect();
       if (last.bottom > list.getBoundingClientRect().bottom - 34)
         throw Error('latest message is covered by the blur');
-      const input = composer.querySelector('input');
+      const input = composer.querySelector('input[aria-label="聊天消息"]');
+      const attach = composer.querySelector('button[aria-label="选择并发送图片"]');
+      if (!attach || attach.disabled) throw Error('empty chat has no image action');
+      const actionRight = attach.getBoundingClientRect().right;
+      const centered = (glyph) => {
+        const a = attach.getBoundingClientRect(), b = attach.querySelector(glyph).getBoundingClientRect();
+        return Math.abs((a.left + a.right - b.left - b.right) / 2) < 1;
+      };
+      if (!centered('.chat-attach-icon')) throw Error('attachment glyph is off-center');
+      const picker = composer.querySelector('input[type=file]');
+      let openedPicker = false;
+      picker.click = () => { openedPicker = true; };
+      attach.click();
+      if (!openedPicker) throw Error('image button did not open native input');
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(['test'], '测试.png', { type: 'image/png' }));
+      picker.files = transfer.files;
+      picker.dispatchEvent(new Event('change',{bubbles:true}));
+      await pause(30);
+      if ($('main').dataset.image !== '测试.png') throw Error('file selection did not use image sending');
       input.focus();
       await pause(240);
       if (composerWidth() < idleWidth + 10) throw Error('focused composer does not expand');
@@ -51,15 +90,31 @@ app.whenReady().then(async () => {
         throw Error('focused composer does not change shape');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '发个测试');
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      await pause(40);
+      for (let attempt = 0; attempt < 40 && composer.dataset.hasDraft !== 'true'; attempt++) await pause(20);
+      if (composer.dataset.hasDraft !== 'true') throw Error('typing did not update the draft state');
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }));
+      if ($('main').dataset.sent || input.value !== '发个测试')
+        throw Error('confirming a composition sent a chat message');
       input.blur();
       await pause(200);
-      if (composerWidth() < idleWidth + 10) throw Error('draft collapsed on blur');
-      composer.querySelector('[aria-label="发送消息"]').click();
+      if (composerWidth() < idleWidth + 10) throw Error('draft collapsed on blur: ' + JSON.stringify({ idleWidth, width: composerWidth(), draft: composer.dataset.hasDraft }));
+      if (Math.abs(attach.getBoundingClientRect().right - actionRight) > 1 || !centered('.chat-send-icon'))
+        throw Error('the trailing action moved while typing');
+      if (composer.querySelector('[aria-label="发送消息"]') !== attach || !input.value)
+        throw Error('typing replaced the action instead of transitioning its state');
+      attach.click();
       await pause(240);
       if ($('main').dataset.sent !== '发个测试' || input.value)
         throw Error('sending the draft failed');
-      return { composerExpanded: true, draftPreserved: true, latestMessageReadable: true };
+      if (composer.querySelector('[aria-label="选择并发送图片"]') !== attach)
+        throw Error('attachment action did not return after sending');
+      const bar = $('.room-topbar'), light = bar.querySelector('.room-glass-light');
+      bar.dispatchEvent(new PointerEvent('pointermove',{ bubbles:true, clientX:bar.offsetLeft+75, clientY:bar.offsetTop+15 }));
+      await pause(60);
+      if (!bar.hasAttribute('data-glass-pointer-active') ||
+          !getComputedStyle(light,'::before').transform.startsWith('matrix'))
+        throw Error('room glass did not move its highlight without moving the controls');
+      return { composerExpanded: true, draftPreserved: true, imageAction: true, edgeAware: true, latestMessageReadable: true, glassSpot: true };
     })()`);
     await capture("room-chat-idle.png");
     await window.webContents.executeJavaScript(`(async () => {
@@ -126,12 +181,28 @@ app.whenReady().then(async () => {
         bounds.top >= 0 && bounds.bottom <= innerHeight && dialog.scrollWidth <= dialog.clientWidth + 1;
     })()`);
     if (!narrow) throw Error("music dialog overflows at 430px");
+    await window.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+      features: [
+        { name: "prefers-reduced-motion", value: "reduce" },
+        { name: "forced-colors", value: "active" },
+      ],
+    });
+    const accessibleEffects = await window.webContents.executeJavaScript(`(() => {
+      const list = document.querySelector('.chat-message-list');
+      const composer = document.querySelector('.chat-composer');
+      return getComputedStyle(list).maskImage === 'none' &&
+        getComputedStyle(composer).transitionDuration === '0s' &&
+        getComputedStyle(document.querySelector('.room-glass-light')).display === 'none';
+    })()`);
+    if (!accessibleEffects)
+      throw Error("room effects still obscure content with accessibility settings");
     console.log(
       JSON.stringify({
         ...result,
         refractionRendered: true,
         musicVolumeWorks: true,
         narrowMusicLayout: true,
+        accessibleEffects: true,
       }),
     );
     clearTimeout(deadline);
