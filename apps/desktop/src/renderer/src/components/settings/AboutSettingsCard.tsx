@@ -21,6 +21,7 @@ import { SettingsSection } from "./SettingsSection";
 import { StorageSettingsCard } from "./StorageSettingsCard";
 import { SettingsDiagnosticsSection } from "./SettingsDiagnosticsSection";
 import { AssetStudioSettingsCard } from "./AssetStudioSettingsCard";
+import { CloudAiAdminPanel } from "./CloudAiAdminPanel";
 
 interface AboutSettingsCardProps {
   isActive?: boolean;
@@ -203,6 +204,7 @@ export const AboutSettingsCard = ({
           <SettingsDiagnosticsSection />
           <StorageSettingsCard isActive={isActive} />
         </div>
+        {isActive ? <CloudAiAdminPanel /> : null}
       </SettingsSection>
 
       <DonationDialog isOpen={isDonationOpen} onClose={() => setIsDonationOpen(false)} />

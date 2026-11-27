@@ -78,7 +78,7 @@ export const ScreenSourcePicker = ({
   return (
     <dialog
       ref={dialog}
-      className={`screen-source-picker-panel screen-source-picker-confirm modal-surface ${reduceMotion ? "reduce-motion" : ""}`}
+      className={`screen-source-picker-panel screen-source-picker-confirm room-picker-dialog modal-surface ${reduceMotion ? "reduce-motion" : ""}`}
       aria-labelledby="screen-source-title"
       onCancel={onClose}
       onClick={(event) => {

@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { LoaderCircle, Plus, Send } from "lucide-react";
+import { LoaderCircle, Send } from "lucide-react";
 import { gsap } from "gsap";
 
 import {
@@ -113,9 +113,7 @@ export const TemporaryChatPanel = ({
     alternateContentActive,
   );
   const latestMessageElementRef = useRef<HTMLDivElement>(null);
-  const imagePicker = useRef<HTMLInputElement>(null);
   const hasDraft = chatInput.trim().length > 0;
-  const attachImage = !hasDraft && Boolean(onSendImage);
   useScrollEdgeFade(listRef, !alternateContentActive && messages.length > 0);
   const dragDepthRef = useRef(0);
   const previousNewestKey = useRef<string | null | undefined>(undefined);
@@ -508,7 +506,6 @@ export const TemporaryChatPanel = ({
           idPrefix={contentTabId}
         >
           <div className="room-list-viewport" data-room-list-edge={messages.length > 0}>
-            <span className="room-list-top-edge" aria-hidden="true" />
             <div
               ref={listRef}
               className="chat-message-list flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto pr-1"
@@ -534,11 +531,7 @@ export const TemporaryChatPanel = ({
             </div>
           </div>
 
-          <div
-            className="chat-composer"
-            data-has-draft={hasDraft}
-            data-reduce-motion={shouldReduceMotion}
-          >
+          <div className="chat-composer" data-reduce-motion={shouldReduceMotion}>
             {isSendingImage ? (
               <span className="chat-image-sending" aria-live="polite" title="正在压缩图片">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -547,7 +540,7 @@ export const TemporaryChatPanel = ({
             <Input
               aria-label="聊天消息"
               placeholder={canSend ? "发送消息…" : messages.length ? unavailableLabel : "发送消息"}
-              title="最多保留最近 100 条消息"
+              title={onSendImage ? "支持粘贴或拖入图片" : undefined}
               value={chatInput}
               disabled={!canSend}
               onChange={(event) => onChatInputChange(event.target.value)}
@@ -570,34 +563,16 @@ export const TemporaryChatPanel = ({
                 }
               }}
             />
-            {onSendImage && (
-              <input
-                ref={imagePicker}
-                type="file"
-                hidden
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(event) => {
-                  sendImageFile(event.currentTarget.files?.[0]);
-                  event.currentTarget.value = "";
-                }}
-              />
-            )}
-            <span className="inline-flex shrink-0">
-              <Button
-                onClick={attachImage ? () => imagePicker.current?.click() : handleSend}
-                disabled={!canSend || (attachImage ? isSendingImage : !hasDraft)}
-                data-attachment={attachImage}
-                data-icon-motion="send"
-                className="chat-send-button h-9 w-9 shrink-0 rounded-[10px] bg-[#4DA3FF] p-0 text-white hover:bg-[#3D8FEE]"
-                aria-label={attachImage ? "选择并发送图片" : "发送消息"}
-                title={attachImage ? "选择并发送图片" : "发送消息"}
-              >
-                <span className="chat-composer-glyphs" aria-hidden="true">
-                  <Send className="chat-send-icon h-4 w-4" />
-                  {onSendImage && <Plus className="chat-attach-icon h-4 w-4" />}
-                </span>
-              </Button>
-            </span>
+            <Button
+              onClick={handleSend}
+              disabled={!canSend || !hasDraft}
+              data-icon-motion="send"
+              className="chat-send-button h-9 w-9 shrink-0 bg-[#4DA3FF] p-0 text-white hover:bg-[#3D8FEE]"
+              aria-label="发送消息"
+              title="发送消息"
+            >
+              <Send className="h-4 w-4" aria-hidden="true" />
+            </Button>
           </div>
         </ChatContentSwitcher>
         {isDraggingImage && !alternateContentActive ? (

@@ -3,6 +3,7 @@
 const { app, BrowserWindow } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs/promises");
+const os = require("node:os");
 require("./electron-isolated-profile.cjs").configureIsolatedProfile(app, "audio-device-presets");
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
@@ -34,7 +35,8 @@ app.whenReady().then(async () => {
       check(fixture.liveTrack().enabled,'send gate did not restore existing unmuted state');
       check(fixture.gateWasClosed,'input was open during a transaction');
       check(fixture.route()==='applied','output route not verified');
-      [...document.querySelectorAll('button')].find(b=>b.textContent==='打开设备').click(); await wait(100);
+      const microphone=document.querySelector('[aria-label="打开麦克风设备、处理、说话模式与体检"]');
+      microphone.click(); await wait(100);
       check(document.querySelector('.audio-device-presets-host button'),'profile entry did not mount in device menu');
       [...document.querySelectorAll('button')].find(b=>b.textContent==='音频配置').click(); await wait(100);
       const rows=document.querySelectorAll('.audio-preset-row');
@@ -83,7 +85,16 @@ app.whenReady().then(async () => {
       fixture.failSave();setSelect(first.querySelectorAll('select')[1],'fixture-speaker');await wait(20);save.click();await wait(150);
       check(document.querySelector('.audio-presets-dialog [role=status]').textContent.includes('未保存'),'failed save reported success');
       check(!fixture.settings().audioDevicePresets[0].audio.preferredOutputDeviceId,'failed save replaced saved config');
-      [...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')==='关闭音频配置').click();await wait(50);
+      const dismiss=document.querySelector('[aria-label="关闭音频配置"]');
+      dismiss.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+      dismiss.click();await wait(50);
+      check(microphone.getAttribute('aria-expanded')==='true','closing the preset dialog dismissed the underlying microphone menu');
+      [...document.querySelectorAll('button')].find(b=>b.textContent==='音频配置').click();await wait(50);
+      const dialog=document.querySelector('.audio-presets-dialog:modal');
+      dialog.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+      dialog.dispatchEvent(new Event('cancel',{cancelable:true}));
+      await wait(50);
+      check(microphone.getAttribute('aria-expanded')==='true','Escape closed both the preset dialog and the microphone menu');
       const shortcut=document.querySelector('#fixture-shortcut-settings input');
       const press=key=>shortcut.dispatchEvent(new KeyboardEvent('keydown',{key,code:key,ctrlKey:true,shiftKey:true,bubbles:true}));
       press('F9');await wait(150);check(fixture.settings().audioDevicePresetShortcut==='Ctrl+Shift+F9','settings shortcut did not save');
@@ -95,7 +106,7 @@ app.whenReady().then(async () => {
       cards[1].querySelector('.audio-preset-actions button:last-child').click();await wait(150);
       cards[1].querySelector('.audio-preset-state').click();await wait(400);
       check(cards[1].classList.contains('is-active')&&!cards[0].classList.contains('is-active'),'second card did not become the sole active card');
-      return {ok:true,switches:count,gateWasClosed:fixture.gateWasClosed,roomChangeSafe:true,profileSave:true,draftDevices:true,clickableCards:true,doubleSaveGuard:true,settingsShortcut:true,outputRoute:fixture.route()};
+      return {ok:true,switches:count,gateWasClosed:fixture.gateWasClosed,roomChangeSafe:true,profileSave:true,draftDevices:true,clickableCards:true,doubleSaveGuard:true,settingsShortcut:true,menuPreserved:true,outputRoute:fixture.route()};
     })()`);
     const geometry=[];
     for (const width of [900, 520, 360]) {
@@ -112,7 +123,7 @@ app.whenReady().then(async () => {
       })()`));
     }
     view.setSize(900,740);await new Promise(resolve=>setTimeout(resolve,100));
-    const screenshot=path.resolve("../../artifacts/audio-device-presets-cards-20261101.png");
+    const screenshot=path.join(os.tmpdir(),"shanghao-audio-device-presets.png");
     await fs.writeFile(screenshot,(await view.webContents.capturePage()).toPNG());
     await view.webContents.executeJavaScript("window.audioPresetFixture.close()");
     console.log(JSON.stringify({...result,geometry,screenshot}));

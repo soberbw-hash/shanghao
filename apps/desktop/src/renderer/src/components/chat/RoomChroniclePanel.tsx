@@ -220,7 +220,6 @@ export function RoomChroniclePanel({
         </p>
       ) : null}
       <div className="room-list-viewport" data-room-list-edge={archive.entries.length > 0}>
-        <span className="room-list-top-edge" aria-hidden="true" />
         <div
           ref={listRef}
           className="room-chronicle-entries"

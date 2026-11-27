@@ -242,10 +242,6 @@
   color: #27364b;
 }
 
-.screen-source-picker-confirm::backdrop {
-  background: rgba(31, 52, 78, 0.28);
-}
-
 .screen-source-picker-confirm[open] {
   animation: screen-source-enter 200ms var(--ease-out-soft);
 }

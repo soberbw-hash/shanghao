@@ -87,6 +87,9 @@ export const settingsSectionSignature = (
     case "ai":
       return JSON.stringify([
         settings.aiAsrModel,
+        settings.aiTranscriptionProvider,
+        settings.isAiCloudLocalAssistEnabled,
+        settings.aiCloudLocalAsrModel,
         settings.aiOrganizerProvider,
         settings.aiProcessingMode,
         settings.isAiAutoOrganizeEnabled,

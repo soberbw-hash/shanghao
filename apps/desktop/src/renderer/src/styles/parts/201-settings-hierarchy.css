@@ -1,3 +1,5 @@
+@import "./201-settings-scroll.css";
+
 .settings-nav-group + .settings-nav-group {
   margin-top: 10px;
   padding-top: 8px;

@@ -59,7 +59,7 @@ export function ApplicationAudioPicker(props: Props) {
   return createPortal(
     <dialog
       ref={dialog}
-      className="application-audio-dialog"
+      className="application-audio-dialog room-picker-dialog"
       data-sharing={Boolean(props.sharingName)}
       aria-labelledby={titleId}
       onCancel={(event) => {

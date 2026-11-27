@@ -72,7 +72,6 @@ export function useMemberAvailabilityControls(
             member.isLocal ? { ...member, availabilityStatus: nextStatus } : member,
           ),
         );
-        window.dispatchEvent(new Event("shanghao:availability-audio-feedback"));
         // Phone entry is sounded before Windows mutes outputs by usePhoneModeSync.
         if (!useAudioStore.getState().phoneModeActive)
           playUiSound(nextStatus ? "phone-mode-enter" : "phone-mode-exit");

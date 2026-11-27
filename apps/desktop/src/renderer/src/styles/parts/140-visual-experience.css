@@ -980,10 +980,9 @@ html:not(.is-app-window-focused) .window-frame {
   -webkit-backdrop-filter: blur(var(--sg-overlay-blur)) saturate(112%) !important;
 }
 
-/* Native dialogs live in the top layer; their backdrop cannot inherit the
-   panel's filter. Apply the same static scrim to every native dialog, including
-   release notes and nested confirmations, regardless of local theme rules. */
-dialog::backdrop {
+/* Room pickers animate their own lighter backdrop. Other native dialogs
+   share the static scrim, including release notes and nested confirmations. */
+dialog:not(.room-picker-dialog)::backdrop {
   background: var(--sg-overlay-tint) !important;
   backdrop-filter: blur(var(--sg-overlay-blur)) saturate(112%) !important;
   -webkit-backdrop-filter: blur(var(--sg-overlay-blur)) saturate(112%) !important;

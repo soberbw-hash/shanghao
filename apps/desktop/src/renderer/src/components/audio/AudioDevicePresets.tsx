@@ -83,6 +83,7 @@ export function AudioDevicePresets({
           <dialog
             ref={dialog}
             className="audio-presets-dialog"
+            data-audio-control-root
             aria-label="音频设备配置"
             onCancel={(event) => {
               event.preventDefault();

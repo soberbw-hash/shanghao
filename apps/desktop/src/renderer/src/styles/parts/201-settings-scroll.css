@@ -1,0 +1,46 @@
+.settings-fixed-layout {
+  min-height: 0;
+  flex: 1;
+}
+
+.settings-fixed-layout > .settings-nav {
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.settings-fixed-layout > [data-settings-content-scroll] {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
+@media (width < 1024px) {
+  .settings-fixed-layout {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .settings-fixed-layout > .settings-nav,
+  .settings-fixed-layout .settings-nav-group {
+    display: flex;
+    gap: 4px;
+  }
+
+  .settings-fixed-layout .settings-nav-group {
+    flex: none;
+  }
+
+  .settings-fixed-layout .settings-nav-item {
+    width: auto;
+  }
+
+  .settings-fixed-layout .settings-nav-group + .settings-nav-group {
+    margin: 0;
+    padding: 0 0 0 4px;
+    border: 0;
+    border-inline-start: 1px solid #c6d6e8;
+  }
+
+  .settings-fixed-layout .settings-nav-group-label {
+    display: none;
+  }
+}

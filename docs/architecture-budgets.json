@@ -204,6 +204,7 @@
   "apps/desktop/src/renderer/src/components/settings/TranscriptionTimingNotice.tsx": 25,
   "packages/signaling/src/room-memory-jobs.ts": 200,
   "apps/desktop/src/renderer/src/styles/parts/201-settings-hierarchy.css": 60,
+  "apps/desktop/src/renderer/src/styles/parts/201-settings-scroll.css": 52,
   "apps/desktop/src/renderer/src/styles/parts/209-recording-library-clean.css": 219,
   "apps/desktop/src/renderer/src/styles/fonts.css": 35,
   "apps/desktop/src/renderer/src/components/settings/RecordingOverview.tsx": 72,

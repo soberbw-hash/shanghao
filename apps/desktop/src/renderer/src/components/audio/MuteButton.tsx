@@ -11,14 +11,12 @@ export const MuteButton = ({
   className,
   showLevelFill = true,
   status,
-  feedbackSequence = 0,
 }: {
   isMuted: boolean;
   onClick: () => void;
   className?: string;
   showLevelFill?: boolean;
   status?: MicrophoneStatus;
-  feedbackSequence?: number;
 }) => (
   <ToggleButton
     isActive={isMuted}
@@ -34,13 +32,7 @@ export const MuteButton = ({
     onClick={onClick}
   >
     {showLevelFill ? <MicrophoneLevelFill muted={isMuted} /> : null}
-    <span
-      key={feedbackSequence}
-      className={cn(
-        "voice-availability-feedback relative z-[1]",
-        feedbackSequence > 0 && "is-animating",
-      )}
-    >
+    <span className="voice-main-label relative z-[1]">
       <AnimatedControlIcon name="mic" muted={isMuted} className="voice-primary-icon" />
       <span className="voice-action-label flex flex-col items-start leading-tight">
         <span>{isMuted ? "已静音" : "麦克风"}</span>

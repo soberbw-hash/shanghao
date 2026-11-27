@@ -199,7 +199,6 @@ test("screen-share and shared floating windows use readable backdrop blur", () =
   );
   assert.match(
     visualStyles,
-    /dialog::backdrop\s*\{[^}]*backdrop-filter: blur\(var\(--sg-overlay-blur\)\)/s,
+    /dialog:not\(\.room-picker-dialog\)::backdrop\s*\{[^}]*backdrop-filter: blur\(var\(--sg-overlay-blur\)\)/s,
   );
-  assert.match(visualStyles, /dialog::backdrop/);
 });

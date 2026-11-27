@@ -49,10 +49,13 @@ app.whenReady().then(async () => {
       await pause(100);
       if (!edge.hasAttribute('data-content-above') || !edge.hasAttribute('data-content-below'))
         throw Error('both clipped edges should fade while scrolling through history: '+ JSON.stringify({ scrollTop: list.scrollTop, scrollHeight: list.scrollHeight, clientHeight: list.clientHeight, flags: edge.getAttributeNames() }));
-      if (getComputedStyle(edge, '::before').backdropFilter !== 'blur(5px)' ||
-          getComputedStyle(edge, '::after').backdropFilter !== 'blur(15px)' ||
-          getComputedStyle(edge, '::after').pointerEvents !== 'none')
-        throw Error('the progressive edge should blur only the visible list');
+      for (const side of ['::before', '::after']) {
+        const style = getComputedStyle(edge, side);
+        if (!style.backdropFilter.startsWith('blur(') ||
+            !style.maskImage.startsWith('linear-gradient(') ||
+            style.pointerEvents !== 'none')
+          throw Error('the scroll edge should fade its blur without blocking the list');
+      }
       if (getComputedStyle(list.closest('.temporary-chat-panel'), '::after').filter !== 'blur(20px)')
         throw Error('the chat sidebar lacks a softened room background');
       list.scrollTop = list.scrollHeight;
@@ -60,71 +63,92 @@ app.whenReady().then(async () => {
       await pause(100);
       if (!edge.hasAttribute('data-content-above') || edge.hasAttribute('data-content-below'))
         throw Error('latest message still has a bottom blur');
+      if (getComputedStyle(edge, '::after').content !== 'none')
+        throw Error('the bottom blur should disappear at the latest message');
       const last = list.querySelector('.chat-message-row:last-child').getBoundingClientRect();
       if (last.bottom > list.getBoundingClientRect().bottom - 34)
         throw Error('latest message is covered by the blur');
       const input = composer.querySelector('input[aria-label="聊天消息"]');
-      const attach = composer.querySelector('button[aria-label="选择并发送图片"]');
-      if (!attach || attach.disabled) throw Error('empty chat has no image action');
-      const actionRight = attach.getBoundingClientRect().right;
-      const centered = (glyph) => {
-        const a = attach.getBoundingClientRect(), b = attach.querySelector(glyph).getBoundingClientRect();
-        return Math.abs((a.left + a.right - b.left - b.right) / 2) < 1;
-      };
-      if (!centered('.chat-attach-icon')) throw Error('attachment glyph is off-center');
-      const picker = composer.querySelector('input[type=file]');
-      let openedPicker = false;
-      picker.click = () => { openedPicker = true; };
-      attach.click();
-      if (!openedPicker) throw Error('image button did not open native input');
+      const send = composer.querySelector('button[aria-label="发送消息"]');
+      if (!send?.disabled || composer.querySelector('input[type=file], .lucide-plus'))
+        throw Error('empty composer has a file picker or an enabled send action');
+      const actionRight = send.getBoundingClientRect().right;
+      const stage = composer.parentElement.getBoundingClientRect();
+      const idleRect = composer.getBoundingClientRect();
+      if (Math.abs((idleRect.left - stage.left) - (stage.right - idleRect.right)) > 1)
+        throw Error('composer is not aligned inside the chat sidebar');
       const transfer = new DataTransfer();
       transfer.items.add(new File(['test'], '测试.png', { type: 'image/png' }));
-      picker.files = transfer.files;
-      picker.dispatchEvent(new Event('change',{bubbles:true}));
+      input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: transfer }));
       await pause(30);
-      if ($('main').dataset.image !== '测试.png') throw Error('file selection did not use image sending');
+      if ($('main').dataset.image !== '测试.png') throw Error('pasted image did not use image sending');
       input.focus();
       await pause(240);
-      if (composerWidth() < idleWidth + 10) throw Error('focused composer does not expand');
-      if (parseFloat(getComputedStyle(composer).borderTopLeftRadius) >= idleRadius)
-        throw Error('focused composer does not change shape');
+      if (Math.abs(composerWidth() - idleWidth) > 1 ||
+          parseFloat(getComputedStyle(composer).borderTopLeftRadius) !== idleRadius ||
+          !getComputedStyle(composer).boxShadow.includes('inset'))
+        throw Error('focus moved the composer or painted outside its bounds');
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '发个测试');
       input.dispatchEvent(new Event('input', { bubbles: true }));
-      for (let attempt = 0; attempt < 40 && composer.dataset.hasDraft !== 'true'; attempt++) await pause(20);
-      if (composer.dataset.hasDraft !== 'true') throw Error('typing did not update the draft state');
+      for (let attempt = 0; attempt < 40 && send.disabled; attempt++) await pause(20);
+      if (send.disabled) throw Error('typing did not enable send');
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }));
       if ($('main').dataset.sent || input.value !== '发个测试')
         throw Error('confirming a composition sent a chat message');
       input.blur();
       await pause(200);
-      if (composerWidth() < idleWidth + 10) throw Error('draft collapsed on blur: ' + JSON.stringify({ idleWidth, width: composerWidth(), draft: composer.dataset.hasDraft }));
-      if (Math.abs(attach.getBoundingClientRect().right - actionRight) > 1 || !centered('.chat-send-icon'))
+      if (Math.abs(composerWidth() - idleWidth) > 1) throw Error('draft changed the composer width');
+      if (Math.abs(send.getBoundingClientRect().right - actionRight) > 1)
         throw Error('the trailing action moved while typing');
-      if (composer.querySelector('[aria-label="发送消息"]') !== attach || !input.value)
-        throw Error('typing replaced the action instead of transitioning its state');
-      attach.click();
+      if (composer.querySelector('[aria-label="发送消息"]') !== send || !input.value)
+        throw Error('typing replaced the send action or cleared the draft');
+      send.click();
       for (let i = 0; i < 25 && !$('[data-message-id="pending"]'); i++) await pause(20);
-      const sendGlyph = attach.querySelector('.chat-send-icon');
-      const iconOwnsItsTransition = !sendGlyph.style.opacity && !sendGlyph.style.transform;
       const optimistic = list.querySelector('[data-message-id="pending"]');
-      if (!optimistic) throw Error('message did not appear before confirmation: ' + JSON.stringify({sent: $('main').dataset.sent, label: attach.ariaLabel, disabled: attach.disabled, latest: list.lastElementChild?.dataset.messageId}));
+      if (!optimistic) throw Error('message did not appear before confirmation');
       list.scrollTop = 0;
       $('[data-testid="confirm-chat-message"]').click();
       await pause(320);
       if (optimistic !== list.querySelector('[data-message-id="confirmed"]') || list.scrollTop > 2)
-        throw Error('confirmation replaced the row or jumped to the latest message: ' + JSON.stringify({replaced: optimistic !== list.querySelector('[data-message-id="confirmed"]'), scrollTop: list.scrollTop, iconOwnsItsTransition}));
-      if (!iconOwnsItsTransition) throw Error('send animation overrides the composer icon transition');
+        throw Error('confirmation replaced the row or jumped to the latest message');
       if ($('main').dataset.sent !== '发个测试' || input.value)
         throw Error('sending the draft failed');
-      if (composer.querySelector('[aria-label="选择并发送图片"]') !== attach)
-        throw Error('attachment action did not return after sending');
+      if (!send.disabled) throw Error('the empty composer can still send');
       const bar = $('.room-topbar'), light = bar.querySelector('.room-glass-light');
       bar.dispatchEvent(new PointerEvent('pointermove',{ bubbles:true, clientX:bar.offsetLeft+75, clientY:bar.offsetTop+15 }));
       await pause(60);
       if (!bar.hasAttribute('data-glass-pointer-active') ||
           !getComputedStyle(light,'::before').transform.startsWith('matrix'))
         throw Error('room glass did not move its highlight without moving the controls');
-      return { composerExpanded: true, draftPreserved: true, imageAction: true, edgeAware: true, latestMessageReadable: true, glassSpot: true };
+      return { composerAligned: true, draftPreserved: true, imagePaste: true, edgeAware: true, latestMessageReadable: true, glassSpot: true };
+    })()`);
+    await window.webContents.executeJavaScript(`(async () => {
+      const list = document.querySelector('.chat-message-list');
+      const middle = list.querySelectorAll('.chat-message-row')[13];
+      list.scrollTop += middle.getBoundingClientRect().top - list.getBoundingClientRect().top + 28;
+      await new Promise((resolve) => setTimeout(resolve, 130));
+      if (!list.parentElement.matches('[data-content-above][data-content-below]'))
+        throw Error('the scrolling preview needs both edges');
+    })()`);
+    await capture("room-chat-history.png");
+    await window.webContents.executeJavaScript(`(() => {
+      const list = document.querySelector('.chat-message-list');
+      list.scrollTop = list.scrollHeight;
+    })()`);
+    result.screenSourceStaging = await window.webContents.executeJavaScript(`(async () => {
+      [...document.querySelectorAll('button')].find(b=>b.textContent==='屏幕分享').click();
+      for(let i=0;i<50&&!document.querySelector('main').dataset.screenStarted;i++)
+        await new Promise(r=>setTimeout(r,25));
+      const modal=document.querySelector('.screen-source-picker-confirm:modal');
+      if(!modal || document.querySelector('main').dataset.screenStarted!=='visible')
+        throw Error('screen enumeration started before its loading window');
+      if(getComputedStyle(modal,'::backdrop').backdropFilter!=='blur(6px)')
+        throw Error('the screen picker backdrop lacks soft blur');
+      modal.dispatchEvent(new Event('cancel',{ cancelable:true }));
+      await new Promise(r=>setTimeout(r,70));
+      if(document.querySelector('.screen-source-picker-confirm:modal'))
+        throw Error('screen picker could not be dismissed');
+      return true;
     })()`);
     await capture("room-chat-idle.png");
     await window.webContents.executeJavaScript(`(async () => {
@@ -141,6 +165,10 @@ app.whenReady().then(async () => {
       document.querySelector('[aria-label="打开音乐演示"]').click();
       await new Promise((resolve) => setTimeout(resolve, 160));
       const picker = document.querySelector('dialog:modal[data-sharing="false"]');
+      if (!picker) throw Error('music picker did not open');
+      const backdrop = getComputedStyle(picker, '::backdrop');
+      if (backdrop.backdropFilter !== 'blur(6px)' || backdrop.animationName !== 'room-picker-backdrop-in')
+        throw Error('music picker has no soft room backdrop transition');
       if (!picker || !getComputedStyle(picker).backdropFilter.includes('blur(12px)') ||
           !picker.querySelector('feImage')?.getAttribute('href')?.startsWith('data:image/png'))
         throw Error('the source picker should show glass before music starts');
