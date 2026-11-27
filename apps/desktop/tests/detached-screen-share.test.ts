@@ -86,6 +86,8 @@ test("enlarged viewing follows track changes inside the same stream and ignores 
     windowsOpened = 0,
     windowsClosed = 0,
     failOpen = false;
+  let activeWindowSession = "";
+  const listeners = new Set<(signal: ScreenShareViewerSignal) => void>();
   class Peer {
     onicecandidate = null;
     onconnectionstatechange = null;
@@ -106,14 +108,18 @@ test("enlarged viewing follows track changes inside the same stream and ignores 
         app: { writeLog: async () => {} },
         screenCapture: { setContentProtection: async () => {} },
         screenShareViewer: {
-          open: async () => {
+          open: async ({ sessionId }: { sessionId: string }) => {
             windowsOpened++;
+            activeWindowSession = sessionId;
             if (failOpen) throw Error("viewer failed");
           },
           close: async () => {
             windowsClosed++;
           },
-          onSignal: () => () => {},
+          onSignal: (listener: (signal: ScreenShareViewerSignal) => void) => {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+          },
           sendSignal: async () => true,
         },
       },
@@ -154,6 +160,22 @@ test("enlarged viewing follows track changes inside the same stream and ignores 
   await manager.syncDetachedItem(undefined);
   assert.equal(closed, 2);
   assert.equal(windowsClosed, 1);
+  const previousSession = activeWindowSession;
+  await manager.openDetachedViewer({
+    ...item,
+    stream: undefined,
+    transport: "relay",
+    frameDataUrl: "data:image/webp;base64,fixture",
+  });
+  listeners.forEach((listener) =>
+    listener({ type: "closed", sender: "viewer", sessionId: previousSession }),
+  );
+  assert.equal(manager.getSnapshot().displayMode, "detached");
+  listeners.forEach((listener) =>
+    listener({ type: "closed", sender: "viewer", sessionId: activeWindowSession }),
+  );
+  assert.equal(manager.getSnapshot().displayMode, "inline");
+  assert.equal(windowsClosed, 1, "a native close does not close the window twice");
   failOpen = true;
   await assert.rejects(manager.openDetachedViewer(item), /viewer failed/);
   assert.equal(manager.getSnapshot().displayMode, "inline");

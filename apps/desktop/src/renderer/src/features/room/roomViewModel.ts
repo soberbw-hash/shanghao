@@ -67,7 +67,11 @@ interface ScreenShareViewInput {
 }
 
 const hasLiveVideo = (stream?: MediaStream): boolean =>
-  Boolean(stream?.getVideoTracks().some((track) => track.readyState === "live" && !track.muted));
+  Boolean(
+    stream
+      ?.getVideoTracks()
+      .some((track) => track.readyState === "live" && track.enabled && !track.muted),
+  );
 
 const isFreshFrame = (receivedAt: string, now: number): boolean => {
   const timestamp = Date.parse(receivedAt);
@@ -119,7 +123,7 @@ export const selectScreenShareView = ({
     }
     const member = members.find((candidate) => candidate.id === peerId);
     items.push({
-      id: `${peerId}-relay`,
+      id: peerId,
       title: `${member?.nickname ?? "好友"} 正在分享`,
       frameDataUrl: frame.data,
       frameWidth: frame.width,

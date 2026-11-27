@@ -3,6 +3,7 @@ import test, { type TestContext } from "node:test";
 import {
   loadRoomEntryCue,
   loadRoomMemberJoinCue,
+  loadUiCue,
 } from "../src/renderer/src/features/audio/roomEntryCue";
 
 class CueWorker {
@@ -11,7 +12,7 @@ class CueWorker {
   onmessage?: (event: { data: unknown }) => void;
   onerror?: () => void;
   terminated = false;
-  request?: { sampleRate: number; cue: string };
+  request?: { sampleRate: number; pack: string; cue: string };
   constructor() {
     CueWorker.created.push(this);
   }
@@ -52,23 +53,26 @@ const context = (sampleRate: number, failBuffer = false): AudioContext =>
     },
   }) as unknown as AudioContext;
 
-test("entry/member warmup shares pending work only for the same cue and sample rate", async (t) => {
+test("cue warmup shares pending work only for the same pack, cue and sample rate", async (t) => {
   setup(t);
   const first = loadRoomEntryCue(context(48_000));
   assert.equal(loadRoomEntryCue(context(48_000)), first);
   const member = loadRoomMemberJoinCue(context(48_000));
   const otherRate = loadRoomEntryCue(context(44_100));
-  assert.equal(CueWorker.created.length, 3);
+  const button = loadUiCue(context(48_000), "studio", "press");
+  assert.equal(loadUiCue(context(48_000), "studio", "press"), button);
+  assert.equal(CueWorker.created.length, 4);
   assert.deepEqual(
     CueWorker.created.map((worker) => worker.request),
     [
-      { sampleRate: 48_000, cue: "enter-room" },
-      { sampleRate: 48_000, cue: "member-join" },
-      { sampleRate: 44_100, cue: "enter-room" },
+      { sampleRate: 48_000, pack: "soft", cue: "wake" },
+      { sampleRate: 48_000, pack: "organic", cue: "connect" },
+      { sampleRate: 44_100, pack: "soft", cue: "wake" },
+      { sampleRate: 48_000, pack: "studio", cue: "press" },
     ],
   );
   CueWorker.created.forEach((worker) => worker.complete());
-  const results = await Promise.all([first, member, otherRate]);
+  const results = await Promise.all([first, member, otherRate, button]);
   assert.deepEqual(results[1]!.buffer.getChannelData(1), new Float32Array([0.3, 0.4]));
   assert.ok(CueWorker.created.every((worker) => worker.terminated));
 });

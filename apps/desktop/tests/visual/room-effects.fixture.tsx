@@ -5,10 +5,14 @@ import type { ChatMessage } from "@private-voice/shared";
 import { Button } from "../../src/renderer/src/components/base/Button";
 import { TemporaryChatPanel } from "../../src/renderer/src/components/chat/TemporaryChatPanel";
 import { ApplicationAudioPicker } from "../../src/renderer/src/components/audio/ApplicationAudioPicker";
+import {
+  clearGlassPointerHighlight,
+  updateGlassPointerHighlight,
+} from "../../src/renderer/src/features/motion/glassPointerHighlight";
 import roomArt from "../../src/renderer/src/assets/scenes/shanghao-room/environment-v3-extended.png";
 import "../../src/renderer/src/styles/index.css";
 
-const messages: ChatMessage[] = [
+const examples = [
   "房间已经开好啦。",
   "稍等，我先把语音调一下。",
   "好了，能听清。",
@@ -17,25 +21,29 @@ const messages: ChatMessage[] = [
   "那我先放这首。",
   "声音刚好。",
   "打完这把再换下一首吧。",
-].map((content, index) => ({
+];
+const initialMessages: ChatMessage[] = Array.from({ length: 32 }, (_, index) => ({
   id: `demo-${index}`,
   peerId: index % 2 ? "local" : "friend",
   nickname: index % 2 ? "小屿" : "小川",
-  content,
+  content: examples[index % examples.length]!,
   createdAt: new Date(2026, 10, 19, 20, index * 6).toISOString(),
   isLocal: index % 2 === 1,
 }));
 
 function RoomEffectsFixture() {
+  const [messages, setMessages] = useState(initialMessages);
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [gain, setGain] = useState(0.72);
   const [sent, setSent] = useState("");
+  const [image, setImage] = useState("");
   return (
     <main
       className="room-page"
       data-sent={sent}
+      data-image={image}
       style={
         {
           "--room-wallpaper": `url(${roomArt})`,
@@ -48,19 +56,61 @@ function RoomEffectsFixture() {
         } as CSSProperties
       }
     >
-      <div style={{ display: "flex", alignItems: "end" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "end",
+          justifyContent: "space-between",
+          flexDirection: "column",
+        }}
+      >
+        <header
+          className="room-topbar"
+          style={{ width: "100%", padding: "10px 16px" }}
+          onPointerMove={(event) =>
+            updateGlassPointerHighlight(event.currentTarget, event.clientX, event.clientY)
+          }
+          onPointerLeave={(event) => clearGlassPointerHighlight(event.currentTarget)}
+        >
+          <span className="room-glass-light" aria-hidden="true" />
+          <span>上号语音房</span>
+        </header>
         <Button variant="secondary" onClick={() => setOpen(true)} aria-label="打开音乐演示">
           <Music2 size={16} /> 放歌
         </Button>
       </div>
+      <button
+        hidden
+        data-testid="confirm-chat-message"
+        onClick={() =>
+          setMessages((previous) => [
+            ...previous.slice(0, -1),
+            { ...previous.at(-1)!, id: "confirmed", deliveryState: "sent" },
+          ])
+        }
+      />
       <TemporaryChatPanel
         messages={messages}
         chatInput={draft}
         onChatInputChange={setDraft}
         onSend={() => {
           setSent(draft);
+          setMessages((previous) => [
+            ...previous,
+            {
+              id: "pending",
+              clientMessageId: "fixture-send",
+              peerId: "local",
+              nickname: "小屿",
+              content: draft,
+              isLocal: true,
+              createdAt: "2026-11-19T23:30:00+08:00",
+              deliveryState: "sending",
+            },
+          ]);
           setDraft("");
         }}
+        onSendImage={async (file) => setImage(file.name)}
         canSend
       />
       <ApplicationAudioPicker

@@ -306,10 +306,14 @@ test("room uses a real always-on-top overlay and a ten-second knock cooldown", (
   assert.equal(rendererMainSource.includes("overlay-renderer"), true);
   assert.equal(stylesSource.includes("html.overlay-renderer"), true);
   assert.equal(stylesSource.includes("background: transparent !important"), true);
-  assert.equal(chatSource.includes('message.kind === "system"'), true);
-  assert.equal(chatSource.includes("ChatAccountAvatar"), true);
-  assert.equal(chatSource.includes("MessageLinkPreview"), true);
-  assert.equal(chatSource.includes("formatCompactUrl"), true);
+  const rows = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
+    "utf8",
+  );
+  assert.equal(rows.includes('message.kind === "system"'), true);
+  assert.equal(rows.includes("ChatAccountAvatar"), true);
+  assert.equal(rows.includes("MessageLinkPreview"), true);
+  assert.equal(rows.includes("formatCompactUrl"), true);
   assert.equal(chatLinkPreviewSource.includes("getMessageUrlDetails"), true);
   assert.equal(
     readFileSync(
@@ -774,7 +778,7 @@ test("entering a channel uses one lightweight route transition without replaying
   assert.equal(appSource.includes('basePage === "room" ? { opacity: 0 } : false'), false);
   assert.equal(appSource.includes("<motion.div"), true);
   assert.equal(appSource.includes("key={basePage}"), true);
-  assert.equal(appSource.includes("{ opacity: 0, y: 4 }"), true);
+  assert.match(appSource, /reduceMotion \? false : \{ opacity: 0\.78, y: 3 \}/);
   assert.equal(roomSource.includes("[data-gsap-room='island']"), false);
 });
 

@@ -45,6 +45,7 @@ test("automatic recording requires a joined companion and ignores empty seats an
     false,
   );
   assert.equal(hasRecordingCompanion([local, member()]), true);
+  assert.equal(hasRecordingCompanion([member()]), false);
   assert.equal(hasRecordingCompanion([local, { ...member(), joinState: undefined }]), true);
   assert.equal(
     hasRecordingCompanion([local, { ...member(), speakingState: MemberSpeakingState.Speaking }]),
@@ -511,7 +512,7 @@ test("locally sent link previews stay fully visible above the composer", () => {
   );
   const styles = readRendererCss();
 
-  assert.equal(chatSource.includes('latestMessage?.isLocal ? "auto" : "smooth"'), true);
+  assert.equal(chatSource.includes("if (list && newestKey)"), true);
   assert.equal(chatSource.includes("list.scrollTop = list.scrollHeight"), true);
   assert.match(styles, /\.chat-message-list \{[\s\S]*?padding-bottom: 12px;/);
   assert.equal(styles.includes("contain-intrinsic-size: auto 64px"), false);
@@ -523,8 +524,12 @@ test("fast chat acknowledgements do not flash a transient sending label", () => 
     "utf8",
   );
 
-  assert.equal(chatSource.includes("发送中…"), false);
-  assert.equal(chatSource.includes("发送失败 · 重新发送"), true);
+  const rows = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
+    "utf8",
+  );
+  assert.equal((chatSource + rows).includes("发送中…"), false);
+  assert.equal(rows.includes("发送失败 · 重新发送"), true);
 });
 
 test("the shanghao quick reply uses its own voice sound for every avatar", () => {
@@ -670,10 +675,14 @@ test("chat messages are uniformly left aligned with avatar and no per-message cl
     path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
     "utf8",
   );
-  assert.equal(source.includes('message.isLocal ? "justify-end"'), false);
-  assert.equal(source.includes("formatMessageTime"), false);
-  assert.equal(source.includes("ChatAccountAvatar"), true);
-  assert.equal(source.includes("chat-date-divider"), true);
+  const rows = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
+    "utf8",
+  );
+  assert.equal(rows.includes('message.isLocal ? "justify-end"'), false);
+  assert.equal(rows.includes("formatMessageTime"), false);
+  assert.equal(rows.includes("ChatAccountAvatar"), true);
+  assert.equal(rows.includes("chat-date-divider"), true);
   assert.equal(source.includes("animateSendFeedback"), true);
   assert.equal(source.includes('clearProps: "transform,opacity,visibility"'), true);
 });
@@ -713,8 +722,8 @@ test("channel switching is exclusive and clears screen-share state before joinin
       roomPageSource.indexOf("await switchChannel(channelId)"),
     true,
   );
-  assert.equal(roomStateSource.includes("preserveLocalMedia: reuseLocalMedia"), true);
-  assert.equal(roomStateSource.includes("reuseExisting: reuseLocalMedia"), true);
+  assert.doesNotMatch(roomStateSource, /preserveLocalMedia|reuseExisting/);
+  assert.match(roomStateSource, /const placeholder = await createListenOnlyMicrophone\(\)/);
   assert.match(roomPageSource, /<RoomChatPanel\s+key=\{room\.roomId\}/);
   assert.doesNotMatch(roomPageSource, /<(?:RoomScene|RoomAudio)[^>]*key=\{room\.roomId\}/);
   assert.equal(
@@ -766,24 +775,15 @@ test("stopping a recording suppresses automatic restart for the current room", (
     roomPageSource.indexOf("const changeRecordingDirectory"),
   );
 
-  assert.equal(roomPageSource.includes("const isAutoRecordSuppressedRef = useRef(false)"), true);
-  assert.equal(roomPageSource.includes("isAutoRecordSuppressedRef.current = false"), true);
-  assert.equal(
-    roomPageSource.includes(
-      "!canAutoRecord || hasAutoStartedRecordingRef.current || isAutoRecordSuppressedRef.current",
-    ),
-    true,
+  const lifecycle = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/features/recording/useAutomaticRoomRecording.ts"),
+    "utf8",
   );
-  assert.equal(finalizeBlock.includes('if (intent === "stop")'), true);
-  assert.equal(finalizeBlock.includes("isAutoRecordSuppressedRef.current = true"), true);
-  assert.equal(
-    finalizeBlock.includes("window.clearTimeout(autoRecordRetryTimerRef.current)"),
-    true,
-  );
-  assert.equal(
-    finalizeBlock.indexOf("isAutoRecordSuppressedRef.current = true") <
+  assert.match(lifecycle, /isAutoRecordSuppressedRef\.current/);
+  assert.match(finalizeBlock, /automaticRecording\.suppress\(\)/);
+  assert.ok(
+    finalizeBlock.indexOf("automaticRecording.suppress()") <
       finalizeBlock.indexOf("await discardRecording()"),
-    true,
   );
 });
 

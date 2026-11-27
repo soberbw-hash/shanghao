@@ -89,3 +89,25 @@ export const prepareChatImage = async (file: File): Promise<ChatImageAttachment>
 
   throw new Error("图片内容过大，请换一张更简单的图片。");
 };
+
+/** Electron's native image decoder does not reliably accept chat's WebP format. */
+export const createChatNotificationThumbnail = async (
+  dataUrl: string,
+): Promise<string | undefined> => {
+  if (!/^data:image\/(?:jpeg|webp|png);base64,/i.test(dataUrl) || dataUrl.length > 180_000) return;
+  try {
+    const image = new Image();
+    image.src = dataUrl;
+    await image.decode();
+    const scale = Math.min(1, 320 / image.naturalWidth, 168 / image.naturalHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) return;
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.83);
+  } catch {
+    return undefined;
+  }
+};

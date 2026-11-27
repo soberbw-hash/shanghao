@@ -15,12 +15,10 @@ import { app, shell } from "electron";
 import { APP_ID, APP_NAME } from "@private-voice/shared";
 import { platformService } from "./platform/PlatformService";
 
-export const windowsAppUserModelId = (): string =>
-  app.isPackaged
-    ? APP_ID
-    : process.env.SHANGHAO_CAPTURE_PATH
-      ? `${APP_ID}.capture`
-      : `${APP_ID}.dev`;
+export const windowsAppUserModelId = (): string => (app.isPackaged ? APP_ID : `${APP_ID}.dev`);
+
+export const isVisualCapture = (): boolean =>
+  !app.isPackaged && Boolean(process.env.SHANGHAO_CAPTURE_PATH);
 
 const launcherPath = () =>
   path.join(

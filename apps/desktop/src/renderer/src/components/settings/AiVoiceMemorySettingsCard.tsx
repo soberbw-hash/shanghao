@@ -17,7 +17,6 @@ import type {
   AiModelStatus,
   AiRuntimeStatus,
   AiCustomProviderStatus,
-  AiTranscriptionProvider,
   AiTranscriptionProviderStatus,
   AiVoiceMemorySnapshot,
   AppSettings,
@@ -38,8 +37,6 @@ import { SettingsItemRow } from "./SettingsItemRow";
 import { CloudAiAdminPanel } from "./CloudAiAdminPanel";
 import { SettingsSection } from "./SettingsSection";
 import { CloudLocalAssistControl } from "./CloudLocalAssistControl";
-import { TranscriptionDataNotice } from "./TranscriptionDataNotice";
-import { AsrGameLexiconSettings } from "./AsrGameLexiconSettings";
 import type { ToastMessage } from "../../store/appStore";
 import { toUserFacingError } from "../../utils/userFacingError";
 import { canReuseTextProviderKey, type TextModelPreset } from "../../features/ai/textModelPreset";
@@ -272,7 +269,6 @@ export const AiVoiceMemorySettingsCard = ({
   );
   const textPresetEdited = useRef(false);
   const [savingCustomProvider, setSavingCustomProvider] = useState(false);
-  const [modelFilter, setModelFilter] = useState<"all" | "installed" | "available">("all");
   const previousModelPhasesRef = useRef<Map<AiModelId, AiModelStatus["phase"]>>(new Map());
 
   useRenderProfiler("AiVoiceMemorySettingsCard", {
@@ -355,15 +351,6 @@ export const AiVoiceMemorySettingsCard = ({
     try {
       const next = await window.desktopApi.ai.controlModel(model.id, action);
       setSnapshot(next);
-      if (
-        action === "delete" &&
-        model.id === settings.aiAsrModel &&
-        settings.aiTranscriptionProvider === "local"
-      ) {
-        await onChange({
-          isAiAutoTranscribeEnabled: false,
-        });
-      }
       if (action === "delete") pushToast({ tone: "success", title: `${model.name} 已删除` });
     } catch (error) {
       pushToast({
@@ -572,9 +559,6 @@ export const AiVoiceMemorySettingsCard = ({
   // state never move a card the user is looking at.
   const asrModels = models.filter((model) => model.category === "asr");
   const supportModels = models.filter((model) => model.category === "support");
-  const visibleModel = (model: AiModelStatus): boolean =>
-    modelFilter === "all" ||
-    (modelFilter === "installed" ? Boolean(model.activeRevision) : !model.activeRevision);
   const selectedAsr = asrModels.find((model) => model.id === settings.aiAsrModel);
   const asrRuntimeStatus = runtimeStatus?.asr;
   const selectedAsrReady = Boolean(
@@ -589,17 +573,12 @@ export const AiVoiceMemorySettingsCard = ({
     },
     transcriptionBaseUrl,
   );
-  const activeTranscriptionReady =
-    transcriptionProvider === "local"
-      ? selectedAsrReady
-      : transcriptionConfigState === "ready" &&
-        (transcriptionProvider === "cloud"
-          ? Boolean(transcriptionStatus?.cloudConfigured)
-          : Boolean(transcriptionStatus?.customConfigured));
   const installedAsrCount = asrModels.filter((model) => model.activeRevision).length;
   const transcriptionName =
     transcriptionProvider === "cloud"
-      ? "内置云端转录"
+      ? (settings.isAiCloudLocalAssistEnabled ?? true)
+        ? "云端 + 本地辅助"
+        : "云端"
       : transcriptionProvider === "custom"
         ? (transcriptionStatus?.customModel ?? "自定义转录 API")
         : (selectedAsr?.name ?? AI_ASR_MODEL_NAMES[settings.aiAsrModel] ?? "未选择");
@@ -611,17 +590,6 @@ export const AiVoiceMemorySettingsCard = ({
           ? (customProvider.model ?? "自定义 API（未配置）")
           : "正在读取配置…"
       : "内置云端模型";
-  const autoTranscriptionDescription = activeTranscriptionReady
-    ? "使用所选模型自动转录。"
-    : transcriptionProvider === "local"
-      ? snapshot
-        ? "当前本地转录模型未就绪。"
-        : "正在读取本地模型状态…"
-      : transcriptionConfigState === "loading"
-        ? "正在读取本机密钥配置…"
-        : transcriptionConfigState === "error"
-          ? "配置读取失败，可在下方重试。"
-          : "请先配置当前转录 API 密钥。";
 
   const chooseAsrModel = (model: AiModelStatus) => {
     if (settings.aiTranscriptionProvider === "local" && model.id === settings.aiAsrModel) return;
@@ -712,6 +680,7 @@ export const AiVoiceMemorySettingsCard = ({
         ? "安装 ForcedAligner 后自动精确对齐；未安装也可转录。"
         : "",
       model.hardwareNote ?? "",
+      model.hardwareFit?.message ?? "",
       model.errorMessage ?? "",
       model.runtimeMessage ?? "",
       model.inferenceBackend === "freetoken" && model.runtimeMetrics
@@ -782,6 +751,9 @@ export const AiVoiceMemorySettingsCard = ({
                   {ASR_PROFILES[model.id as AiAsrModelId] ? ` · ${model.name}` : ""}
                 </p>
               </div>
+              {model.hardwareFit?.blocked && (
+                <small title={model.hardwareFit.message}>当前可用显存不足，建议使用云端</small>
+              )}
               <strong className={`ai-model-phase is-${selected ? "selected" : model.phase}`}>
                 {selected
                   ? canSelect
@@ -883,45 +855,37 @@ export const AiVoiceMemorySettingsCard = ({
           <h3 id="transcription-settings-title">转录设置</h3>
         </div>
         <div className="mt-3 space-y-3">
-          {transcriptionProvider === "local" ? (
-            <SettingsItemRow
-              label="转录时机"
-              description={
-                snapshot?.scheduler.gameActive ? "游戏中已降低后台占用。" : "何时处理待转录的录音。"
+          <SettingsItemRow
+            label="转录时机"
+            description={
+              snapshot?.scheduler.aiTasksPausedForGame
+                ? "游戏结束后会自动处理待转录的录音。"
+                : "何时处理待转录的录音。"
+            }
+          >
+            <select
+              className="ai-processing-select"
+              aria-label="转录时机"
+              disabled={!snapshot}
+              value={settings.aiProcessingMode}
+              onChange={(event) =>
+                void onChange({
+                  aiProcessingMode: event.target.value as AppSettings["aiProcessingMode"],
+                })
               }
             >
-              <select
-                className="ai-processing-select"
-                aria-label="转录时机"
-                disabled={!snapshot}
-                value={settings.aiProcessingMode}
-                onChange={(event) =>
-                  void onChange({
-                    aiProcessingMode: event.target.value as AppSettings["aiProcessingMode"],
-                  })
-                }
-              >
-                <option value="after_game">游戏结束后</option>
-                <option value="low_resource">后台低资源</option>
-                <option value="immediate">立即转录</option>
-                <option value="manual">仅手动</option>
-              </select>
-            </SettingsItemRow>
-          ) : null}
-          <SettingsItemRow label="自动转录" description={autoTranscriptionDescription}>
+              <option value="after_game">游戏结束后</option>
+              <option value="low_resource">后台低资源</option>
+              <option value="immediate">立即转录</option>
+            </select>
+          </SettingsItemRow>
+          <SettingsItemRow label="自动整理" description="转录后生成摘要和章节。">
             <Switch
-              isChecked={settings.isAiAutoTranscribeEnabled}
-              ariaLabel="自动转录"
-              isDisabled={
-                !snapshot || (!activeTranscriptionReady && !settings.isAiAutoTranscribeEnabled)
-              }
-              onChange={(checked) => void onChange({ isAiAutoTranscribeEnabled: checked })}
+              ariaLabel="自动整理"
+              isChecked={settings.isAiAutoOrganizeEnabled}
+              onChange={(checked) => void onChange({ isAiAutoOrganizeEnabled: checked })}
             />
           </SettingsItemRow>
-          <TranscriptionDataNotice
-            provider={transcriptionProvider}
-            automatic={settings.isAiAutoTranscribeEnabled}
-          />
           <CloudLocalAssistControl
             settings={settings}
             disabled={modelInUse}
@@ -930,7 +894,6 @@ export const AiVoiceMemorySettingsCard = ({
           />
         </div>
       </section>
-      <AsrGameLexiconSettings settings={settings} onChange={onChange} />
 
       <details
         id="ai-model-management"
@@ -940,34 +903,20 @@ export const AiVoiceMemorySettingsCard = ({
           <strong>模型与 API 配置</strong>
           <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
         </summary>
-        {transcriptionProvider === "local" ? (
-          <div className="ai-model-group-heading">
-            <div className="ai-model-filter-bar" role="group" aria-label="筛选模型">
-              {(
-                [
-                  ["all", "全部"],
-                  ["installed", "已安装"],
-                  ["available", "可安装"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={modelFilter === value}
-                  onClick={() => setModelFilter(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        {transcriptionProvider === "local" && snapshot && !selectedAsrReady && (
+          <p role="status">当前离线模型尚未就绪，可展开模型菜单准备运行组件。</p>
+        )}
+        {modelInUse && (
+          <p role="status">
+            {snapshot ? "有 AI 任务正在使用模型，完成后即可切换配置。" : "正在读取模型配置…"}
+          </p>
+        )}
         <div className="ai-model-provider-grid mt-3">
           <fieldset
-            className="ai-model-provider-panel disabled:opacity-50"
+            className="ai-model-provider-panel"
             disabled={modelInUse}
             aria-label="文本整理与问答模型"
-            title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
+            title={modelInUse ? "模型配置暂时锁定" : undefined}
           >
             <h4>文本整理与问答</h4>
             <p>只处理文字，用于摘要、融合校对与问答。当前使用：{textModelName}。</p>
@@ -1085,7 +1034,7 @@ export const AiVoiceMemorySettingsCard = ({
             ) : null}
           </fieldset>
           <fieldset
-            className="ai-model-provider-panel disabled:opacity-50"
+            className="ai-model-provider-panel"
             disabled={modelInUse}
             aria-label="语音转录模型"
             title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
@@ -1095,16 +1044,24 @@ export const AiVoiceMemorySettingsCard = ({
             <select
               className="ai-processing-select"
               aria-label="语音转录模型来源"
-              value={transcriptionProvider}
+              value={
+                transcriptionProvider === "cloud" && (settings.isAiCloudLocalAssistEnabled ?? true)
+                  ? "hybrid"
+                  : transcriptionProvider
+              }
               onChange={(event) => {
                 setTranscriptionApiKey("");
                 void onChange({
-                  aiTranscriptionProvider: event.target.value as AiTranscriptionProvider,
+                  aiTranscriptionProvider: event.target.value === "custom" ? "custom" : "cloud",
+                  isAiCloudLocalAssistEnabled: event.target.value === "hybrid",
                 });
               }}
             >
-              <option value="cloud">内置云端转录</option>
-              <option value="local">本地转录 · 使用已下载模型</option>
+              <option value="cloud">云端</option>
+              <option value="hybrid">云端 + 本地辅助</option>
+              {transcriptionProvider === "local" && (
+                <option value="local">本地离线（当前配置）</option>
+              )}
               <option value="custom">自定义语音 API</option>
             </select>
             {transcriptionProvider !== "local" && transcriptionConfigState !== "ready" ? (
@@ -1196,42 +1153,31 @@ export const AiVoiceMemorySettingsCard = ({
             ) : null}
           </fieldset>
         </div>
-        {transcriptionProvider === "local" ? (
-          <>
-            <div className="ai-model-subgroup">
-              <div className="ai-model-subgroup-heading">
-                <strong>本地识别</strong>
-              </div>
-              <div className="ai-model-management-grid">
-                {AI_ASR_MODEL_GROUPS[0]!.ids
-                  .map((id) => asrModels.find((model) => model.id === id))
-                  .filter((model): model is AiModelStatus => Boolean(model && visibleModel(model)))
-                  .map(renderModel)}
-              </div>
+        <div className="ai-model-subgroup">
+          <div className="ai-model-subgroup-heading">
+            <strong>本地模型</strong>
+          </div>
+          <div className="ai-model-management-grid">
+            {AI_ASR_MODEL_GROUPS[0]!.ids
+              .map((id) => asrModels.find((model) => model.id === id))
+              .filter((model): model is AiModelStatus => Boolean(model))
+              .map(renderModel)}
+          </div>
+        </div>
+        {AI_ASR_MODEL_GROUPS.slice(1).map(({ label, ids }) => (
+          <details className="ai-model-subgroup" key={label}>
+            <summary>{label}</summary>
+            <div className="ai-model-management-grid">
+              {asrModels
+                .filter((model) => (ids as readonly string[]).includes(model.id))
+                .map(renderModel)}
             </div>
-            {AI_ASR_MODEL_GROUPS.slice(1).map(({ label, ids }) => (
-              <details className="ai-model-subgroup" key={label}>
-                <summary>{label}</summary>
-                <div className="ai-model-management-grid">
-                  {asrModels
-                    .filter(
-                      (model) =>
-                        (ids as readonly string[]).includes(model.id) && visibleModel(model),
-                    )
-                    .map(renderModel)}
-                </div>
-              </details>
-            ))}
-            <div className="ai-model-subgroup is-compact">
-              <div className="ai-model-subgroup-heading">
-                <strong>共享组件</strong>
-              </div>
-              <div className="ai-model-management-grid">
-                {supportModels.filter(visibleModel).map(renderModel)}
-              </div>
-            </div>
-          </>
-        ) : null}
+          </details>
+        ))}
+        <details className="ai-model-subgroup is-compact">
+          <summary>共享组件</summary>
+          <div className="ai-model-management-grid">{supportModels.map(renderModel)}</div>
+        </details>
       </details>
 
       {snapshot ? <CloudAiAdminPanel /> : null}

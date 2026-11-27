@@ -1,23 +1,14 @@
-import { execFile } from "node:child_process";
+import { queryGpu } from "./gpu-capacity";
+export { parseGpuFreeBytes } from "./gpu-capacity";
 import { cpus, freemem } from "node:os";
 
 export interface HostResourceCapacity {
   availableMemoryBytes: number;
   cpuBusyRatio?: number;
+  gpuTotalBytes?: number;
   gpuFreeBytes?: number;
   sampledAt: number;
 }
-
-export const parseGpuFreeBytes = (output: string): number | undefined => {
-  // Runtimes use CUDA device 0. Never sum unrelated GPUs into its capacity.
-  const fields = output.trim().split(/\r?\n/u)[0]?.split(",");
-  if (fields?.length !== 2 || fields.some((field) => !field.trim())) return undefined;
-  const values = fields.map(Number);
-  const [total = Number.NaN, free = Number.NaN] = values ?? [];
-  return Number.isFinite(total) && Number.isFinite(free) && total > 0 && free >= 0 && free <= total
-    ? free * 1024 ** 2
-    : undefined;
-};
 
 const cpuCounters = () =>
   cpus().reduce(
@@ -27,16 +18,6 @@ const cpuCounters = () =>
     }),
     { idle: 0, total: 0 },
   );
-
-const queryGpu = (): Promise<number | undefined> =>
-  new Promise((resolve) => {
-    execFile(
-      "nvidia-smi",
-      ["--query-gpu=memory.total,memory.free", "--format=csv,noheader,nounits"],
-      { windowsHide: true, timeout: 2_000, maxBuffer: 4_096 },
-      (error, stdout) => resolve(error ? undefined : parseGpuFreeBytes(stdout)),
-    );
-  });
 
 /** Demand-only, coalesced sampling. No startup CUDA import, interval or permanent subprocess. */
 export class HostCapacitySampler {
@@ -66,10 +47,11 @@ export class HostCapacitySampler {
     this.pending = Promise.resolve()
       .then(this.readGpu)
       .catch(() => undefined)
-      .then((gpuFreeBytes) => {
+      .then((gpu) => {
         this.snapshot = {
           availableMemoryBytes: this.readMemory(),
-          gpuFreeBytes,
+          gpuFreeBytes: typeof gpu === "number" ? gpu : gpu?.free,
+          gpuTotalBytes: typeof gpu === "object" ? gpu.total : undefined,
           cpuBusyRatio: elapsed > 0 ? Math.max(0, Math.min(1, 1 - idle / elapsed)) : undefined,
           sampledAt: this.now(),
         };

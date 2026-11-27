@@ -22,7 +22,6 @@ import { PageContainer } from "../components/layout/PageContainer";
 import { AudioSettingsCard } from "../components/settings/AudioSettingsCard";
 import { AboutSettingsCard } from "../components/settings/AboutSettingsCard";
 import { AccountSettingsCard } from "../components/settings/AccountSettingsCard";
-import { SettingsDiagnosticsSection } from "../components/settings/SettingsDiagnosticsSection";
 import { SettingsPageHeader } from "../components/settings/SettingsPageHeader";
 import {
   SettingsNavigation,
@@ -76,7 +75,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   >(cachedWindowsDiagnostics);
   const [isWindowsDiagnosticsLoading, setIsWindowsDiagnosticsLoading] =
     useState(!cachedWindowsDiagnostics);
-  const [isRepairingFirewall, setIsRepairingFirewall] = useState(false);
   const [isChangingIconOverlays, setIsChangingIconOverlays] = useState(false);
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
   const pageRef = useRef<HTMLDivElement>(null);
@@ -159,7 +157,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   }, [voiceMemoryOpenTarget]);
 
   useEffect(() => {
-    if (!isActive || (activeSection !== "general" && activeSection !== "diagnostics")) return;
+    if (!isActive || activeSection !== "general") return;
     setIsWindowsDiagnosticsLoading(!cachedWindowsDiagnostics);
     return observeWindowsIntegration(
       (snapshot) => {
@@ -187,11 +185,11 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
       gsap.set(targets, { willChange: "transform,opacity" });
       gsap.fromTo(
         targets,
-        { autoAlpha: 0, y: 6 },
+        { autoAlpha: opening ? 0 : 0.78, y: opening ? 6 : 3 },
         {
           autoAlpha: 1,
           y: 0,
-          duration: motionDuration.panel,
+          duration: opening ? motionDuration.panel : motionDuration.compact,
           ease: motionEase.spatial,
           stagger: 0.04,
           force3D: true,
@@ -226,35 +224,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
     interactionPerformanceMonitor.afterNextPaint(interactionId);
   };
 
-  const refreshWindowsDiagnostics = async (): Promise<void> => {
-    setIsWindowsDiagnosticsLoading(true);
-    try {
-      const snapshot = await window.desktopApi.windows.getStatus();
-      cachedWindowsDiagnostics = snapshot;
-      setWindowsDiagnostics(snapshot);
-    } finally {
-      setIsWindowsDiagnosticsLoading(false);
-    }
-  };
-  const handleRepairFirewall = () => {
-    if (isRepairingFirewall) return;
-    setIsRepairingFirewall(true);
-    void window.desktopApi.windows
-      .repairFirewall()
-      .then((firewall) => {
-        setWindowsDiagnostics((current) => {
-          cachedWindowsDiagnostics = current ? { ...current, firewall } : current;
-          return cachedWindowsDiagnostics;
-        });
-        pushToast({
-          tone: firewall.healthy ? "success" : "danger",
-          title: firewall.healthy ? "防火墙规则已修复" : "防火墙修复未完成",
-          description: firewall.healthy ? "TCP/UDP 双向规则已正常启用。" : firewall.message,
-        });
-      })
-      .catch((error) => pushToast({ tone: "danger", ...toUserFacingError(error, "settings") }))
-      .finally(() => setIsRepairingFirewall(false));
-  };
   const handleIconOverlayChange = (hidden: boolean) => {
     if (isChangingIconOverlays) return;
     setIsChangingIconOverlays(true);
@@ -296,7 +265,6 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         windowsStatus={windowsDiagnostics}
         loadingWindows={isWindowsDiagnosticsLoading || isChangingIconOverlays}
         onIconOverlayChange={handleIconOverlayChange}
-        isActive={isActive && activeSection === "general"}
       />
     ),
     audio: (
@@ -348,24 +316,13 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
     ),
     about: (
       <AboutSettingsCard
+        isActive={isActive && activeSection === "about"}
         runtimeInfo={runtimeInfo}
         updateInfo={updateInfo}
         updateStatus={updateStatus}
         onCheckUpdates={checkUpdates}
       />
     ),
-    diagnostics:
-      isActive && activeSection === "diagnostics" ? (
-        <SettingsDiagnosticsSection
-          settings={settings}
-          windowsStatus={windowsDiagnostics}
-          isRepairingFirewall={isRepairingFirewall}
-          onRefreshWindows={refreshWindowsDiagnostics}
-          onRepairFirewall={handleRepairFirewall}
-          onOpenAudioSettings={() => selectSection("audio")}
-          onOpenAiSettings={() => selectSection("ai")}
-        />
-      ) : null,
   };
 
   return (

@@ -30,7 +30,13 @@ export const buildDailyRoomReportFacts = (report: DailyRoomReport): string[] => 
   const mainGame = hasMeaningfulDailyRoomGameData(report)
     ? aggregateGames(report)[0]?.[0]
     : undefined;
+  const minutes = Math.floor(report.activeDurationMs / 60_000);
+  const hours = Math.floor(minutes / 60);
+  const duration = [hours && `${hours} 小时`, minutes % 60 && `${minutes % 60} 分钟`]
+    .filter(Boolean)
+    .join(" ");
   return [
+    duration ? `房间活跃 ${duration}` : undefined,
     report.participantCount > 0 ? `${report.participantCount} 人来过` : undefined,
     mainGame ? `检测到《${mainGame}》` : undefined,
     report.messageCount > 0 ? `${report.messageCount} 条消息` : undefined,
@@ -41,33 +47,14 @@ export const buildDailyRoomReportFacts = (report: DailyRoomReport): string[] => 
 export const buildDailyRoomReportHighlights = (
   report: DailyRoomReport,
 ): DailyRoomReportHighlight[] => {
-  const recaps = [...(report.recordingRecaps ?? [])].reverse();
-  const result: DailyRoomReportHighlight[] = [];
-  const seen = new Set<string>();
-  for (const moment of recaps.flatMap((entry) => [...entry.highlights, ...entry.funnyMoments])) {
-    const value = moment.title.trim() || moment.description.trim();
-    const detail = moment.description.trim();
-    if (!value) continue;
-    const identity = `${value}\n${detail}`;
-    if (seen.has(identity)) continue;
-    seen.add(identity);
-    result.push({
-      id: `recording-recap-${result.length}`,
-      value,
-      detail: detail !== value ? detail : undefined,
-    });
-    if (result.length === 3) break;
-  }
-  if (result.length) return result;
-
-  const distinctLines = (lines: string[]) => [
-    ...new Set(lines.map((line) => line.trim()).filter(Boolean)),
-  ];
-  const commentary = distinctLines(report.commentary?.split(/\r?\n/) ?? []);
-  const summaries = distinctLines(recaps.flatMap((recap) => recap.summary));
-  const chronicle = distinctLines((report.chronicleRecaps ?? []).map((entry) => entry.text)).slice(
-    -3,
-  );
-  const lines = commentary.length ? commentary : summaries.length ? summaries : chronicle;
-  return lines.slice(0, 3).map((value, index) => ({ id: `recap-${index}`, value }));
+  const lines =
+    report.commentaryVersion === 2
+      ? (report.commentary
+          ?.split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean) ?? [])
+      : [];
+  return [...new Set(lines)]
+    .slice(0, 3)
+    .map((value, index) => ({ id: `overview-${index}`, value }));
 };

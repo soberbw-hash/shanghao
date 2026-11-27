@@ -3,6 +3,7 @@ import { AnimatePresence } from "framer-motion";
 import {
   MemberPresenceState,
   MemberSpeakingState,
+  RoomLifecycleState,
   type RoomMember,
   type SceneZoneId,
 } from "@private-voice/shared";
@@ -30,6 +31,7 @@ const initial: RoomMember[] = ["local", "friend-a", "friend-b"].map((id, index) 
   connectionQuality: "excellent",
   joinedAt: "2026-10-18T00:00:00Z",
 }));
+useRoomStore.getState().setLifecycleState(RoomLifecycleState.Open);
 useRoomStore.getState().setMembers(initial);
 const events = new RoomMemberEventCoordinator({
   localPeerId: "local",

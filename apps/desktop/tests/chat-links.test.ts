@@ -67,7 +67,11 @@ test("right-clicking a link preview copies immediately and reports success", () 
   );
   assert.equal(owner.includes("window.desktopApi.clipboard.writeText(url)"), true);
   assert.equal(owner.includes('title: "已复制链接"'), true);
-  assert.equal(owner.includes("onCopy={copyLink}"), true);
+  const rows = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
+    "utf8",
+  );
+  assert.equal(rows.includes("onCopy={copyLink}"), true);
   assert.equal(source.includes("getLinkPreviewIcon"), false);
   assert.equal(source.includes("<Link2 />"), true);
 });
@@ -75,7 +79,7 @@ test("right-clicking a link preview copies immediately and reports success", () 
 test("chat text, images and links can be dragged into the persistent room collection", () => {
   const source =
     readFileSync(
-      path.resolve(process.cwd(), "src/renderer/src/components/chat/TemporaryChatPanel.tsx"),
+      path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
       "utf8",
     ) +
     readFileSync(

@@ -4,6 +4,7 @@ import type { CloudAiService } from "./cloud-ai-service";
 import type { ChronicleAudioMessage } from "./protocol";
 import { RoomChronicleSessions, type ChronicleEntry } from "./room-chronicle-sessions";
 import { CHRONICLE_SUMMARY_INTERVAL_MS, roomChroniclePrompt } from "./room-chronicle-prompt";
+import { cleanChronicleSpeech, readChronicleStories } from "./room-chronicle-text";
 import type { ChronicleGameHint } from "./room-chronicle-game-hint";
 import type { DailyRoomReportStore } from "./daily-room-report-store";
 import { applyRoomMemoryNames, getRoomChronicleDate } from "@private-voice/shared";
@@ -36,7 +37,7 @@ export class RoomChronicleProcessor {
     private readonly sessions: RoomChronicleSessions,
     private readonly speech: Speech,
     private readonly text: Text,
-    private readonly changed: (roomId: string, entry?: ChronicleEntry) => void,
+    private readonly changed: (roomId: string, entries?: ChronicleEntry[]) => void,
     private readonly batchMs = CHRONICLE_SUMMARY_INTERVAL_MS,
     private readonly reports?: Promise<DailyRoomReportStore>,
     private readonly speakerNames?: (roomId: string) => Promise<Map<string, string>>,
@@ -78,7 +79,7 @@ export class RoomChronicleProcessor {
       );
       signal.throwIfAborted();
       if (this.sessions.submissionRevision(roomId, sessionId, peerId) !== revision) return;
-      const content = result.text.trim().slice(0, 2000);
+      const content = cleanChronicleSpeech(result.text);
       if (!content) {
         this.seen.set(key, Date.now());
         return;
@@ -120,13 +121,7 @@ export class RoomChronicleProcessor {
     const segments = batch.segments
       .filter((part) => {
         if (part.expires <= Date.now() || getRoomChronicleDate(part.at) !== batchDate) return false;
-        try {
-          return (
-            this.sessions.submissionRevision(roomId, part.sessionId, part.peerId) === part.revision
-          );
-        } catch {
-          return false;
-        }
+        return this.isCurrent(roomId, part);
       })
       .sort((a, b) => a.at - b.at);
     this.backlog.set(
@@ -173,30 +168,12 @@ export class RoomChronicleProcessor {
         signal,
       );
       signal.throwIfAborted();
-      const value: unknown = JSON.parse(content);
-      const text = value && typeof value === "object" && "text" in value ? value.text : undefined;
-      if (typeof text !== "string" || text.length > 800) throw Error("chronicle_invalid_summary");
-      if (!text.trim()) {
+      const stories = readChronicleStories(content, segments);
+      if (!stories.length) {
         this.sessions.notice(roomId, first.sessionId, undefined);
         this.changed(roomId);
         return;
       }
-      // Every source must still be authorized; a withdrawn member cannot leak via a combined summary.
-      if (
-        segments.some(
-          (part) =>
-            this.sessions.submissionRevision(roomId, part.sessionId, part.peerId) !== part.revision,
-        )
-      )
-        return;
-      const summary = {
-        id: randomUUID(),
-        at: Math.min(...segments.map((part) => part.at)),
-        text: (names?.size ? applyRoomMemoryNames(text, names) : text)
-          .replace(/\s+/gu, " ")
-          .trim()
-          .slice(0, 800),
-      };
       let reportStore: DailyRoomReportStore | undefined;
       if (this.reports) {
         try {
@@ -205,22 +182,31 @@ export class RoomChronicleProcessor {
           // Keep this session's generated chronicle usable if daily report storage is unavailable.
         }
       }
-      if (
-        this.sessions.submissionRevision(roomId, first.sessionId, first.peerId) !== first.revision
-      )
-        return;
-      const today = getRoomChronicleDate(summary.at) === getRoomChronicleDate();
-      if (today)
-        this.sessions.appendSubmission(
-          roomId,
-          first.sessionId,
-          first.peerId,
-          first.revision,
-          summary,
-        );
-      reportStore?.publishChronicleRecap(roomId, summary.id, summary.text, summary.at);
+      signal.throwIfAborted();
+      // Authorization may have changed while the organizer or report store was pending.
+      if (!segments.every((part) => this.isCurrent(roomId, part))) return;
+      const date = getRoomChronicleDate();
+      const published: ChronicleEntry[] = [];
+      for (const story of stories) {
+        const summary = {
+          id: randomUUID(),
+          at: story.at,
+          text: names?.size ? applyRoomMemoryNames(story.text, names).slice(0, 800) : story.text,
+        };
+        if (getRoomChronicleDate(summary.at) === date) {
+          this.sessions.appendSubmission(
+            roomId,
+            first.sessionId,
+            first.peerId,
+            first.revision,
+            summary,
+          );
+          published.push(summary);
+        }
+        reportStore?.publishChronicleRecap(roomId, summary.id, summary.text, summary.at);
+      }
       this.sessions.notice(roomId, first.sessionId, undefined);
-      this.changed(roomId, today ? summary : undefined);
+      this.changed(roomId, published);
     } catch {
       if (!controller.signal.aborted) {
         this.sessions.notice(roomId, first.sessionId, "retrying");
@@ -234,6 +220,16 @@ export class RoomChronicleProcessor {
       // defer() keeps ownership of its segments; completed or discarded work releases it.
       if (ownsSummary && !this.batches.get(roomId)?.segments.includes(first))
         this.backlog.set(roomId, Math.max(0, (this.backlog.get(roomId) ?? 0) - segments.length));
+    }
+  }
+
+  private isCurrent(roomId: string, part: Segment): boolean {
+    try {
+      return (
+        this.sessions.submissionRevision(roomId, part.sessionId, part.peerId) === part.revision
+      );
+    } catch {
+      return false;
     }
   }
 

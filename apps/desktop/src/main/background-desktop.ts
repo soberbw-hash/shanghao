@@ -3,7 +3,6 @@ import {
   app,
   dialog,
   ipcMain,
-  Notification,
   powerMonitor,
   type BrowserWindow,
   type Tray,
@@ -18,6 +17,7 @@ import { cleanTrayRoomName, RoomPresenceWatcher } from "./room-presence-watcher"
 import { updateTrayPresence } from "./tray";
 import { sendToWindow } from "./safe-web-contents";
 import { NotificationDelivery } from "./notification-delivery";
+import { canShowDesktopNotification, showDesktopNotification } from "./desktop-notifications";
 
 export const requireBackgroundActivity = (
   input: unknown,
@@ -66,7 +66,7 @@ export const registerBackgroundDesktop = ({
       enabled:
         config.isFriendOnlineNotificationEnabled &&
         config.isSystemNotificationEnabled &&
-        Notification.isSupported(),
+        canShowDesktopNotification(),
       foreground:
         !window.isDestroyed() && window.isVisible() && window.isFocused() && !window.isMinimized(),
       inRoom: activity.inRoom || activity.isRecording,
@@ -79,20 +79,24 @@ export const registerBackgroundDesktop = ({
     window.show();
     window.focus();
   };
-  const preview = (roomId: string) => {
+  const openRoom = (roomId: string, kind: "preview-room" | "enter-room" = "preview-room") => {
     if (!isPrivateRoomId(roomId)) return;
     showWindow();
-    sendToWindow(window, IPC_CHANNELS.app.backgroundCommand, { kind: "preview-room", roomId });
+    sendToWindow(window, IPC_CHANNELS.app.backgroundCommand, { kind, roomId, chat: false });
   };
-  const updateTray = () => updateTrayPresence(getTray(), online, activity, preview);
-  const notify = (title: string, body: string, click: () => void) => {
-    if (!settings.getSnapshot().isSystemNotificationEnabled || !Notification.isSupported())
+  const updateTray = () => updateTrayPresence(getTray(), online, activity, openRoom);
+  const notify = (title: string, body: string, click: () => void, label: string) => {
+    if (!settings.getSnapshot().isSystemNotificationEnabled || !canShowDesktopNotification())
       return false;
-    const notification = new Notification({ title, body, silent: false });
-    notifications.show(notification, click, (reason) => {
-      trace(`background_notification_failed:${reason}`);
-      sendToWindow(window, IPC_CHANNELS.app.notificationFailed, reason);
-    });
+    showDesktopNotification(
+      { title, body, actions: [{ label, run: click }] },
+      click,
+      (reason) => {
+        trace(`background_notification_failed:${reason}`);
+        sendToWindow(window, IPC_CHANNELS.app.notificationFailed, reason);
+      },
+      notifications,
+    );
     return true;
   };
   const watcher = new RoomPresenceWatcher({
@@ -108,9 +112,15 @@ export const registerBackgroundDesktop = ({
     },
     notify: (room) => {
       const scope = context().scope;
-      notify(`${cleanTrayRoomName(room.name)}有 ${room.onlineCount} 人在线`, "点击查看房间", () => {
-        if (scope && scope === context().scope) preview(room.roomId);
-      });
+      const enter = () => {
+        if (scope && scope === context().scope) openRoom(room.roomId, "enter-room");
+      };
+      notify(
+        "好友上线",
+        `${cleanTrayRoomName(room.name)} · ${room.onlineCount} 人在线`,
+        enter,
+        "进入房间",
+      );
     },
   });
   const sender = (event: IpcMainEvent | IpcMainInvokeEvent) => {
@@ -187,7 +197,7 @@ export const registerBackgroundDesktop = ({
       updateTray();
       if (
         !settings.getSnapshot().hasSeenTrayNotice &&
-        notify("上号仍在托盘运行", "右键托盘图标可退出", showWindow)
+        notify("上号仍在托盘运行", "右键托盘图标可退出。", showWindow, "打开上号")
       ) {
         await settings
           .save({ hasSeenTrayNotice: true })

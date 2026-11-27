@@ -5,7 +5,7 @@ const path = require("node:path");
 require("./electron-isolated-profile.cjs").configureIsolatedProfile(app, "settings-hierarchy");
 const timeout = setTimeout(() => app.exit(1), 20000);
 app.whenReady().then(async () => {
-  const view = new BrowserWindow({ width: 1280, height: 900, show: false });
+  const view = new BrowserWindow({ width: 1280, height: 900, show: false, skipTaskbar: true });
   const evaluate = (source) => view.webContents.executeJavaScript(source, true);
   const key = (keyCode) => {
     view.webContents.sendInputEvent({ type: "keyDown", keyCode });
@@ -34,7 +34,7 @@ app.whenReady().then(async () => {
       const nav=document.querySelector('nav[aria-label="设置栏目"]');
       check(nav.querySelector('[role="group"][aria-label="常用"]'),'common settings group missing');
       check(nav.querySelector('[role="group"][aria-label="进阶与支持"]'),'advanced settings group missing');
-      check(nav.querySelectorAll('button').length===8,'a settings destination disappeared');
+      check(nav.querySelectorAll('button').length===7,'a settings destination disappeared');
       featured.querySelector('button:not([aria-label])').focus();
     })()`);
     await evaluate(
@@ -44,14 +44,14 @@ app.whenReady().then(async () => {
     await evaluate(`(async()=>{
       await new Promise(r=>setTimeout(r,80));
       if(!document.querySelector('[data-testid="joined"]').textContent.includes('已明确加入 000021'))throw Error('Enter did not join the last room');
-      const button=[...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent==='诊断');
+      const button=[...document.querySelectorAll('.settings-nav button')].find(b=>b.textContent==='关于上号');
       button.focus();
     })()`);
     key("Space");
     await evaluate(`(async()=>{
       await new Promise(r=>setTimeout(r,80));
       const current=document.querySelector('.settings-nav [aria-current="page"]');
-      if(current?.textContent!=='诊断'||document.querySelectorAll('.settings-nav [aria-current="page"]').length!==1)throw Error('Space did not select advanced navigation');
+      if(current?.textContent!=='关于上号'||document.querySelectorAll('.settings-nav [aria-current="page"]').length!==1)throw Error('Space did not select advanced navigation');
     })()`);
     console.log(
       JSON.stringify({

@@ -161,6 +161,17 @@ Object.assign(window, {
         state: { ...state, summaryIntervalMs: 120000 },
       });
     },
+    setChatCount(count: number) {
+      useRoomStore.setState({
+        chatMessages: Array.from({ length: count }, (_, i) => ({
+          id: "chat-" + i,
+          peerId: member.id,
+          nickname: "队友",
+          content: "聊天记录 " + i,
+          createdAt: new Date(1_700_000_000_000 + i * 1000).toISOString(),
+        })),
+      });
+    },
     setServerDay(date: string, entries: LocalChronicleEntry[]) {
       if (!entries.length) client.capability(true, date);
       client.receiveHistory({ type: "chronicle_history", roomId, date, replace: true, entries });

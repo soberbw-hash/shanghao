@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import { PushToTalkState } from "@private-voice/shared";
+import { PushToTalkState, RoomLifecycleState } from "@private-voice/shared";
 
 import { useAudioStore } from "../store/audioStore";
 import { useRoomStore } from "../store/roomStore";
@@ -72,6 +72,7 @@ const matchesShortcut = (event: KeyboardEvent, shortcut: string): boolean => {
 };
 
 export const useLocalAudioTransport = (): void => {
+  const roomOpen = useRoomStore((state) => state.room.lifecycleState === RoomLifecycleState.Open);
   const localStream = useRoomStore((state) => state.localStream);
   const isMuted = useAudioStore((state) => state.isMuted);
   const isDeafened = useAudioStore((state) => state.isDeafened);
@@ -82,6 +83,7 @@ export const useLocalAudioTransport = (): void => {
 
   useEffect(() => {
     if (
+      !roomOpen ||
       !isPushToTalkEnabled ||
       !/(^|\+)(Mouse4|Mouse5|XButton1|XButton2)$/i.test(pushToTalkShortcut)
     ) {
@@ -90,7 +92,13 @@ export const useLocalAudioTransport = (): void => {
     const track = localStream?.getAudioTracks()[0];
     if (!track) return;
     const unsubscribe = window.desktopApi.shortcuts.onPushToTalkState((pressed) => {
-      setAudioSendEnabled(track, pressed && !isMuted && !isDeafened);
+      setAudioSendEnabled(
+        track,
+        pressed &&
+          !isMuted &&
+          !isDeafened &&
+          useRoomStore.getState().room.lifecycleState === RoomLifecycleState.Open,
+      );
       setPushToTalkState(pressed ? PushToTalkState.Pressed : PushToTalkState.Armed);
     });
     return unsubscribe;
@@ -100,6 +108,7 @@ export const useLocalAudioTransport = (): void => {
     isPushToTalkEnabled,
     localStream,
     pushToTalkShortcut,
+    roomOpen,
     setPushToTalkState,
   ]);
 
@@ -110,8 +119,18 @@ export const useLocalAudioTransport = (): void => {
       return;
     }
 
+    if (!roomOpen) {
+      setAudioSendEnabled(track, false);
+      setPushToTalkState(PushToTalkState.Off);
+      return;
+    }
     if (!isPushToTalkEnabled) {
-      setAudioSendEnabled(track, !isMuted && !isDeafened);
+      setAudioSendEnabled(
+        track,
+        !isMuted &&
+          !isDeafened &&
+          useRoomStore.getState().room.lifecycleState === RoomLifecycleState.Open,
+      );
       setPushToTalkState(PushToTalkState.Off);
       return;
     }
@@ -128,7 +147,12 @@ export const useLocalAudioTransport = (): void => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!pressedKey && !event.repeat && matchesShortcut(event, pushToTalkShortcut)) {
         pressedKey = event.code || event.key;
-        setAudioSendEnabled(track, !isMuted && !isDeafened);
+        setAudioSendEnabled(
+          track,
+          !isMuted &&
+            !isDeafened &&
+            useRoomStore.getState().room.lifecycleState === RoomLifecycleState.Open,
+        );
         setPushToTalkState(PushToTalkState.Pressed);
       }
     };
@@ -152,6 +176,7 @@ export const useLocalAudioTransport = (): void => {
     isPushToTalkEnabled,
     localStream,
     pushToTalkShortcut,
+    roomOpen,
     setPushToTalkState,
   ]);
 };

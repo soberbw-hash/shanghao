@@ -109,6 +109,7 @@ export const REMOTE_AUDIO_LEVEL_EVENT = "shanghao:remote-audio-level";
 export class RemoteAudioMixer {
   private context?: SinkAwareAudioContext;
   private masterGain?: GainNode;
+  private roomPlaybackAllowed = true;
   private outputLimiter?: DynamicsCompressorNode;
   private finalOutputTap?: MediaStreamAudioDestinationNode;
   private channels = new Map<string, RemoteAudioChannel>();
@@ -215,6 +216,7 @@ export class RemoteAudioMixer {
   }
 
   sync(inputs: RemoteAudioMixInput[]): void {
+    if (!this.roomPlaybackAllowed) inputs = [];
     const activePeerIds = new Set(inputs.map((input) => input.peerId));
     for (const [peerId] of this.channels) {
       if (!activePeerIds.has(peerId)) this.removeChannel(peerId);
@@ -279,6 +281,21 @@ export class RemoteAudioMixer {
     }
 
     if (this.channels.size > 0) void this.unlock("remote-stream-sync");
+  }
+
+  setRoomPlaybackAllowed(allowed: boolean): void {
+    if (this.roomPlaybackAllowed === allowed) return;
+    this.roomPlaybackAllowed = allowed;
+    if (allowed) {
+      this.applyMasterVolume();
+    } else {
+      const gain = this.masterGain?.gain;
+      const now = this.context?.currentTime ?? 0;
+      gain?.cancelScheduledValues(now);
+      gain?.setValueAtTime(0, now);
+      this.sync([]);
+      for (const peerId of this.relayChannels.keys()) this.removeRelayPeer(peerId);
+    }
   }
 
   setDeafened(isDeafened: boolean): void {
@@ -477,6 +494,8 @@ export class RemoteAudioMixer {
     durationMs: number,
     volume: number,
   ): RemoteAudioPlaybackStats {
+    if (!this.roomPlaybackAllowed)
+      return { queueLength: 0, queueDurationMs: 0, droppedOldChunks: 0 };
     const context = this.ensureGraph();
     const channel = this.getOrCreateRelayChannel(peerId, context);
     const now = context.currentTime;
@@ -875,7 +894,7 @@ export class RemoteAudioMixer {
   }
 
   private getEffectiveMasterVolume(): number {
-    return this.isDeafened ? 0 : this.masterVolume;
+    return this.roomPlaybackAllowed && !this.isDeafened ? this.masterVolume : 0;
   }
 
   private applyMasterVolume(): void {

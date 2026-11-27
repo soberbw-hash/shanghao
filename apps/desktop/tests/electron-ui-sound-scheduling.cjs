@@ -28,7 +28,7 @@ app.whenReady().then(async () => {
         sources.push({duration:this.buffer?.duration,startedAt:performance.now(),audioTime:this.context.currentTime});
         return nativeStart.apply(this,args);
       };
-      for (const cue of ['button-click','member-join','record-start','enter-room']) {
+      for (const cue of ['button-click','member-join','record-start','enter-room','record-stop','leave-room']) {
         const allocatedBefore=allocatedBuffers;
         const startedAt = performance.now(); fixture.playUiSound(cue);
         sounds.push({cue,synchronousMs:performance.now()-startedAt,synchronousBuffers:allocatedBuffers-allocatedBefore}); await pause(80);
@@ -49,12 +49,21 @@ app.whenReady().then(async () => {
       fixture.playUiSound('member-join'); fixture.setUiSoundFeedbackEnabled(false); await pause(30);
       const disabledSilent=sources.length===beforeCancelled;
       const context=new AudioContext();
-      const {buffer}=await fixture.loadRoomMemberJoinCue(context);
-      const expected=fixture.renderRecipe(fixture.createRecipe('organic','connect'),context.sampleRate);
-      const exactSamples=[expected.left,expected.right].every((samples,channel)=>{
-        const actual=buffer.getChannelData(channel);
-        return actual.length===samples.length&&actual.every((sample,index)=>sample===samples[index]);
-      });
+      const exactSounds = [
+        ['organic', 'connect'],
+        ['studio', 'press'],
+        ['studio', 'start'],
+        ['studio', 'stop'],
+        ['organic', 'sleep'],
+      ];
+      const exactSamples = (await Promise.all(exactSounds.map(async ([pack, cue]) => {
+        const {buffer} = await fixture.loadUiCue(context, pack, cue);
+        const expected = fixture.renderRecipe(fixture.createRecipe(pack, cue), context.sampleRate);
+        return [expected.left, expected.right].every((samples, channel) => {
+          const actual = buffer.getChannelData(channel);
+          return actual.length === samples.length && actual.every((sample,index) => sample === samples[index]);
+        });
+      }))).every(Boolean);
       await context.close();
       AudioBufferSourceNode.prototype.start=nativeStart;
       AudioContext.prototype.createBuffer=nativeCreateBuffer;
@@ -63,8 +72,8 @@ app.whenReady().then(async () => {
       true,
     );
     console.log(JSON.stringify(result));
-    if (result.sounds.find((sound) => sound.cue === "member-join").synchronousBuffers !== 0)
-      throw Error("cold member join still synthesizes on the renderer");
+    if (result.sounds.some((sound) => sound.synchronousBuffers !== 0))
+      throw Error("a cold interaction still synthesizes audio on the renderer");
     if (result.entryOverlap.length !== 1)
       throw Error("member snapshot stacks a second cue on local room entry");
     if (

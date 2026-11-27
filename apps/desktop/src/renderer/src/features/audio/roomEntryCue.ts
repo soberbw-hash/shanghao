@@ -1,13 +1,18 @@
+import type { CueName, PackName } from "uisfx";
+
 export interface RoomEntryCue {
   buffer: AudioBuffer;
 }
 
-type RoomFeedbackCue = "enter-room" | "member-join";
 const cached = new Map<string, Promise<RoomEntryCue>>();
 
 /** One short-lived worker per cue/rate; warmup and playback share immutable samples. */
-const loadCue = (context: AudioContext, cue: RoomFeedbackCue): Promise<RoomEntryCue> => {
-  const key = `${cue}:${context.sampleRate}`;
+export const loadUiCue = (
+  context: AudioContext,
+  pack: PackName,
+  cue: CueName,
+): Promise<RoomEntryCue> => {
+  const key = `${pack}:${cue}:${context.sampleRate}`;
   const existing = cached.get(key);
   if (existing) return existing;
   const loading = new Promise<RoomEntryCue>((resolve, reject) => {
@@ -47,7 +52,7 @@ const loadCue = (context: AudioContext, cue: RoomFeedbackCue): Promise<RoomEntry
       }
     };
     try {
-      worker.postMessage({ sampleRate: context.sampleRate, cue });
+      worker.postMessage({ sampleRate: context.sampleRate, pack, cue });
     } catch (error) {
       finish();
       reject(error);
@@ -61,7 +66,7 @@ const loadCue = (context: AudioContext, cue: RoomFeedbackCue): Promise<RoomEntry
 };
 
 export const loadRoomEntryCue = (context: AudioContext): Promise<RoomEntryCue> =>
-  loadCue(context, "enter-room");
+  loadUiCue(context, "soft", "wake");
 
 export const loadRoomMemberJoinCue = (context: AudioContext): Promise<RoomEntryCue> =>
-  loadCue(context, "member-join");
+  loadUiCue(context, "organic", "connect");

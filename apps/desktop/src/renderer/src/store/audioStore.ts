@@ -130,12 +130,21 @@ export const useAudioStore = create<AudioStoreState>((set, get) => ({
       });
     }
   },
-  toggleMicrophone: () =>
+  toggleMicrophone: () => {
+    if (
+      get().isMuted &&
+      !get().listenOnly &&
+      typeof window !== "undefined" &&
+      typeof window.dispatchEvent === "function" &&
+      !window.dispatchEvent(new Event("shanghao:resume-microphone", { cancelable: true }))
+    )
+      return;
     set((state) =>
       state.phoneModeActive || state.isDeafened || state.listenOnly
         ? state
         : { isMuted: !state.isMuted, isManuallyMuted: !state.isMuted },
-    ),
+    );
+  },
   toggleDeafen: () =>
     set((state) =>
       state.phoneModeActive

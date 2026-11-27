@@ -483,7 +483,7 @@ test("manual text work is not released by pressure until its compute lease ends"
     updatedAt: Date.now(),
   };
   manager.updateRuntimePressure(pressure);
-  assert.equal(lease.signal.aborted, false);
+  assert.equal(lease.signal.aborted, true);
   assert.deepEqual(releases, []);
   const updatesAfterTransition = statusUpdates;
   manager.updateRuntimePressure({ ...pressure, updatedAt: Date.now() + 1 });

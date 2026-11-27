@@ -935,31 +935,6 @@
   content: "";
 }
 
-.chat-unread-button {
-  position: absolute;
-  right: 12px;
-  bottom: 8px;
-  z-index: 4;
-  min-height: 32px;
-  border: 1px solid rgba(77, 163, 255, 0.28);
-  border-radius: 999px;
-  background: rgba(242, 248, 255, 0.96);
-  padding: 6px 11px;
-  box-shadow: var(--sg-shadow-control);
-  color: var(--accent-primary);
-  font-size: 12px;
-  font-weight: 650;
-  transform-origin: right bottom;
-  transition:
-    transform var(--duration-fast) var(--ease-out),
-    background-color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
-}
-
-.chat-unread-button:active {
-  transform: scale(0.97);
-}
-
 .member-audio-popover {
   position: absolute;
   z-index: 30;

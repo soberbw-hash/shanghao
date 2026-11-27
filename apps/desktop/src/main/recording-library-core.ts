@@ -34,6 +34,7 @@ interface RecordingCatalogEntry {
   createdAt: string;
   roomId?: string;
   roomName?: string;
+  hadMultipleParticipants?: boolean;
 }
 
 interface RecordingLibraryMetadata {
@@ -177,6 +178,8 @@ const readLibraryMetadata = async (directory: string): Promise<RecordingLibraryM
             typeof entry.title === "string" &&
             (entry.isCustomTitle === undefined || typeof entry.isCustomTitle === "boolean") &&
             typeof entry.createdAt === "string" &&
+            (entry.hadMultipleParticipants === undefined ||
+              typeof entry.hadMultipleParticipants === "boolean") &&
             (entry.roomId === undefined ||
               isStoredRoomId(entry.roomId) ||
               isTemporaryRoomSessionId(entry.roomId)) &&
@@ -338,6 +341,7 @@ const readRecordingLibraryItemsUnsafe = async (
             fileSize: fileStat.size,
             roomId,
             roomName: catalogEntry.roomName,
+            hadMultipleParticipants: catalogEntry.hadMultipleParticipants,
             isFavorite: favoriteRecordingIds.has(catalogEntry.recordingId),
             markers: await parseMarkers(filePath, catalogEntry.recordingId),
           } satisfies RecordingLibraryItem;
@@ -405,10 +409,12 @@ export const saveRecordingOriginInDirectory = async (
   filePath: string,
   roomId: string,
   roomName: string,
+  hadMultipleParticipants?: boolean,
 ): Promise<void> => {
   if (
     (!isStoredRoomId(roomId) && !isTemporaryRoomSessionId(roomId)) ||
     typeof roomName !== "string" ||
+    (hadMultipleParticipants !== undefined && typeof hadMultipleParticipants !== "boolean") ||
     roomName.length > 64
   )
     throw new Error("invalid_recording_origin");
@@ -420,6 +426,8 @@ export const saveRecordingOriginInDirectory = async (
     if (entry.roomId && entry.roomId !== roomId) throw new Error("recording_origin_conflict");
     entry.roomId = roomId;
     entry.roomName = roomName;
+    if (hadMultipleParticipants !== undefined)
+      entry.hadMultipleParticipants = hadMultipleParticipants;
     await writeLibraryMetadata(directory, metadata);
   });
 };
@@ -709,10 +717,28 @@ export const restoreRecordingFromRecycleBin = (
       throw Error("recording_restore_conflict");
     await restore(); // Caller journals interrupted audio/marker moves and never overwrites files.
     if (!current) {
-      const { recordingId, fileName, title, isCustomTitle, createdAt, roomId, roomName } = item;
+      const {
+        recordingId,
+        fileName,
+        title,
+        isCustomTitle,
+        createdAt,
+        roomId,
+        roomName,
+        hadMultipleParticipants,
+      } = item;
       metadata.recordings = [
         ...(metadata.recordings ?? []),
-        { recordingId, fileName, title, isCustomTitle, createdAt, roomId, roomName },
+        {
+          recordingId,
+          fileName,
+          title,
+          isCustomTitle,
+          createdAt,
+          roomId,
+          roomName,
+          hadMultipleParticipants,
+        },
       ];
       if (item.isFavorite)
         metadata.favoriteRecordingIds = [...(metadata.favoriteRecordingIds ?? []), recordingId];

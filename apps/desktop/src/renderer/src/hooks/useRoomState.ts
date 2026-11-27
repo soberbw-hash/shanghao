@@ -29,12 +29,10 @@ import { rememberRoomDirectory } from "../features/room/usePrivateRoomDirectory"
 import type { ProcessedMicrophoneStream } from "../features/audio/microphoneProcessor";
 import { createRoomMicrophoneProcessor } from "../features/audio/roomMicrophoneProcessor";
 import { acquireAudioSource, releaseAcquiredAudioSource } from "../features/audio/audioSource";
-import { MicrophoneAcquisitionError } from "../features/audio/microphoneError";
-import { acquireWithListenOnly } from "../features/audio/acquireWithListenOnly";
+import { createListenOnlyMicrophone } from "../features/audio/listenOnlyMicrophone";
 import { createAudioRuntimeSnapshot } from "../features/audio/audioRuntimeSnapshot";
-import { PHONE_MIC_DEVICE_ID } from "../features/audio/phoneMicSource";
-import { REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
-import { getRemoteAudioMixer } from "../features/audio/RemoteAudioMixer";
+import { getRemoteAudioMixer, REMOTE_AUDIO_LEVEL_EVENT } from "../features/audio/RemoteAudioMixer";
+import { setAudioSendEnabled } from "../features/audio/audioSendGate";
 import { clampMemberVolume } from "../features/audio/memberVolume";
 import { cancelDelayedRoomEntryCue, playUiSound } from "../features/audio/uiSound";
 import {
@@ -64,9 +62,11 @@ import {
 } from "../features/room/memberVolumePersistence";
 import {
   describeChatNotification,
+  openNotifiedRoom,
   playSceneReactionSound,
   sendSystemNotification,
 } from "../features/room/roomNotifications";
+import { messageLinkCard } from "../features/chat/linkPreview";
 import { useAppStore } from "../store/appStore";
 import { useAccountStore } from "../store/accountStore";
 import { projectRoomMembers } from "../features/room/memberProjection";
@@ -110,11 +110,15 @@ let inputDeviceSwitchQueue: Promise<unknown> =
   previousRuntime?.inputDeviceSwitchQueue ?? Promise.resolve();
 let activeLeavePromise = previousRuntime?.activeLeavePromise;
 let accountLossLeave: (() => Promise<void>) | undefined;
+const closeRoomAudio = (): void => {
+  for (const track of useRoomStore.getState().localStream?.getAudioTracks() ?? [])
+    setAudioSendEnabled(track, false);
+  getRemoteAudioMixer().setRoomPlaybackAllowed(false);
+};
+
 export function leaveRoomOnAccountLoss(): void {
   roomSessionOwnership.advance();
-  for (const track of useRoomStore.getState().localStream?.getAudioTracks() ?? [])
-    track.enabled = false;
-  getRemoteAudioMixer().sync([]);
+  closeRoomAudio();
   void activeClientRef.current?.disconnect().catch(() => undefined);
   void accountLossLeave?.().catch(() => undefined);
 }
@@ -309,9 +313,12 @@ export const useRoomState = () => {
 
   const cleanupPreviousSession = async ({
     resetStore = false,
-    preserveLocalMedia = false,
-  }: { resetStore?: boolean; preserveLocalMedia?: boolean } = {}) => {
+    onMediaReleased,
+  }: { resetStore?: boolean; onMediaReleased?: () => void } = {}) => {
     const generation = roomSessionOwnership.current();
+    if (useRoomStore.getState().room.lifecycleState === RoomLifecycleState.Open)
+      setLifecycleState(RoomLifecycleState.Closing);
+    closeRoomAudio();
     cancelDelayedRoomEntryCue();
     stopQuickMessageMusic();
     await finishRoomRecordingBeforeRelease().catch((error) => {
@@ -329,6 +336,8 @@ export const useRoomState = () => {
     const temporaryContextId = useRoomStore.getState().room.temporaryRoom?.contextId;
     activeClientRef.current = null;
     activePeerId = undefined;
+    stopLocalMedia();
+    onMediaReleased?.();
     if (client) roomSessionOwnership.record("disconnect_started", generation);
     await finishOwnedRoomCleanup(
       roomSessionOwnership,
@@ -340,7 +349,6 @@ export const useRoomState = () => {
       },
       () => {
         stopQuickMessageMusic();
-        if (!preserveLocalMedia) stopLocalMedia();
         setConnectionHealth({ reconnectAttempt: 0 });
         if (resetStore) useRoomStore.getState().resetRoom();
       },
@@ -353,116 +361,23 @@ export const useRoomState = () => {
     }
   };
 
-  const ensureLocalStream = async (
-    preferredInputDeviceId?: string,
-    { reuseExisting = false }: { reuseExisting?: boolean } = {},
-  ) => {
-    if (reuseExisting) {
-      const existingStream =
-        activeProcessedMicrophone?.stream ?? useRoomStore.getState().localStream;
-      const hasLiveAudio = existingStream
-        ?.getAudioTracks()
-        .some((track) => track.readyState === "live");
-      if (existingStream && hasLiveAudio) {
-        return existingStream;
-      }
-    }
-
-    const currentSettings = useSettingsStore.getState().settings;
-    const previousProcessor = activeProcessedMicrophone;
-    activeProcessedMicrophone = null;
-    try {
-      previousProcessor?.dispose();
-    } catch (cleanupError) {
-      void writeRendererLog("audio", "warn", "Previous microphone cleanup failed", {
-        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-      });
-    }
-
-    let acquiredSource: Awaited<ReturnType<typeof acquireAudioSource>> | undefined;
-    let processedMicrophone: ProcessedMicrophoneStream | undefined;
-    try {
-      const selectedDeviceId =
-        preferredInputDeviceId ??
-        (activeInputSourceId === PHONE_MIC_DEVICE_ID
-          ? activeInputSourceId
-          : currentSettings?.preferredInputDeviceId);
-      acquiredSource = await acquireAudioSource(selectedDeviceId, {
-        echoCancellation: currentSettings?.isEchoCancellationEnabled ?? true,
-        autoGainControl: currentSettings?.isAutoGainControlEnabled ?? true,
-      });
-      const { diagnostics } = acquiredSource;
-      processedMicrophone = await createRoomMicrophoneProcessor(acquiredSource, currentSettings);
-      activeProcessedMicrophone = processedMicrophone;
-      useAudioStore.getState().setListenOnly(false);
-      activeInputSourceId = selectedDeviceId;
-      const stream = processedMicrophone.stream;
-
-      setLocalStream(stream);
-      setLocalDiagnostics({ ...diagnostics, ...processedMicrophone.processorDiagnostics });
-      processedMicrophone.onDiagnostics((processorDiagnostics) => {
-        if (activeProcessedMicrophone !== processedMicrophone) return;
-        setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
-      });
-      void processedMicrophone.ready.then((processorDiagnostics) => {
-        if (activeProcessedMicrophone !== processedMicrophone) return;
-        setLocalDiagnostics({ ...diagnostics, ...processorDiagnostics });
-      });
-      await writeRendererLog("audio", "info", "Acquired local microphone stream", {
-        ...diagnostics,
-      });
-      if (diagnostics.sampleRateFallbackApplied) {
-        pushToast({
-          tone: "neutral",
-          title: "已自动兼容麦克风",
-          description: "设备不支持所选采样率，已回退到设备原生采样率。",
-        });
-      }
-      return stream;
-    } catch (error) {
-      if (processedMicrophone) {
-        processedMicrophone.dispose();
-        if (activeProcessedMicrophone === processedMicrophone) {
-          activeProcessedMicrophone = null;
-          setLocalStream(undefined);
-          activeInputSourceId = undefined;
-        }
-      } else if (acquiredSource) {
-        releaseAcquiredAudioSource(acquiredSource);
-      }
-      await writeRendererLog("audio", "error", "Failed to acquire local microphone stream", {
-        errorName: error instanceof Error ? error.name : "unknown",
-        inputSelection: currentSettings?.preferredInputDeviceId
-          ? "selected_device"
-          : "system_default",
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw new MicrophoneAcquisitionError(error);
-    }
-  };
-
   const connectToRoom = async (
     serverUrl: string,
     channelId: ChannelId,
-    {
-      reuseLocalMedia = false,
-      temporary,
-    }: { reuseLocalMedia?: boolean; temporary?: TemporaryRoomDescriptor } = {},
+    temporary?: TemporaryRoomDescriptor,
   ) => {
     const generation = roomSessionOwnership.current();
     const assertCurrentSession = () => {
       if (!roomSessionOwnership.owns(generation)) throw new Error("room_session_superseded");
     };
     const currentSettings = useSettingsStore.getState().settings;
-    roomSessionOwnership.record("microphone_acquire_started", generation);
-    const stream = await acquireWithListenOnly(
-      () => ensureLocalStream(undefined, { reuseExisting: reuseLocalMedia }),
-      (processor) => {
-        activeProcessedMicrophone = processor;
-      },
-    );
-    assertCurrentSession();
-    roomSessionOwnership.record("microphone_acquired", generation);
+    // Negotiate with a disabled silent track. Only an admitted room can request the microphone.
+    const placeholder = await createListenOnlyMicrophone();
+    if (!roomSessionOwnership.owns(generation)) {
+      placeholder.dispose();
+      assertCurrentSession();
+    }
+    activeProcessedMicrophone = placeholder;
     const peerId = temporary?.peerId ?? crypto.randomUUID();
     activePeerId = peerId;
     const isCurrentSession = () => roomSessionOwnership.ownsPeer(generation, peerId, activePeerId);
@@ -493,7 +408,7 @@ export const useRoomState = () => {
         "访客",
       avatarDataUrl: temporary?.avatarDataUrl,
       avatarId: temporary?.avatarId ?? randomRoomAvatar(currentSettings?.avatarId),
-      localStream: stream,
+      localStream: placeholder.stream,
       appVersion: runtimeInfo?.version ?? "0.0.0",
       protocolVersion: runtimeInfo?.protocolVersion ?? APP_PROTOCOL_VERSION,
       buildNumber: runtimeInfo?.buildNumber ?? APP_BUILD_NUMBER,
@@ -529,6 +444,7 @@ export const useRoomState = () => {
             sendSystemNotification({
               title: "好友上线",
               body: `${member.nickname} 进入了开黑频道`,
+              room: { kind: "presence", id: channelId },
             });
           }
         });
@@ -658,6 +574,9 @@ export const useRoomState = () => {
           lastUpdatedAt: new Date().toISOString(),
         });
       },
+      canPlayRoomAudio: () =>
+        isCurrentSession() &&
+        useRoomStore.getState().room.lifecycleState === RoomLifecycleState.Open,
       onRemoteStream: (remotePeerId, remoteStream) => {
         if (isCurrentSession()) setRemoteStream(remotePeerId, remoteStream);
       },
@@ -704,6 +623,7 @@ export const useRoomState = () => {
           sendSystemNotification({
             title: `${message.nickname} 提醒你`,
             body: message.content,
+            room: { kind: "chat", id: channelId },
           });
         }
       },
@@ -724,6 +644,13 @@ export const useRoomState = () => {
             sendSystemNotification({
               title: `${message.nickname} 发来消息`,
               body: describeChatNotification(message),
+              room: {
+                kind: "chat",
+                id: channelId,
+                link: messageLinkCard(message.content)?.url,
+                messageId: message.id,
+                imageDataUrl: message.image?.dataUrl,
+              },
             });
           }
         }
@@ -760,11 +687,15 @@ export const useRoomState = () => {
           pushToast({
             tone: "warning",
             title: `${message.nickname} 敲了敲你`,
-            description: "快来上号，朋友正在等你。",
+            description: roomName || "朋友在房间里等你。",
+            actionLabel: "进入房间",
+            cardKind: "knock",
+            onAction: () => openNotifiedRoom(channelId, false),
           });
           sendSystemNotification({
             title: `${message.nickname} 敲了敲你`,
-            body: "快来上号，朋友正在等你。",
+            body: roomName || "朋友在房间里等你。",
+            room: { kind: "knock", id: channelId },
             attention: true,
             shakeWindow: true,
             showNotification:
@@ -818,17 +749,6 @@ export const useRoomState = () => {
       useAudioStore.getState().phoneModeActive,
       localMember?.gameSession,
     );
-    playUiSound("enter-room");
-    setRoom({
-      roomId: channelId,
-      roomName,
-      lifecycleState: RoomLifecycleState.Open,
-      signalingUrl: serverUrl,
-      latestFailureReason: undefined,
-    });
-    if (!reuseLocalMedia) {
-      startSpeakingDetector(stream);
-    }
   };
 
   const joinChannel = (
@@ -877,6 +797,7 @@ export const useRoomState = () => {
       roomSessionOwnership.record("join_requested", generation);
 
       setRoomAction("joining");
+      setLifecycleState(RoomLifecycleState.Opening);
       setConnectionState(RoomConnectionState.Joining);
       clearRoomEvents();
       pushRoomEvent({
@@ -884,8 +805,7 @@ export const useRoomState = () => {
         message: "正在进入房间",
       });
       try {
-        const reuseLocalMedia = false;
-        await cleanupPreviousSession({ preserveLocalMedia: reuseLocalMedia });
+        await cleanupPreviousSession();
         if (!roomSessionOwnership.owns(generation)) throw new Error("room_session_superseded");
         clearChannelContent();
         setRoom({
@@ -917,25 +837,28 @@ export const useRoomState = () => {
           serverUrl,
           channelId,
         });
-        await connectToRoom(serverUrl, channelId, { reuseLocalMedia, temporary });
-        if (!roomSessionOwnership.owns(generation)) throw new Error("room_session_superseded");
+        await connectToRoom(serverUrl, channelId, temporary);
+        if (!roomSessionOwnership.owns(generation) || activeLeavePromise) return;
         const joinedRoom = useRoomStore.getState().room.privateRoom;
         if (joinedRoom && joiningUserId === useAccountStore.getState().snapshot.profile?.userId)
           rememberRoomDirectory(joiningUserId, serverUrl, joinedRoom);
-        // Keep the entry page visible until microphone acquisition, authorization,
-        // join acknowledgement and the first room snapshot have all succeeded.
-        // A failed device check must never flash the room shell before returning.
+        // The relay has admitted this session and delivered the first member snapshot.
         useAppStore.getState().navigate("room");
+        getRemoteAudioMixer().setRoomPlaybackAllowed(true);
+        setLifecycleState(RoomLifecycleState.Open);
+        playUiSound("enter-room");
+        void replaceInputDevice(currentSettings.preferredInputDeviceId, { initial: true });
         if (isPrivateRoomId(channelId))
           void shanghaoCore.rooms.rememberJoined(channelId).catch(() => {
             pushToast({
               tone: "warning",
               title: "房间已进入，最近记录未保存",
-              description: "本地记录无法写入，可在诊断中检查存储权限。",
+              description: "本地记录无法写入。可在「关于上号」导出日志。",
             });
           });
-        const cachedMessages = await chatHistoryPromise;
-        mergeChatHistory(cachedMessages);
+        void chatHistoryPromise.then((cachedMessages) => {
+          if (roomSessionOwnership.owns(generation)) mergeChatHistory(cachedMessages);
+        });
       } catch (error) {
         roomSessionOwnership.record("join_failed", generation);
         if (!roomSessionOwnership.owns(generation)) return;
@@ -988,18 +911,23 @@ export const useRoomState = () => {
 
   const replaceInputDevice = (
     preferredInputDeviceId?: string,
-    { reuseCapture = false }: { reuseCapture?: boolean } = {},
+    { reuseCapture = false, initial = false }: { reuseCapture?: boolean; initial?: boolean } = {},
   ) => {
     const client = activeClientRef.current;
     const generation = roomSessionOwnership.current();
     const ownsSwitch = () =>
-      activeClientRef.current === client && roomSessionOwnership.owns(generation);
+      activeClientRef.current === client &&
+      roomSessionOwnership.owns(generation) &&
+      useRoomStore.getState().room.lifecycleState === RoomLifecycleState.Open;
     const operation = inputDeviceSwitchQueue.then(async () => {
       const currentSettings = useSettingsStore.getState().settings;
       if (!client || !ownsSwitch() || !currentSettings) {
         return false;
       }
-      roomSessionOwnership.record("device_switch_started", generation);
+      roomSessionOwnership.record(
+        initial ? "microphone_acquire_started" : "device_switch_started",
+        generation,
+      );
 
       let pendingSource: Awaited<ReturnType<typeof acquireAudioSource>> | undefined;
       let pendingProcessor: ProcessedMicrophoneStream | undefined;
@@ -1086,7 +1014,10 @@ export const useRoomState = () => {
           preferredInputDeviceId,
           ...diagnostics,
         });
-        roomSessionOwnership.record("device_switch_applied", generation);
+        roomSessionOwnership.record(
+          initial ? "microphone_acquired" : "device_switch_applied",
+          generation,
+        );
         return true;
       } catch (error) {
         if (!ownsSwitch()) {
@@ -1095,15 +1026,20 @@ export const useRoomState = () => {
         }
         roomSessionOwnership.record("device_switch_failed", generation);
         const description = normalizeRoomError(error, copy.microphoneUnavailable);
-        await writeRendererLog("devices", "error", "Failed to switch input device", {
+        void writeRendererLog("devices", "error", "Failed to open input device", {
           preferredInputDeviceId,
           error: error instanceof Error ? error.message : String(error),
         });
-        pushToast({
-          tone: "danger",
-          title: copy.inputDeviceFailed,
-          description,
-        });
+        if (initial) useAudioStore.getState().setListenOnly(true);
+        pushToast(
+          initial
+            ? {
+                tone: "warning",
+                title: "已以静音状态进入",
+                description: "麦克风暂时不可用。可以先听和聊天，恢复设备后点击麦克风重试。",
+              }
+            : { tone: "danger", title: copy.inputDeviceFailed, description },
+        );
         playUiSound("mic-error");
         return false;
       } finally {
@@ -1123,13 +1059,16 @@ export const useRoomState = () => {
     stopQuickMessageMusic();
     if (activeLeavePromise) return activeLeavePromise;
     roomSessionOwnership.record("leave_requested");
+    closeRoomAudio();
     const pendingJoin = activeJoinPromise;
     activeLeavePromise = (async () => {
       try {
         if (pendingJoin) await pendingJoin.catch(() => undefined);
         roomSessionOwnership.advance();
-        playUiSound("leave-room");
+        closeRoomAudio();
+        setRoomAction("leaving");
         setLifecycleState(RoomLifecycleState.Closing);
+        playUiSound("leave-room");
         const settings = useSettingsStore.getState().settings;
         if (settings) {
           useRoomStore.getState().syncLocalProfile({
@@ -1139,8 +1078,10 @@ export const useRoomState = () => {
             avatarId: settings.avatarId,
           });
         }
-        await cleanupPreviousSession({ resetStore: true });
-        useAppStore.getState().navigate("home");
+        await cleanupPreviousSession({
+          resetStore: true,
+          onMediaReleased: () => useAppStore.getState().navigate("home"),
+        });
         roomSessionOwnership.record("leave_completed");
       } catch (error) {
         await writeRendererLog("signaling", "error", "Failed to leave room cleanly", {
@@ -1148,6 +1089,7 @@ export const useRoomState = () => {
         });
         throw error;
       } finally {
+        setRoomAction("idle");
         activeLeavePromise = undefined;
       }
     })();

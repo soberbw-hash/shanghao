@@ -1,14 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  AI_ASR_MODEL_NAMES,
-  AI_ASR_MODEL_GROUPS,
-  DEFAULT_AI_ASR_MODEL_ID,
-  type AiAsrModelId,
-  type AiModelStatus,
-} from "@private-voice/shared";
+import { type AiModelStatus } from "@private-voice/shared";
 import { useSettingsStore } from "../../store/settingsStore";
 import { CloudLocalAssistControl } from "./CloudLocalAssistControl";
-import { asrModelLabel } from "../../features/ai/asrModelLabel";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 
 /** Both settings pages commit the same provider and local-model preferences. */
@@ -73,18 +66,23 @@ export function RecordingTranscriptionModelSelect({
   }, []);
   const provider = settings?.aiTranscriptionProvider ?? "cloud";
   const selected =
-    provider === "local" ? `local:${settings?.aiAsrModel ?? DEFAULT_AI_ASR_MODEL_ID}` : provider;
+    provider === "cloud" && (settings?.isAiCloudLocalAssistEnabled ?? true) ? "hybrid" : provider;
   const modeLabel =
-    provider === "local" ? "本地转录" : provider === "custom" ? "自定义转录" : "云端转录";
+    selected === "hybrid"
+      ? "云端 + 本地辅助"
+      : selected === "local"
+        ? "离线模型"
+        : selected === "custom"
+          ? "自定义语音 API"
+          : "云端";
   const choose = async (value: string) => {
     if (disabled || saving || modelInUse) return;
     setSaving(true);
     try {
-      await saveSettings(
-        value.startsWith("local:")
-          ? { aiTranscriptionProvider: "local", aiAsrModel: value.slice(6) as AiAsrModelId }
-          : { aiTranscriptionProvider: value === "custom" ? "custom" : "cloud" },
-      );
+      await saveSettings({
+        aiTranscriptionProvider: value === "custom" ? "custom" : "cloud",
+        isAiCloudLocalAssistEnabled: value === "hybrid",
+      });
     } catch (error) {
       onError(error instanceof Error ? error.message : "模型切换失败，请重试。");
     } finally {
@@ -96,12 +94,7 @@ export function RecordingTranscriptionModelSelect({
       <summary>
         <SlidersHorizontal aria-hidden="true" />
         <span>转录设置</span>
-        <small>
-          {modeLabel}
-          {provider !== "local" && (settings?.isAiCloudLocalAssistEnabled ?? true)
-            ? " + 本地辅助"
-            : ""}
-        </small>
+        <small>{modeLabel}</small>
         <ChevronDown aria-hidden="true" />
       </summary>
       <div className="recording-model-controls">
@@ -116,23 +109,10 @@ export function RecordingTranscriptionModelSelect({
             title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
             onChange={(event) => void choose(event.target.value)}
           >
-            <option value="cloud">内置云端转录</option>
-            <option value="custom">自定义 API</option>
-            {AI_ASR_MODEL_GROUPS.map(({ label, ids }) => (
-              <optgroup label={`本地 · ${label}`} key={label}>
-                {ids.map((id) => {
-                  const name = AI_ASR_MODEL_NAMES[id];
-                  const model = models.find((candidate) => candidate.id === id);
-                  const ready = Boolean(model?.activeRevision && model.runtimeReady);
-                  return (
-                    <option key={id} value={`local:${id}`} disabled={!ready}>
-                      {asrModelLabel(id, name)}
-                      {ready ? "" : "（请先在 AI 功能中准备）"}
-                    </option>
-                  );
-                })}
-              </optgroup>
-            ))}
+            <option value="cloud">云端</option>
+            <option value="hybrid">云端 + 本地辅助</option>
+            <option value="custom">自定义语音 API</option>
+            {provider === "local" && <option value="local">离线模型</option>}
           </select>
         </label>
         <CloudLocalAssistControl

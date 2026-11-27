@@ -66,6 +66,15 @@ export const RoomChatPanel = memo(
     const tabId = useId();
     const roomId = useRoomStore((state) => state.room.roomId);
     useEffect(() => setTab("chat"), [roomId]);
+    const requestedChat = useAppStore((state) => state.chatNoticeTarget);
+    const [focusedMessage, setFocusedMessage] = useState<typeof requestedChat>();
+    useEffect(() => {
+      if (!requestedChat || requestedChat.roomId !== roomId) return;
+      setTab("chat");
+      setFocusedMessage(requestedChat);
+      if (isRoomAskOpen) onCloseRoomAi();
+      useAppStore.setState({ chatNoticeTarget: undefined });
+    }, [roomId, requestedChat, isRoomAskOpen, onCloseRoomAi]);
     const messages = useRoomStore((state) => state.chatMessages);
     const latestGameAssistantMessageId = messages
       .slice(-100)
@@ -142,6 +151,7 @@ export const RoomChatPanel = memo(
         }
         alternateContentActive={tab === "chronicle"}
         contentTabId={tabId}
+        focusedMessage={focusedMessage?.roomId === roomId ? focusedMessage : undefined}
         className="h-full"
         messages={messages}
         chatInput={chatInput}

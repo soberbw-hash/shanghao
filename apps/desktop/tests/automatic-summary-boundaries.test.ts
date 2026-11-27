@@ -70,7 +70,8 @@ for (const kind of ["paused", "partial", "replaced", "disabled", "complete"] as 
       store: {
         get: async () => (kind === "replaced" ? { ...result, taskId: "new-task" } : result),
       },
-      isAutomaticTranscriptionEnabled: () => kind !== "disabled",
+      isAutomaticTranscriptionEnabled: () => true,
+      isAutomaticOrganizationEnabled: () => kind !== "disabled",
       process: async (request: VoiceMemoryProcessRequest) => {
         calls.push(request);
         return result;

@@ -19,7 +19,7 @@ test("cloud assistance defaults on and preserves explicit choices across provide
   assert.equal(fresh.aiTranscriptionProvider, "cloud");
   assert.equal(fresh.isAiCloudLocalAssistEnabled, true);
   assert.equal(fresh.aiCloudLocalAsrModel, "qwen3-asr-0.6b-force");
-  assert.equal(fresh.isAiAutoTranscribeEnabled, true);
+  assert.equal("isAiAutoTranscribeEnabled" in fresh, false);
   const chosen = migrateSettings({
     ...defaultSettings,
     isAiCloudLocalAssistEnabled: true,
@@ -94,7 +94,7 @@ test("friend notifications and local game markers default on and preserve explic
     isRecordingAutoGameMarkerEnabled: false,
   }).settings;
   assert.equal(saved.isFriendOnlineNotificationEnabled, false);
-  assert.equal(saved.isRecordingAutoGameMarkerEnabled, false);
+  assert.equal(saved.isRecordingAutoGameMarkerEnabled, true);
 });
 
 test("personal ASR game vocabulary survives settings migration and drops invalid values", () => {
@@ -263,43 +263,18 @@ test("friend loudness balance is on by default and explicit choices survive migr
 });
 
 test("voice transcription defaults to resource-safe automation and preserves saved modes", () => {
-  assert.equal(defaultSettings.aiProcessingMode, "low_resource");
-  assert.equal(migrateSettings({}).settings.aiProcessingMode, "low_resource");
-  assert.equal(defaultSettings.isAiAutoTranscribeEnabled, true);
-  assert.equal(migrateSettings({}).settings.isAiAutoTranscribeEnabled, true);
-  assert.equal(
-    migrateSettings({ isAiAutoTranscribeEnabled: true }).settings.isAiAutoTranscribeEnabled,
-    true,
-  );
-  assert.equal(
-    migrateSettings({ isAiAutoTranscribeEnabled: false }).settings.isAiAutoTranscribeEnabled,
-    false,
-  );
-  assert.equal(migrateSettings({ aiProcessingMode: "manual" }).settings.aiProcessingMode, "manual");
-  assert.equal(
-    migrateSettings({
-      settingsSchemaVersion: 34,
-      aiProcessingMode: "after_game",
-      isAiAutoTranscribeEnabled: false,
-    }).settings.aiProcessingMode,
-    "manual",
-  );
-  assert.equal(
-    migrateSettings({
-      settingsSchemaVersion: 34,
-      aiProcessingMode: "after_game",
-      isAiAutoTranscribeEnabled: true,
-    }).settings.aiProcessingMode,
-    "after_game",
-  );
-  assert.equal(
-    migrateSettings({
-      ...defaultSettings,
-      aiProcessingMode: "immediate",
-      isAiAutoTranscribeEnabled: true,
-    }).settings.aiProcessingMode,
-    "immediate",
-  );
+  assert.equal(defaultSettings.aiProcessingMode, "after_game");
+  for (const legacy of [true, false]) {
+    const settings = migrateSettings({
+      isAiAutoTranscribeEnabled: legacy,
+      aiProcessingMode: "manual",
+    }).settings;
+    assert.equal(settings.aiProcessingMode, "after_game");
+    assert.equal("isAiAutoTranscribeEnabled" in settings, false);
+  }
+  for (const mode of ["immediate", "low_resource", "after_game"]) {
+    assert.equal(migrateSettings({ aiProcessingMode: mode }).settings.aiProcessingMode, mode);
+  }
 });
 
 test("recording library cleanup defaults to 20 GB and upgrades the old 10 GB default", () => {
@@ -582,7 +557,7 @@ test("recordings always summarize and legacy automatic upload is disabled", () =
   assert.equal(initial.isAiAutoUploadEnabled, false);
   assert.equal(
     migrateSettings({ isAiAutoOrganizeEnabled: false }).settings.isAiAutoOrganizeEnabled,
-    true,
+    false,
   );
   assert.equal(migrateSettings({}).settings.isRecordingWasteAutoCleanupEnabled, true);
   assert.equal(

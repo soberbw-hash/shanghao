@@ -3,9 +3,12 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { app, BrowserWindow, Notification, Tray, dialog, net, protocol } from "electron";
+import { app, BrowserWindow, Tray, dialog, net, protocol } from "electron";
 
-import { IPC_CHANNELS, type DeepLinkInvite } from "@private-voice/shared";
+import { IPC_CHANNELS, type DeepLinkInvite, type RecordingNotice } from "@private-voice/shared";
+import { savedReplayNotice, transcriptNotice } from "./recording-notices";
+import { canShowDesktopNotification, showDesktopNotification } from "./desktop-notifications";
+import { systemNotificationDelivery } from "./notification-delivery";
 
 import { DiagnosticsService } from "./diagnostics";
 import { AccountDesktopService } from "./account-service";
@@ -20,6 +23,7 @@ import { createTrayController } from "./tray";
 import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
 import {
+  isVisualCapture,
   repairDevelopmentShortcuts,
   watchDevelopmentShortcuts,
   windowsAppUserModelId,
@@ -135,13 +139,44 @@ const showWindow = () => {
 };
 
 const showNetworkPermissionNotice = (title: string, body: string): void => {
-  if (!settingsStore?.getSnapshot().isSystemNotificationEnabled || !Notification.isSupported()) {
+  if (!settingsStore?.getSnapshot().isSystemNotificationEnabled || !canShowDesktopNotification()) {
     return;
   }
-  const notification = new Notification({ title, body, silent: false });
-  notification.on("click", showWindow);
-  notification.show();
+  showDesktopNotification(
+    { title, body, actions: [{ label: "打开上号", run: showWindow }] },
+    showWindow,
+    (reason) => sendToWindow(mainWindow, IPC_CHANNELS.app.notificationFailed, reason),
+  );
 };
+
+function deliverRecordingNotice(notice: RecordingNotice): void {
+  try {
+    if (mainWindow?.isFocused() && mainWindow.isVisible()) {
+      sendToWindow(mainWindow, IPC_CHANNELS.app.recordingNotice, notice, false);
+      return;
+    }
+    if (!settingsStore?.getSnapshot().isSystemNotificationEnabled || !canShowDesktopNotification())
+      return;
+    const open = () => {
+      showWindow();
+      sendToWindow(mainWindow, IPC_CHANNELS.app.recordingNotice, notice, true);
+    };
+    showDesktopNotification(
+      {
+        title: notice.title,
+        body: notice.body,
+        silent: true,
+        artwork: notice.kind,
+        actions: [{ label: notice.kind === "voice-replay" ? "查看片段" : "查看文字稿", run: open }],
+      },
+      open,
+      (reason) => sendToWindow(mainWindow, IPC_CHANNELS.app.notificationFailed, reason),
+    );
+  } catch {
+    // Notification failures must never turn a durable save into a failed recording job.
+    sendToWindow(mainWindow, IPC_CHANNELS.app.notificationFailed, "failed");
+  }
+}
 
 const inspectWindowsNetworkPermissions = async (): Promise<void> => {
   if (!app.isPackaged || !platformService.isWindows || !diagnostics) return;
@@ -599,6 +634,7 @@ const bootstrap = async (): Promise<void> => {
           })),
       };
     },
+    (clip) => deliverRecordingNotice(savedReplayNotice(clip)),
   );
   const freeTokenRuntime = new FreeTokenManagedRuntime(aiRuntimeDirectory, {
     fetcher: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
@@ -668,13 +704,14 @@ const bootstrap = async (): Promise<void> => {
       ),
     ),
     (payload) => diagnostics?.writeLog(payload) ?? Promise.resolve(),
-    () => settingsStore?.getSnapshot().isAiAutoTranscribeEnabled ?? false,
+    () => true,
     transcriptionProvider,
     () => settingsStore?.getSnapshot().aiTranscriptionProvider ?? "cloud",
-    () => true,
+    () => settingsStore?.getSnapshot().isAiAutoOrganizeEnabled ?? true,
     () => settingsStore?.getSnapshot().isAiCloudLocalAssistEnabled === true,
     () => settingsStore?.getSnapshot().aiCloudLocalAsrModel ?? "qwen3-asr-0.6b-force",
     () => settingsStore?.getSnapshot().aiAsrGameLexicon ?? [],
+    (record) => deliverRecordingNotice(transcriptNotice(record)),
   );
   const automaticBacklog = createAutomaticRecordingBacklog({
     settings: () => settingsStore!.getSnapshot(),
@@ -904,6 +941,7 @@ const bootstrap = async (): Promise<void> => {
   app.on("before-quit", () => {
     voiceMemory.stop();
     aiModelManager?.stop();
+    systemNotificationDelivery.closeAll();
     prepareForQuit("before-quit");
   });
 
@@ -932,7 +970,7 @@ const bootstrap = async (): Promise<void> => {
   });
 };
 
-if (platformService.isWindows) app.setAppUserModelId(windowsAppUserModelId());
+if (platformService.isWindows && !isVisualCapture()) app.setAppUserModelId(windowsAppUserModelId());
 protocol.registerSchemesAsPrivileged([
   {
     scheme: RECORDING_MEDIA_PROTOCOL,
@@ -943,11 +981,13 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
 ]);
-if (process.defaultApp) {
-  app.removeAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
-  app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL, process.execPath, [app.getAppPath()]);
-} else {
-  app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
+if (!isVisualCapture()) {
+  if (process.defaultApp) {
+    app.removeAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
+    app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL, process.execPath, [app.getAppPath()]);
+  } else {
+    app.setAsDefaultProtocolClient(SHANGHAO_PROTOCOL);
+  }
 }
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.commandLine.appendSwitch(

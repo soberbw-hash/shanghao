@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { selectAppProfileSettings } from "../features/settings/settingsProjection";
 
@@ -87,6 +87,7 @@ export const App = () => {
   }, []);
 
   const currentPage = useAppStore((state) => state.currentPage);
+  const reduceMotion = useReducedMotion();
   const temporaryRoomId = useRoomStore((state) => state.room.temporaryRoom?.roomId);
   const roomLifecycle = useRoomStore((state) => state.room.lifecycleState);
   useEffect(() => {
@@ -95,7 +96,14 @@ export const App = () => {
       updateVisualWarmupActivity(state.roomAction !== "idle", state.currentPage);
     };
     sync();
-    return useAppStore.subscribe(sync);
+    return useAppStore.subscribe((state, previous) => {
+      sync();
+      if (
+        previous.roomAction === "idle" &&
+        (state.roomAction === "starting" || state.roomAction === "joining")
+      )
+        void loadRoomPage().catch(() => undefined);
+    });
   }, []);
   const [hasOpenedSettings, setHasOpenedSettings] = useState(currentPage === "settings");
   const settingsReturnTo = useAppStore((state) => state.settingsReturnTo);
@@ -356,7 +364,7 @@ export const App = () => {
             <motion.div
               key={basePage}
               className="app-route-motion"
-              initial={{ opacity: 0, y: 4 }}
+              initial={reduceMotion ? false : { opacity: 0.78, y: 3 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{
                 duration: APPLE_MOTION_DURATION.panel,
@@ -373,7 +381,9 @@ export const App = () => {
               }`}
               aria-hidden={!isSettingsOpen || undefined}
             >
-              <SettingsPage isActive={isSettingsOpen} />
+              <Suspense fallback={<StartupSplashPage message="正在打开设置…" />}>
+                <SettingsPage isActive={isSettingsOpen} />
+              </Suspense>
             </div>
           ) : null}
         </div>

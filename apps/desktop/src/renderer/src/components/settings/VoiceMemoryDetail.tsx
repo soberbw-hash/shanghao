@@ -151,6 +151,8 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   if (message.includes("custom_ai_request_failed")) {
     return "转录文字已经保留。自定义 API 暂时无法连接，请检查地址、模型和密钥。";
   }
+  if (message.includes("gpu_memory_pressure"))
+    return "可用显存不足，释放显存后可继续，也可切换到云端。";
   if (message.includes("manual_required:long_recording")) {
     return "这条录音超过 30 分钟，为避免无人操作时长期占用电脑，已停止自动转录。需要时请点“继续”。";
   }
@@ -165,22 +167,6 @@ const describeError = (message: string, transcriptionFinished: boolean): string 
   if (message.includes("fusion_unreviewed"))
     return "两份原稿存在差异或校对未完成，原稿与保留稿均已保留，请回听核对。";
   if (message.includes("fusion_")) return "融合校对未完成，两份原稿已保留，可以继续重试。";
-  if (message.includes("recording_recap_join_matching_room"))
-    return "请先进入这条录音对应的房间，再上传整理结果。";
-  if (message.includes("recording_recap_join_required"))
-    return "请先进入这条录音所属的房间，再上传整理结果。";
-  if (message.includes("recording_recap_room_invalid"))
-    return "这条旧录音没有可确认的所属房间，无法上传；本地结果已保留。";
-  if (message.includes("recording_recap_unsupported"))
-    return "当前房间服务器版本较旧，暂时不能接收整理结果。";
-  if (
-    message.includes("invalid_report_date") ||
-    message.includes("recording_recap_date_unavailable")
-  )
-    return "录音日期不在每日总结最近 14 天的范围内，本地整理结果已保留。";
-  if (message.includes("recording_recap_storage_failed"))
-    return "服务器暂时没有保存成功，本地整理结果已保留，请稍后重试。";
-  if (message.includes("recording_recap")) return "上传没有完成，请检查房间连接后重试。";
   if (
     message.includes("custom_ai_invalid_json") ||
     message.includes("custom_ai_response_truncated") ||
@@ -203,11 +189,9 @@ export const VoiceMemoryDetail = ({
   selectedAsrModel,
   onSeek,
 }: VoiceMemoryDetailProps) => {
+  const autoOrganize = useSettingsStore((state) => state.settings?.isAiAutoOrganizeEnabled ?? true);
   const transcriptionProvider = useSettingsStore(
     (state) => state.settings?.aiTranscriptionProvider ?? "cloud",
-  );
-  const autoTranscribe = useSettingsStore(
-    (state) => state.settings?.isAiAutoTranscribeEnabled ?? false,
   );
   const [record, setRecordState] = useState<VoiceMemoryRecord>();
   const [viewChoice, setViewChoice] = useState<{ id: string; choice: TranscriptViewChoice }>();
@@ -287,7 +271,7 @@ export const VoiceMemoryDetail = ({
         roomName,
         manual: true,
         transcribe: action === "transcribe",
-        organize: true,
+        organize: action !== "transcribe" || autoOrganize,
         fuse: action === "fuse",
         restartTranscription: action === "transcribe",
         localAsrContext: action === "transcribe" ? record?.localAsrContext : undefined,
@@ -439,6 +423,12 @@ export const VoiceMemoryDetail = ({
           录音已保存，等待在“AI 功能”中配置转录或整理服务、准备所选本地模型，然后自动继续。
         </p>
       ) : null}
+      {record.errorMessage === "deferred:waiting_for_game_to_finish" && (
+        <p role="status">录音已保存，游戏结束后自动转录。</p>
+      )}
+      {record.errorMessage === "deferred:gpu_memory_pressure" && (
+        <p role="status">正在等显存释放，也可以改用云端转录。</p>
+      )}
       {record.organizationSinglePassRetry?.status === "unrecoverable" ? (
         <p role="status">多次尝试后仍无法整理，请点重新整理。</p>
       ) : null}
@@ -447,8 +437,7 @@ export const VoiceMemoryDetail = ({
           disabled={busy || Boolean(queuedAction) || processing || comparisonOwnsTask}
           onError={setError}
         />
-        {autoTranscribe &&
-        record.remoteTranscriptionRetry?.nextAttemptAt &&
+        {record.remoteTranscriptionRetry?.nextAttemptAt &&
         /^deferred:(?:cloud|custom)_asr_(?:http_|network_error|timeout)/.test(
           record.errorMessage ?? "",
         ) ? (
@@ -556,15 +545,6 @@ export const VoiceMemoryDetail = ({
         </p>
       ) : null}
 
-      {record.organizationPublication?.status === "failed" ? (
-        <p className="voice-memory-error" role="alert">
-          整理摘要已保存在本机。
-          {describeError(
-            record.organizationPublication.errorCode ?? "recording_recap_publish_failed",
-            true,
-          )}
-        </p>
-      ) : null}
       {textView && (!invalidTranscript || transcriptViewOptions(record).length > 1) ? (
         <TranscriptSourceControl
           view={textView}
@@ -577,7 +557,6 @@ export const VoiceMemoryDetail = ({
         <>
           {record.transcriptionFusion?.status === "failed" &&
           !(
-            autoTranscribe &&
             record.errorMessage?.startsWith("deferred:") &&
             record.remoteTranscriptionRetry?.nextAttemptAt
           ) ? (

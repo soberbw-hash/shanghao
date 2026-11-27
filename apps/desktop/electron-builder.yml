@@ -39,6 +39,11 @@ files:
   - "!node_modules/@fontsource-variable/**"
   - "!node_modules/react-virtuoso/**"
   - "!node_modules/zustand/**"
+  # The packaged shortcut handler loads dist/index.js and its prebuilt addon.
+  - "!node_modules/uiohook-napi/libuiohook/**"
+  - "!node_modules/uiohook-napi/src/**"
+  - "!node_modules/uiohook-napi/dist/prebuild-test-noop.js"
+  - "!node_modules/ffmpeg-static/example.js"
   # Only win32-x64 is shipped. Keep its uiohook addon for mouse shortcuts.
   - "!node_modules/uiohook-napi/prebuilds/win32-arm64/**"
   - "!node_modules/uiohook-napi/prebuilds/darwin-arm64/**"
@@ -54,6 +59,8 @@ files:
   - "!node_modules/@cloudbase/js-sdk/miniprogram_dist/**"
   - "package.json"
 extraResources:
+  - from: src/renderer/src/assets/notices
+    to: notices
   - from: ../../LICENSE.md
     to: licenses/SHANGHAO-LICENSE.md
   - from: ../../NOTICE.md

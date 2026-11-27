@@ -13,7 +13,6 @@ import {
   dialog,
   ipcMain,
   nativeImage,
-  Notification,
   powerMonitor,
   screen,
   session,
@@ -29,6 +28,8 @@ import {
   IPC_CHANNELS,
   getQuickMessageShortcutSlots,
   isAccountAvatarPresetId,
+  isStoredRoomId,
+  isTemporaryRoomSessionId,
   type AccountAvatarUpdateRequest,
   type AccountLoginRequest,
   type AccountPasswordResetRequest,
@@ -94,7 +95,8 @@ import { readRecordingLibrary, renameRecording, setRecordingFavorite } from "./r
 import { readRelayStatus } from "./relay-status";
 import { buildRuntimeEventTimeline } from "./runtime-event-timeline";
 import { sendToWindow } from "./safe-web-contents";
-import { systemNotificationDelivery } from "./notification-delivery";
+import { showDesktopNotification } from "./desktop-notifications";
+import { notificationWebLink } from "./notification-web-link";
 import { registerOverlayQuickMusicMuteHandler } from "./overlay-quick-music-ipc";
 import { registerRecordingLocationIpcHandlers } from "./recording-location-ipc";
 import { registerRecordingMarkerIpcHandler } from "./recording-marker-ipc";
@@ -111,7 +113,6 @@ import { OverlayWindowController } from "./overlay-window";
 import { GameDetectionController } from "./game-detection";
 import { AiModelManager } from "./ai-model-manager";
 import { AiVoiceMemoryService } from "./ai-voice-memory-service";
-import { createRecordingRecapUpload } from "./recording-recap-upload";
 import { bindRecordingProcessOrigin } from "./recording-process-origin";
 import { CustomAiProviderStore } from "./custom-ai-provider-store";
 import { AiTranscriptionProviderStore } from "./ai-transcription-provider-store";
@@ -327,9 +328,6 @@ export const registerIpcHandlers = ({
   aiModelConfigurationUsage.onChange(() => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.ai.status, aiModels.getSnapshot());
   });
-  const recapUpload = createRecordingRecapUpload({ voiceMemory, signalingClient }, () =>
-    settingsStore.getSnapshot(),
-  );
   voiceMemory.onStatus((record) => {
     sendToWindow(getMainWindow(), IPC_CHANNELS.ai.voiceMemoryStatus, record);
   });
@@ -368,18 +366,59 @@ export const registerIpcHandlers = ({
 
   ipcMain.handle(
     IPC_CHANNELS.app.notify,
-    async (_event, payload: Parameters<DesktopApi["app"]["notify"]>[0]): Promise<void> => {
+    async (event, payload: Parameters<DesktopApi["app"]["notify"]>[0]): Promise<void> => {
       const title = requireString(payload?.title, 80, "notification_title");
       const body = requireString(payload?.body, 180, "notification_body");
       const mainWindow = getMainWindow();
-      if (payload.attention === true) bringWindowToFront(mainWindow, true);
-      if (payload.shakeWindow === true) shakeMainWindow(mainWindow);
+      const room = payload.room;
+      const foreground = mainWindow?.isFocused() && mainWindow.isVisible();
+      if (
+        room &&
+        (event.sender !== mainWindow?.webContents ||
+          event.senderFrame !== event.sender.mainFrame ||
+          (!isStoredRoomId(room.id) && !isTemporaryRoomSessionId(room.id)) ||
+          !["knock", "chat", "presence"].includes(room.kind))
+      )
+        return;
+      if (payload.attention === true && (!room || foreground)) bringWindowToFront(mainWindow, true);
+      if (payload.shakeWindow === true && (!room || foreground)) shakeMainWindow(mainWindow);
       if (payload.showNotification === false) return;
-      if (!Notification.isSupported()) return;
-      const notification = new Notification({ title, body, silent: payload.silent === true });
-      systemNotificationDelivery.show(
-        notification,
-        () => bringWindowToFront(getMainWindow()),
+      if (!settingsStore.getSnapshot().isSystemNotificationEnabled || (room && foreground)) return;
+      const link = notificationWebLink(room?.link);
+      const accountId = accounts.getSnapshot().profile?.userId;
+      const server = settingsStore.getSnapshot().relayServerUrl;
+      const sameSession = () =>
+        accountId === accounts.getSnapshot().profile?.userId &&
+        server === settingsStore.getSnapshot().relayServerUrl;
+      const openRoom = () => {
+        bringWindowToFront(getMainWindow());
+        if (room && sameSession())
+          sendToWindow(getMainWindow(), IPC_CHANNELS.app.backgroundCommand, {
+            kind: "enter-room",
+            roomId: room.id,
+            chat: room.kind === "chat",
+            messageId:
+              typeof room.messageId === "string" && room.messageId.length <= 160
+                ? room.messageId
+                : undefined,
+          });
+      };
+      const actions = [
+        {
+          label: room ? (room.kind === "chat" ? "查看消息" : "进入房间") : "打开上号",
+          run: openRoom,
+        },
+      ];
+      if (link)
+        actions.push({
+          label: "打开链接",
+          run: () => {
+            if (sameSession()) void shell.openExternal(link).catch(() => undefined);
+          },
+        });
+      showDesktopNotification(
+        { title, body, silent: payload.silent === true, actions, imageDataUrl: room?.imageDataUrl },
+        openRoom,
         (reason) => {
           sendToWindow(getMainWindow(), IPC_CHANNELS.app.notificationFailed, reason);
           void diagnostics
@@ -694,7 +733,7 @@ export const registerIpcHandlers = ({
           );
           if (
             [
-              "isAiAutoTranscribeEnabled",
+              "isAiAutoOrganizeEnabled",
               "recordingSaveDirectory",
               "aiTranscriptionProvider",
               "isAiCloudLocalAssistEnabled",
@@ -942,7 +981,7 @@ export const registerIpcHandlers = ({
       localWeather.getSnapshot(request),
   );
   ipcMain.handle(IPC_CHANNELS.ai.getSnapshot, async (): Promise<AiVoiceMemorySnapshot> =>
-    aiModels.getSnapshot(),
+    aiModels.refreshHardwareSnapshot(),
   );
   ipcMain.handle(
     IPC_CHANNELS.ai.controlModel,
@@ -998,11 +1037,6 @@ export const registerIpcHandlers = ({
     IPC_CHANNELS.ai.clearTranscriptionResults,
     async (_event, recordingId: string): Promise<VoiceMemoryRecord> =>
       voiceMemory.clearTranscriptionResults(requireString(recordingId, 2_048, "recording_id")),
-  );
-  ipcMain.handle(
-    IPC_CHANNELS.ai.publishOrganization,
-    async (_event, recordingIdValue: string): Promise<VoiceMemoryRecord> =>
-      recapUpload.upload(requireString(recordingIdValue, 2_048, "recording_id")),
   );
   ipcMain.handle(IPC_CHANNELS.ai.pauseTask, async (_event, recordingId: string): Promise<void> => {
     await voiceMemory.pause(requireString(recordingId, 2_048, "recording_id"));

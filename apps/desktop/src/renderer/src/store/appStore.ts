@@ -6,7 +6,7 @@ import { enqueueToast } from "../features/notifications/toastQueue";
 
 export type AppPage = "home" | "room" | "settings";
 export type SettingsReturnTarget = "home" | "room";
-export type RoomActionState = "idle" | "starting" | "joining";
+export type RoomActionState = "idle" | "starting" | "joining" | "leaving";
 export type ToastTone = "neutral" | "success" | "warning" | "danger";
 export type BootstrapPhase = "booting" | "checking-update" | "update-gate" | "recovery" | "ready";
 
@@ -27,7 +27,8 @@ export interface ToastMessage {
   persistent?: boolean;
   dedupeKey?: string;
   clipFilePath?: string;
-  cardKind?: "voice-replay" | "transcription" | "chronicle";
+  chatPreview?: { image?: string; link?: string };
+  cardKind?: "voice-replay" | "transcription" | "chronicle" | "knock";
 }
 
 export interface StartupIssue {
@@ -48,6 +49,7 @@ interface AppStoreState {
   startupIssue?: StartupIssue;
   requiredUpdate?: { requiredVersion: string; currentVersion: string };
   voiceMemoryOpenTarget?: VoiceMemoryOpenTarget;
+  chatNoticeTarget?: { roomId: string; messageId?: string };
   pendingRoomInvite?: string;
   pendingRoomInviteAutoJoin: boolean;
   setPendingRoomInvite: (roomId?: string, autoJoin?: boolean) => void;

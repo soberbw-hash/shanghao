@@ -34,7 +34,7 @@ test("home page keeps the full-screen entry with private room navigation", () =>
   assert.equal(source.includes("setServerTestResult(undefined);\n    try"), false);
 });
 
-test("room shell is shown only after microphone and signaling join succeed", () => {
+test("room shell and microphone open only after the relay admits the room", () => {
   const source = readFileSync(
     path.resolve(process.cwd(), "src/renderer/src/hooks/useRoomState.ts"),
     "utf8",
@@ -44,6 +44,10 @@ test("room shell is shown only after microphone and signaling join succeed", () 
 
   assert.notEqual(connectIndex, -1);
   assert.notEqual(navigateIndex, -1);
+  assert.ok(
+    source.indexOf("replaceInputDevice(currentSettings.preferredInputDeviceId", navigateIndex) >
+      navigateIndex,
+  );
   assert.equal(navigateIndex > connectIndex, true);
   assert.equal(
     source.slice(source.indexOf("const joinChannel ="), connectIndex).includes('navigate("room")'),

@@ -4,9 +4,6 @@ import type { RoomDockSettings } from "../components/room/RoomDock";
 import { useSettingsStore } from "../store/settingsStore";
 
 export const useRoomPageSettings = () => {
-  const isAiAutoTranscribeEnabled = useSettingsStore(
-    (state) => state.settings?.isAiAutoTranscribeEnabled,
-  );
   const isAiAutoOrganizeEnabled = useSettingsStore(
     (state) => state.settings?.isAiAutoOrganizeEnabled,
   );
@@ -78,7 +75,6 @@ export const useRoomPageSettings = () => {
   ]);
 
   return {
-    isAiAutoTranscribeEnabled,
     isAiAutoOrganizeEnabled,
     isAutoRecordOnJoinEnabled,
     isNoiseSuppressionEnabled,

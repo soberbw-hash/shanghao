@@ -4,6 +4,12 @@ import { MemberJoinState, type RoomMember } from "@private-voice/shared";
 export const hasRecordingCompanion = (members: readonly RoomMember[]): boolean =>
   members.some(
     (member) =>
+      member.isLocal &&
+      !member.isEmptySlot &&
+      (member.joinState === undefined || member.joinState === MemberJoinState.Joined),
+  ) &&
+  members.some(
+    (member) =>
       !member.isLocal &&
       !member.isEmptySlot &&
       (member.joinState === undefined || member.joinState === MemberJoinState.Joined),

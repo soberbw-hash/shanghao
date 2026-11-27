@@ -40,7 +40,6 @@ import type {
   ChatRejectedMessage,
   ChatRecallMessage,
   ChatHistoryMessage,
-  DailyRoomReportsMessage,
   RoomCollectionAddMessage,
   RoomCollectionRemoveMessage,
   ErrorMessage,
@@ -75,6 +74,7 @@ import {
 } from "./room-member-placement";
 import { SessionTokenStore } from "./session-token-store";
 import type { DailyRoomReportStore } from "./daily-room-report-store";
+import { dailyRoomReportPayload } from "./daily-room-commentary-service";
 import { CloudAiRuntime } from "./cloud-ai-runtime";
 import { AccountHttpController } from "./account-http-controller";
 import { PhoneMicBridge } from "./phone-mic-bridge";
@@ -1614,17 +1614,13 @@ export class SignalingServer extends EventEmitter {
       });
       return;
     }
-    const reports = await this.cloudAi.getDailyReports(message.targetRoomId);
-    const payload: DailyRoomReportsMessage = {
-      type: "daily_room_reports",
-      roomId: message.roomId,
-      targetRoomId: message.targetRoomId,
-      reports: reports.map((report) => ({
-        ...report,
-        roomName: this.roomManager.getRoom(message.targetRoomId)?.roomName ?? report.roomName,
-      })),
+    const send = (reports: Awaited<ReturnType<typeof this.cloudAi.getDailyReports>>) => {
+      const room = this.roomManager.getRoom(message.roomId);
+      if (room?.peers.getPeer(message.peerId)?.socket !== socket) return;
+      const roomName = this.roomManager.getRoom(message.targetRoomId)?.roomName;
+      this.safeSend(socket, dailyRoomReportPayload(message, reports, roomName));
     };
-    this.safeSend(socket, payload);
+    send(await this.cloudAi.getDailyReports(message.targetRoomId, send));
   }
   private async publishRecordingRecap(
     socket: WebSocket,

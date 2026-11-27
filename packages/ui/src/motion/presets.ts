@@ -1,3 +1,5 @@
+import type { MotionProps } from "framer-motion";
+
 import {
   APPLE_MOTION_DURATION,
   APPLE_MOTION_EASE,
@@ -16,4 +18,4 @@ export const gentleScale = {
   whileTap: { scale: 0.985, y: 0 },
   whileHover: { scale: 1.006, y: -1 },
   transition: { type: "spring", ...APPLE_MOTION_SPRING },
-};
+} satisfies MotionProps;

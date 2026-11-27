@@ -47,11 +47,3 @@
   background: #ef626b;
   box-shadow: 0 0 0 2px #f5faff;
 }
-.chat-content-stage {
-  position: relative;
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  isolation: isolate;
-  overflow: hidden;
-}

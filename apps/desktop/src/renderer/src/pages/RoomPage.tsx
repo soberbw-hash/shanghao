@@ -1,7 +1,7 @@
 import { useRecordingSpeakingTimeline } from "../hooks/useRecordingSpeakingTimeline";
 import { RemoteControlStatus } from "../components/room/RemoteControlStatus";
 import { MemberAvailabilityControls } from "../components/chat/MemberAvailabilityControls";
-import { hasRecordingCompanion } from "../features/recording/hasRecordingCompanion";
+import { useAutomaticRoomRecording } from "../features/recording/useAutomaticRoomRecording";
 import type { AwaySession } from "../features/room/autoAway";
 import { writeRendererLog } from "../utils/logger";
 import { useLocalInputRecovery } from "../features/audio/useLocalInputRecovery";
@@ -10,7 +10,6 @@ import { useMicrophoneProcessingUpdate } from "../features/audio/useMicrophonePr
 import { finishSavedRoomRecording } from "../features/recording/finishSavedRoomRecording";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  RecordingEncoderState,
   RecordingState,
   RoomConnectionState,
   type AppSettings,
@@ -132,7 +131,6 @@ export const RoomPage = () => {
     },
   });
   const {
-    isAiAutoTranscribeEnabled,
     isAiAutoOrganizeEnabled,
     isAutoRecordOnJoinEnabled,
     isNoiseSuppressionEnabled,
@@ -175,7 +173,8 @@ export const RoomPage = () => {
   const addRecordingMarker = useRecordingStore((state) => state.addMarker);
   const clearRecordingMarkers = useRecordingStore((state) => state.clearMarkers);
   const resetRecordingStatus = useRecordingStore((state) => state.resetStatus);
-  const { capability, startRecording, stopRecording, discardRecording } = useRecordingController();
+  const { capability, startRecording, stopRecording, discardRecording, recordingSource } =
+    useRecordingController();
   const micTest = useMicTest({
     inputDeviceId: roomDockSettings?.preferredInputDeviceId,
     outputDeviceId: roomDockSettings?.preferredOutputDeviceId,
@@ -215,10 +214,6 @@ export const RoomPage = () => {
   const detectedGameIconRef = useRef<string | undefined>(undefined);
   const detectedMusicRef = useRef<GameDetectionSnapshot["musicActivity"] | undefined>(undefined);
   const hasDetectionSnapshotRef = useRef(false);
-  const hasAutoStartedRecordingRef = useRef(false);
-  const isAutoRecordSuppressedRef = useRef(false);
-  const autoRecordRetryCountRef = useRef(0);
-  const autoRecordRetryTimerRef = useRef<number | undefined>(undefined);
   const moveLocalMemberRef = useRef(moveLocalMember);
   const channelSwitchInFlightRef = useRef(false);
   const recordingSpeakingTimelineRef = useRecordingSpeakingTimeline();
@@ -278,7 +273,7 @@ export const RoomPage = () => {
     [setMemberVolume],
   );
   const finishSavedRecording = async (
-    result: { filePath: string; recordingId?: string },
+    result: { filePath: string; recordingId?: string; hadMultipleParticipants?: boolean },
     markers = recordingMarkers,
   ) => {
     const speakingTimeline = recordingSpeakingTimelineRef.current;
@@ -288,7 +283,7 @@ export const RoomPage = () => {
       roomId: room.roomId,
       roomName: room.roomName,
       speakingTimeline,
-      autoTranscribe: isAiAutoTranscribeEnabled,
+      hadMultipleParticipants: result.hadMultipleParticipants,
       autoOrganize: isAiAutoOrganizeEnabled,
       api: window.desktopApi,
       toast: pushToast,
@@ -386,104 +381,20 @@ export const RoomPage = () => {
     activeQuickMusic,
   ]);
 
-  useEffect(() => {
-    hasAutoStartedRecordingRef.current = false;
-    isAutoRecordSuppressedRef.current = false;
-    autoRecordRetryCountRef.current = 0;
-    if (autoRecordRetryTimerRef.current !== undefined) {
-      window.clearTimeout(autoRecordRetryTimerRef.current);
-      autoRecordRetryTimerRef.current = undefined;
-    }
-  }, [room.roomId]);
-
-  const hasAutoRecordingCompanion = hasRecordingCompanion(room.members);
-  useEffect(() => {
-    const hasLiveMicrophone = localStream
-      ?.getAudioTracks()
-      .some((track) => track.readyState === "live");
-    const canAutoRecord =
-      isAutoRecordOnJoinEnabled &&
-      canSend &&
-      hasAutoRecordingCompanion &&
-      hasLiveMicrophone &&
-      recordingStatus.state === RecordingState.Idle &&
-      capability.encoderState !== RecordingEncoderState.Unsupported;
-
-    if (!canAutoRecord || hasAutoStartedRecordingRef.current || isAutoRecordSuppressedRef.current)
-      return;
-
-    const attemptAutoRecord = () => {
-      const currentRoom = useRoomStore.getState().room;
-      if (
-        isAutoRecordSuppressedRef.current ||
-        currentRoom.roomId !== room.roomId ||
-        !hasRecordingCompanion(currentRoom.members)
-      ) {
-        autoRecordRetryTimerRef.current = undefined;
-        return;
-      }
-      hasAutoStartedRecordingRef.current = true;
-      try {
-        clearRecordingMarkers();
-        const status = startRecording();
-        if (status.state !== RecordingState.Recording) {
-          throw new Error(status.message || "recording_start_failed");
-        }
-        autoRecordRetryCountRef.current = 0;
-        autoRecordRetryTimerRef.current = undefined;
-        // Joining already plays its entry cue. Automatic recording keeps its
-        // visual confirmation without layering a second startup sound on top.
-        pushToast({
-          tone: "neutral",
-          title: "已自动开始录音",
-          description: "退出频道时会直接保存到录音库。",
-        });
-        void window.desktopApi.app.writeLog({
-          category: "recording",
-          level: "info",
-          message: "auto_record_started",
-        });
-      } catch (error) {
-        hasAutoStartedRecordingRef.current = false;
-        autoRecordRetryCountRef.current += 1;
-        const retryCount = autoRecordRetryCountRef.current;
-        void window.desktopApi.app.writeLog({
-          category: "recording",
-          level: retryCount >= 5 ? "error" : "warn",
-          message: retryCount >= 5 ? "auto_record_start_failed" : "auto_record_start_retry",
-          context: {
-            retryCount,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        });
-        if (retryCount < 5) {
-          autoRecordRetryTimerRef.current = window.setTimeout(
-            attemptAutoRecord,
-            600 + retryCount * 250,
-          );
-        }
-      }
-    };
-
-    autoRecordRetryTimerRef.current = window.setTimeout(attemptAutoRecord, 450);
-    return () => {
-      if (autoRecordRetryTimerRef.current !== undefined) {
-        window.clearTimeout(autoRecordRetryTimerRef.current);
-        autoRecordRetryTimerRef.current = undefined;
-      }
-    };
-  }, [
+  const automaticRecording = useAutomaticRoomRecording({
+    roomId: room.roomId,
+    members: room.members,
+    connectionState: room.connectionState,
     canSend,
-    capability.encoderState,
-    clearRecordingMarkers,
     localStream,
-    pushToast,
-    recordingStatus.state,
-    room.roomId,
-    hasAutoRecordingCompanion,
     isAutoRecordOnJoinEnabled,
+    state: recordingStatus.state,
+    encoderState: capability.encoderState,
+    source: recordingSource,
     startRecording,
-  ]);
+    clearRecordingMarkers,
+    finish: () => finishOwnedRecordingRef.current(),
+  });
 
   useEffect(() => {
     void window.desktopApi.overlay.show().then(setIsOverlayOpen);
@@ -676,13 +587,7 @@ export const RoomPage = () => {
       if (status.state !== RecordingState.Recording) {
         throw new Error(status.message || "recording_start_failed");
       }
-      isAutoRecordSuppressedRef.current = true;
-      hasAutoStartedRecordingRef.current = true;
-      autoRecordRetryCountRef.current = 0;
-      if (autoRecordRetryTimerRef.current !== undefined) {
-        window.clearTimeout(autoRecordRetryTimerRef.current);
-        autoRecordRetryTimerRef.current = undefined;
-      }
+      automaticRecording.suppress();
       playUiSound("record-start");
     } catch {
       pushToast({ tone: "danger", title: "录音失败", description: "请稍后再试。" });
@@ -692,6 +597,7 @@ export const RoomPage = () => {
   const performLeave = async () => {
     if (isLeaving) return;
     setIsLeaving(true);
+    const leaving = leaveRoom();
     closeScreenSourcePicker();
 
     void Promise.allSettled([shutdownScreenShare(), window.desktopApi.overlay.close()]).then(
@@ -715,7 +621,7 @@ export const RoomPage = () => {
     );
 
     try {
-      await leaveRoom();
+      await leaving;
     } catch (error) {
       setIsLeaving(false);
       pushToast({
@@ -737,23 +643,8 @@ export const RoomPage = () => {
   const leave = async () => {
     if (isLeaving) return;
     if (recordingStatus.state === RecordingState.Recording) {
-      if (isAutoRecordOnJoinEnabled) {
-        setIsFinalizingRecording(true);
-        try {
-          const result = await stopRecording();
-          await finishSavedRecording(result, recordingMarkers);
-          clearRecordingMarkers();
-          resetRecordingStatus();
-          playUiSound("record-stop");
-          await performLeave();
-        } catch (error) {
-          pushToast({
-            tone: "danger",
-            ...toUserFacingError(error, "recording"),
-          });
-        } finally {
-          setIsFinalizingRecording(false);
-        }
+      if (recordingSource === "automatic") {
+        await performLeave();
         return;
       }
       setRecordingStopIntent("leave");
@@ -767,13 +658,7 @@ export const RoomPage = () => {
     if (!recordingStopIntent || isFinalizingRecording) return;
     const intent = recordingStopIntent;
     if (intent === "stop") {
-      isAutoRecordSuppressedRef.current = true;
-      hasAutoStartedRecordingRef.current = true;
-      autoRecordRetryCountRef.current = 0;
-      if (autoRecordRetryTimerRef.current !== undefined) {
-        window.clearTimeout(autoRecordRetryTimerRef.current);
-        autoRecordRetryTimerRef.current = undefined;
-      }
+      automaticRecording.suppress();
     }
     setIsFinalizingRecording(true);
     try {
@@ -866,7 +751,7 @@ export const RoomPage = () => {
     const currentChannelId = room.roomId;
     if (channelSwitchInFlightRef.current || currentChannelId === channelId) return;
 
-    if (recordingStatus.state === RecordingState.Recording) {
+    if (recordingStatus.state === RecordingState.Recording && recordingSource !== "automatic") {
       switchAfterRecordingRef.current = channelId;
       setRoomPickerOpen(false);
       setRecordingStopIntent("switch");
@@ -1280,6 +1165,8 @@ export const RoomPage = () => {
           onPlayProcessed: () => void micTest.playProcessed(),
         }}
         recordingState={recordingStatus.state}
+        recordingSource={recordingSource}
+        autoStopAt={automaticRecording.deadline}
         recordingEncoderState={capability.encoderState}
         localScreenShareActive={Boolean(localScreenShareStream)}
         isScreenShareStarting={isScreenShareStarting}

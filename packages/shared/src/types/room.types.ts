@@ -231,6 +231,7 @@ export interface DailyRoomReport {
   participantNicknames: string[];
   /** Server-generated shared multi-line recap. Every client sees the persisted same text. */
   commentary?: string;
+  commentaryVersion?: 2;
   activeDurationMs: number;
   peakConcurrent: number;
   messageCount: number;

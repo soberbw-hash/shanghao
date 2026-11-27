@@ -24,7 +24,7 @@ const base: DailyRoomReport = {
 
 test("a stats-only report has verifiable facts and no invented highlights", () => {
   assert.deepEqual(buildDailyRoomReportHighlights(base), []);
-  assert.deepEqual(buildDailyRoomReportFacts(base), ["1 人来过"]);
+  assert.deepEqual(buildDailyRoomReportFacts(base), ["房间活跃 1 分钟", "1 人来过"]);
 });
 
 test("room activity facts use measured values and ignore saved prose", () => {
@@ -37,7 +37,7 @@ test("room activity facts use measured values and ignore saved prose", () => {
     commentary: "一号房三人三小时，这句话与统计冲突。\n不应该继续显示。",
     gameActivities: [{ nickname: "小明", gameName: "英雄联盟", durationMs: 7 * 60 * 60_000 }],
   });
-  assert.deepEqual(facts, ["3 人来过", "检测到《英雄联盟》"]);
+  assert.deepEqual(facts, ["房间活跃 23 小时 9 分钟", "3 人来过", "检测到《英雄联盟》"]);
 });
 
 test("a tiny legacy game fragment is not promoted as the main game of an all-day room", () => {
@@ -48,10 +48,10 @@ test("a tiny legacy game fragment is not promoted as the main game of an all-day
     peakConcurrent: 3,
     gameActivities: [{ nickname: "小明", gameName: "KK 对战平台", durationMs: 42 * 60_000 }],
   };
-  assert.deepEqual(buildDailyRoomReportFacts(report), ["3 人来过"]);
+  assert.deepEqual(buildDailyRoomReportFacts(report), ["房间活跃 23 小时 9 分钟", "3 人来过"]);
 });
 
-test("daily recap prioritizes distinct recording moments over generic saved prose", () => {
+test("legacy moments are not used as an entire-day overview", () => {
   const moment = {
     title: "开团先开麦",
     description: "阿南发现自己一直静音",
@@ -76,11 +76,11 @@ test("daily recap prioritizes distinct recording moments over generic saved pros
   const highlights = buildDailyRoomReportHighlights(report);
   assert.deepEqual(
     highlights.map(({ value, detail }) => [value, detail]),
-    [[moment.title, moment.description]],
+    [],
   );
 });
 
-test("room chronicle provides a fallback even without a published recording or AI response", () => {
+test("raw chronicle fragments stay out of the overview until a day-level summary exists", () => {
   const text = "小明提议下次也许可以试试双排。";
   const report = {
     ...base,
@@ -91,6 +91,14 @@ test("room chronicle provides a fallback even without a published recording or A
   };
   assert.deepEqual(
     buildDailyRoomReportHighlights(report).map((item) => item.value),
-    [text],
+    [],
+  );
+  assert.deepEqual(
+    buildDailyRoomReportHighlights({
+      ...report,
+      commentaryVersion: 2,
+      commentary: "上午商量开黑时间，晚上才一起进游戏。",
+    }).map((item) => item.value),
+    ["上午商量开黑时间，晚上才一起进游戏。"],
   );
 });

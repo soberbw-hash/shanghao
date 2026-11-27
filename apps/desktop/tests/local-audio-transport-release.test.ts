@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
-import { PushToTalkState } from "@private-voice/shared";
+import { PushToTalkState, RoomLifecycleState } from "@private-voice/shared";
 import * as audioSendGate from "../src/renderer/src/features/audio/audioSendGate";
 
 const source = ts.transpileModule(
@@ -16,6 +16,10 @@ const source = ts.transpileModule(
 
 const harness = (shortcut = "Ctrl+Space") => {
   const track = { enabled: true };
+  const roomState = {
+    room: { lifecycleState: RoomLifecycleState.Open },
+    localStream: { getAudioTracks: () => [track] },
+  };
   const states: PushToTalkState[] = [];
   const events = new Map<string, (event: object) => void>();
   const cleanups: (() => void)[] = [];
@@ -35,7 +39,7 @@ const harness = (shortcut = "Ctrl+Space") => {
             if (cleanup) cleanups.push(cleanup);
           },
         };
-      if (id === "@private-voice/shared") return { PushToTalkState };
+      if (id === "@private-voice/shared") return { PushToTalkState, RoomLifecycleState };
       if (id === "../features/audio/audioSendGate") return audioSendGate;
       if (id === "../store/audioStore")
         return {
@@ -49,8 +53,9 @@ const harness = (shortcut = "Ctrl+Space") => {
         };
       if (id === "../store/roomStore")
         return {
-          useRoomStore: (select: (state: object) => unknown) =>
-            select({ localStream: { getAudioTracks: () => [track] } }),
+          useRoomStore: Object.assign((select: (state: object) => unknown) => select(roomState), {
+            getState: () => roomState,
+          }),
         };
       if (id === "../store/settingsStore")
         return {
@@ -61,7 +66,13 @@ const harness = (shortcut = "Ctrl+Space") => {
     },
   });
   module.exports.useLocalAudioTransport();
-  return { track, states, events, dispose: () => cleanups.forEach((cleanup) => cleanup()) };
+  return {
+    track,
+    states,
+    events,
+    roomState,
+    dispose: () => cleanups.forEach((cleanup) => cleanup()),
+  };
 };
 
 const space = {
@@ -103,6 +114,14 @@ test("unrelated release does not terminate the owned press", () => {
   state.events.get("keydown")!(space);
   state.events.get("keyup")!({ ...space, key: "a", code: "KeyA" });
   assert.equal(state.track.enabled, true);
+  state.dispose();
+});
+
+test("a pending shortcut callback cannot reopen the microphone after room exit starts", () => {
+  const state = harness();
+  state.roomState.room.lifecycleState = RoomLifecycleState.Closing;
+  state.events.get("keydown")!(space);
+  assert.equal(state.track.enabled, false);
   state.dispose();
 });
 

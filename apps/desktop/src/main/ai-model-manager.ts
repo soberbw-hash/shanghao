@@ -1,3 +1,5 @@
+import { asrHardwareFit } from "./asr-hardware-fit";
+import { hostCapacitySampler, type HostResourceCapacity } from "./host-resource-capacity";
 import { createHash, randomUUID } from "node:crypto";
 import { aiModelConfigurationUsage } from "./ai-model-configuration-usage";
 import { requestBaselineAsr, restoreModelDownload } from "./baseline-asr-ownership";
@@ -29,7 +31,15 @@ import {
   type ModelComponent,
   type ModelDefinition,
 } from "./ai-model-catalog";
-import { requiredModelFiles, requiredWeightFiles } from "./ai-model-layout";
+export { safeRelativeModelPath, buildResumeHeaders, type RemoteModelFile } from "./ai-model-layout";
+import {
+  safeRelativeModelPath,
+  buildResumeHeaders,
+  requiredModelFiles,
+  requiredWeightFiles,
+  type RemoteModelFile,
+  type RemoteModelManifest,
+} from "./ai-model-layout";
 import { ACTIVE_ARK_ASR_VARIANT } from "./ark-asr-config";
 import { ResourceScheduler, type AiComputeEvent, type AiComputeLease } from "./resource-scheduler";
 import { waitForTask } from "./task-cancellation";
@@ -41,17 +51,6 @@ export {
   REALTIME_PRESSURE_DOWNLOAD_BYTES_PER_SECOND,
 } from "./resource-scheduler";
 export { MODEL_SOURCES, QWEN36_NVFP4_MODEL_REVISION };
-export interface RemoteModelFile {
-  rfilename: string;
-  size?: number;
-  sha256?: string;
-  lfs?: { sha256?: string; size?: number };
-}
-
-interface RemoteModelManifest {
-  sha: string;
-  siblings: RemoteModelFile[];
-}
 
 interface DownloadModelFile extends RemoteModelFile {
   sourceFileName: string;
@@ -232,25 +231,6 @@ const modelDefinition = (id: AiModelId): ModelDefinition => {
 };
 
 const emptyState = (): PersistedAiState => ({ models: {}, taskCheckpoints: {} });
-
-export const safeRelativeModelPath = (value: string): string => {
-  const normalized = value.replaceAll("\\", "/");
-  const segments = normalized.split("/");
-  if (
-    !normalized ||
-    normalized.startsWith("/") ||
-    normalized.includes("\0") ||
-    segments.some(
-      (segment) => !segment || segment === "." || segment === ".." || segment.includes(":"),
-    )
-  ) {
-    throw new Error("unsafe_ai_model_path");
-  }
-  return normalized;
-};
-
-export const buildResumeHeaders = (offset: number): Record<string, string> | undefined =>
-  offset > 0 ? { Range: `bytes=${offset}-` } : undefined;
 
 export const describeAiModelError = (error: unknown): string => {
   const message = error instanceof Error ? error.message : String(error);
@@ -593,12 +573,24 @@ export class AiModelManager {
     return () => this.qwenReleaseListeners.delete(listener);
   }
 
+  async refreshHardwareSnapshot(): Promise<AiVoiceMemorySnapshot> {
+    const sampledAt = hostCapacitySampler.current().sampledAt;
+    void hostCapacitySampler
+      .refresh()
+      .then(() => {
+        if (hostCapacitySampler.current().sampledAt !== sampledAt) this.emit();
+      })
+      .catch(() => undefined);
+    return this.getSnapshot();
+  }
+
   getSnapshot(): AiVoiceMemorySnapshot {
     const compute = this.scheduler.getComputeSnapshot();
     const runtimePressure = this.pressureController.snapshot;
+    const capacity = hostCapacitySampler.current();
     return {
       modelConfigurationBusy: aiModelConfigurationUsage.busy,
-      models: MODEL_DEFINITIONS.map((definition) => this.buildModelStatus(definition)),
+      models: MODEL_DEFINITIONS.map((definition) => this.buildModelStatus(definition, capacity)),
       scheduler: {
         denials: this.scheduler.getDenialSnapshot(),
         processingMode: this.processingMode,
@@ -1242,7 +1234,10 @@ export class AiModelManager {
     return total;
   }
 
-  private buildModelStatus(definition: ModelDefinition): AiModelStatus {
+  private buildModelStatus(
+    definition: ModelDefinition,
+    capacity: HostResourceCapacity,
+  ): AiModelStatus {
     const current = this.persisted.models[definition.id];
     const totalBytes = current?.totalBytes ?? 0;
     const downloadedBytes = current?.downloadedBytes ?? 0;
@@ -1266,6 +1261,7 @@ export class AiModelManager {
         ? [...definition.optionalDependencies]
         : undefined,
       hardwareNote: definition.hardwareNote,
+      hardwareFit: asrHardwareFit(definition.id, capacity),
       updateInProgress: Boolean(
         current?.activeRevision &&
         current.pendingRevision &&
@@ -1479,6 +1475,10 @@ export class AiModelManager {
       this.emit();
       throw error;
     }
+  }
+
+  remoteTranscriptionDecision(manual: boolean) {
+    return this.scheduler.aiDecision("transcription", manual);
   }
 
   canRunTask(

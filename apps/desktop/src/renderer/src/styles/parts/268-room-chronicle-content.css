@@ -4,14 +4,6 @@
 .chat-panel-title-row:has(.chat-content-tabs) .member-availability-controls {
   margin-right: 0;
 }
-.chat-content-page {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
 .room-chronicle {
   display: flex;
   flex: 1;

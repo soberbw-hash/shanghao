@@ -24,7 +24,11 @@ import {
 
 import { platformService } from "./platform/PlatformService";
 import { screenCaptureService } from "./screen-capture-service";
-import { developmentRelaunchCommand, windowsAppUserModelId } from "./development-shortcuts";
+import {
+  developmentRelaunchCommand,
+  isVisualCapture,
+  windowsAppUserModelId,
+} from "./development-shortcuts";
 import { fitMainWindow, normalizeSavedWindowBounds } from "./window-layout";
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
@@ -66,7 +70,7 @@ const getWindowIcon = (): NativeImage => {
 
 const applyBrandIdentity = (window: BrowserWindow, windowIcon = getWindowIcon()): void => {
   if (!windowIcon.isEmpty()) window.setIcon(windowIcon);
-  if (platformService.isWindows) {
+  if (platformService.isWindows && !isVisualCapture()) {
     window.setAppDetails({
       appId: getWindowsAppId(),
       appIconPath: getIconPath(),
@@ -116,11 +120,10 @@ const isTrustedRendererUrl = (value: string): boolean => {
 
 export const getScreenShareViewerWindow = () => screenShareViewerWindow;
 
-export const openScreenShareViewer = async ({
-  title,
-  sessionId,
-  peerId,
-}: ScreenShareViewerOpenRequest): Promise<void> => {
+export const openScreenShareViewer = async (
+  { title, sessionId, peerId }: ScreenShareViewerOpenRequest,
+  onClosed: () => void,
+): Promise<void> => {
   const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   const viewerBounds = {
     width: Math.max(640, Math.round(workArea.width * 0.85)),
@@ -188,6 +191,7 @@ export const openScreenShareViewer = async ({
       screenShareViewerWindow = null;
       screenShareViewerSessionId = undefined;
     }
+    onClosed();
   });
 
   await loadScreenShareViewer(
@@ -312,6 +316,7 @@ export const createMainWindow = ({
     titleBarStyle: "hidden",
     title: APP_NAME,
     show: false,
+    skipTaskbar: isVisualCapture(),
     icon: windowIcon,
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),

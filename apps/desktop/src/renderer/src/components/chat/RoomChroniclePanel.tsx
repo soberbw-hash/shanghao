@@ -1,4 +1,13 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { useScrollEdgeFade } from "../../features/motion/useScrollEdgeFade";
 import {
   applyRoomMemoryNames,
   isPrivateRoomId,
@@ -12,6 +21,10 @@ import { useChronicleArchive } from "../../features/room/useChronicleArchive";
 
 const EMPTY_ENTRIES: [] = [];
 const EMPTY_NAMES = new Map<string, string>();
+const chronicleTimeFormat = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 export function RoomChroniclePanel({
   transport,
@@ -66,7 +79,28 @@ export function RoomChroniclePanel({
       window.removeEventListener("shanghao:room-memory-saved", refresh);
     };
   }, [room.roomId]);
+  const listRef = useRef<HTMLDivElement>(null);
+  useScrollEdgeFade(listRef, archive.entries.length > 0);
+  const newest = archive.entries.at(-1)?.id;
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && newest) list.scrollTop = list.scrollHeight;
+  }, [newest]);
   const names = memoryNames?.roomId === room.roomId ? memoryNames.names : EMPTY_NAMES;
+  const stories = useMemo(
+    () =>
+      archive.entries.slice(-shown).map((entry) => (
+        <article key={entry.id}>
+          <time dateTime={new Date(entry.at).toISOString()}>
+            {chronicleTimeFormat.format(entry.at)}
+          </time>
+          <div>
+            <p>{applyRoomMemoryNames(entry.text, names)}</p>
+          </div>
+        </article>
+      )),
+    [archive.entries, names, shown],
+  );
   const members = room.members.filter((member) => !member.isEmptySlot);
   const heard = members.filter((member) => state?.participants.includes(member.id));
   const act = async () => {
@@ -149,9 +183,11 @@ export function RoomChroniclePanel({
             <Info size={14} aria-hidden="true" />
           </button>
           <span id={helpId} className="chronicle-source-tooltip" role="tooltip">
-            {message?.day
-              ? "房间成员都能查看当天纪事，北京时间零点清空。转录使用云端，随时可停止提供语音。"
-              : "一人开启，成员语音发送至云端转录，可随时停止参与。"}
+            <span className="chronicle-source-tooltip-line">
+              {message?.day
+                ? "云端转录，可退出。全员可看，北京时间零点清空。"
+                : "一人开启，语音发送至云端转录，可随时退出。"}
+            </span>
             {heard.length ? (
               <span>
                 参与：
@@ -184,7 +220,13 @@ export function RoomChroniclePanel({
         </p>
       ) : null}
       <div className="room-list-viewport" data-room-list-edge={archive.entries.length > 0}>
-        <div className="room-chronicle-entries" aria-live="polite" aria-relevant="additions">
+        <span className="room-list-top-edge" aria-hidden="true" />
+        <div
+          ref={listRef}
+          className="room-chronicle-entries"
+          aria-live="polite"
+          aria-relevant="additions"
+        >
           {archive.entries.length ? (
             <>
               {archive.entries.length > shown ? (
@@ -196,19 +238,7 @@ export function RoomChroniclePanel({
                   查看更早的纪事（共{archive.entries.length}条）
                 </button>
               ) : null}
-              {archive.entries.slice(-shown).map((entry) => (
-                <article key={entry.id}>
-                  <time dateTime={new Date(entry.at).toISOString()}>
-                    {new Date(entry.at).toLocaleTimeString("zh-CN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </time>
-                  <div>
-                    <p>{applyRoomMemoryNames(entry.text, names)}</p>
-                  </div>
-                </article>
-              ))}
+              {stories}
             </>
           ) : (
             <div className="room-chronicle-empty">

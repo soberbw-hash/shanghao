@@ -57,7 +57,8 @@ test("glass highlights follow the pointer without a perpetual sweep", () => {
   assert.match(dock, /onPointerMove/);
   assert.doesNotMatch(visualStyles, /glass-highlight-pass/);
   assert.match(visualStyles, /\.room-page \.voice-dock\s*\{[^}]*overflow: visible;/s);
-  assert.match(visualStyles, /\.room-page \.voice-dock::after[\s\S]*border-radius: inherit;/);
+  assert.match(visualStyles, /\.room-glass-light\s*\{[^}]*border-radius: inherit;/);
+  assert.match(visualStyles, /\.room-glass-light::before\s*\{[^}]*transform: translate3d\(/);
 });
 
 test("screen sharing unfolds from the selected source and supports ambient and immersive feedback", () => {

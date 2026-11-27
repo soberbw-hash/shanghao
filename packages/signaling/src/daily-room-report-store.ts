@@ -191,6 +191,7 @@ const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): Dail
       participantNicknames.length ||
       Math.max(0, Math.min(100, Number(source.participantCount) || 0)),
     participantNicknames,
+    commentaryVersion: source.commentaryVersion === 2 ? 2 : undefined,
     commentary:
       typeof source.commentary === "string" ? normalizeCommentary(source.commentary) : undefined,
     activeDurationMs: Math.max(0, Number(source.activeDurationMs) || 0),
@@ -268,6 +269,30 @@ const sanitizeReport = (value: unknown, roomId: DailyRoomId, date: string): Dail
   };
 };
 
+export function sampleChronicles<T extends { createdAt: string }>(
+  entries: readonly T[],
+  limit: number,
+): T[] {
+  const sorted = [...entries].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  if (sorted.length <= limit) return sorted;
+  const result = [sorted[0]!];
+  const start = Date.parse(sorted[0]!.createdAt);
+  const span = Date.parse(sorted[sorted.length - 1]!.createdAt) - start;
+  let cursor = 1;
+  for (let i = 1; i < limit - 1; i++) {
+    const target = start + (span * i) / (limit - 1);
+    const last = sorted.length - (limit - i);
+    while (
+      cursor < last &&
+      Math.abs(Date.parse(sorted[cursor + 1]!.createdAt) - target) <
+        Math.abs(Date.parse(sorted[cursor]!.createdAt) - target)
+    )
+      cursor++;
+    result.push(sorted[cursor++]!);
+  }
+  return [...result, sorted[sorted.length - 1]!];
+}
+
 export class DailyRoomReportStore {
   private reports: PersistedDailyRoomReports = structuredClone(EMPTY_REPORTS);
   private readonly activeRooms = new Map<DailyRoomId, ActiveRoomState>();
@@ -299,7 +324,10 @@ export class DailyRoomReportStore {
     const today = getShanghaiDate(now);
     return Array.from({ length: RETAIN_DAYS }, (_, index) => shiftShanghaiDate(today, -(index + 1)))
       .map((date) => sanitizeReport(this.reports.rooms[roomId]?.[date], roomId, date))
-      .map((report) => ({ ...report, chronicleRecaps: report.chronicleRecaps?.slice(-60) }))
+      .map((report) => ({
+        ...report,
+        chronicleRecaps: sampleChronicles(report.chronicleRecaps ?? [], 60),
+      }))
       .filter((report) => report.hadActivity);
   }
 
@@ -323,7 +351,7 @@ export class DailyRoomReportStore {
       for (const report of Object.values(days ?? {})) {
         const entries = report.chronicleRecaps ?? [];
         if (report.date >= today || entries.length <= 60) continue;
-        report.chronicleRecaps = entries.slice(-60);
+        report.chronicleRecaps = sampleChronicles(entries, 60);
         changed = true;
       }
     }
@@ -340,13 +368,14 @@ export class DailyRoomReportStore {
     const report = this.reports.rooms[roomId]?.[date];
     if (
       !report ||
-      report.commentary?.trim() ||
+      (report.commentaryVersion === 2 && report.commentary?.trim()) ||
       (expectedRevision !== undefined && report.revision !== expectedRevision)
     )
       return false;
     const commentary = normalizeCommentary(value);
     if (!commentary) return false;
     report.commentary = commentary;
+    report.commentaryVersion = 2;
     this.touch(report, now);
     return true;
   }
@@ -400,10 +429,10 @@ export class DailyRoomReportStore {
     const entries = report.chronicleRecaps ?? [];
     if (entries.some((entry) => entry.id === id))
       return { serverRevision: report.revision ?? 0, date };
-    report.chronicleRecaps = [
-      ...entries,
-      { id, createdAt: new Date(sourceAt).toISOString(), text },
-    ].slice(ageDays === 0 ? -MAX_DAILY_CHRONICLE_ENTRIES : -60);
+    report.chronicleRecaps = sampleChronicles(
+      [...entries, { id, createdAt: new Date(sourceAt).toISOString(), text }],
+      ageDays === 0 ? MAX_DAILY_CHRONICLE_ENTRIES : 60,
+    );
     report.commentary = undefined;
     report.hadActivity = true;
     this.touch(report, now);

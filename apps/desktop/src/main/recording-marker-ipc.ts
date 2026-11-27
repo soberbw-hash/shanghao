@@ -23,13 +23,25 @@ const formatOffset = (offsetMs: number): string => {
 export const registerRecordingMarkerIpcHandler = (settingsStore: SettingsStore): void => {
   ipcMain.handle(
     IPC_CHANNELS.recording.saveOrigin,
-    async (_event, filePath: string, roomId: string, roomName: string) => {
+    async (
+      _event,
+      filePath: string,
+      roomId: string,
+      roomName: string,
+      hadMultipleParticipants?: boolean,
+    ) => {
       const directory = await resolveUsableRecordingDirectory(
         settingsStore.getSnapshot().recordingSaveDirectory,
         app.getPath("documents"),
       );
       const recording = await requireRecordingFileInDirectory(directory, filePath);
-      await saveRecordingOriginInDirectory(directory, recording, roomId, roomName);
+      await saveRecordingOriginInDirectory(
+        directory,
+        recording,
+        roomId,
+        roomName,
+        hadMultipleParticipants,
+      );
     },
   );
   ipcMain.handle(

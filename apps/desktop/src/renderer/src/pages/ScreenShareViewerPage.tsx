@@ -145,7 +145,6 @@ export const ScreenShareViewerPage = () => {
       unsubscribe();
       peer.close();
       void client?.stopControlling("").catch(() => undefined);
-      void send({ type: "closed" });
     };
   }, [sessionId, client]);
 

@@ -24,21 +24,19 @@ export const aiResourcePolicy = (
 ): ScheduledAiDecision => {
   const realtime =
     state.pressure.inVoiceRoom || state.pressure.screenSharing || state.pressure.peerRecovering;
-  const reason = manual
-    ? undefined
-    : state.realtimePressureHigh
-      ? (state.pressureReason ?? "realtime_pressure")
-      : state.processingMode === "manual"
-        ? "manual_only"
-        : state.pressure.recordingActive
-          ? "recording_priority"
-          : state.gameActive && state.processingMode === "after_game"
-            ? "waiting_for_game_to_finish"
-            : capacity.availableMemoryBytes < 1024 ** 3
-              ? "memory_pressure"
-              : realtime && (capacity.cpuBusyRatio ?? 0) > 0.95
-                ? "cpu_pressure"
-                : undefined;
+  const reason = state.realtimePressureHigh
+    ? (state.pressureReason ?? "realtime_pressure")
+    : !manual && state.processingMode === "manual"
+      ? "manual_only"
+      : state.pressure.recordingActive
+        ? "recording_priority"
+        : !manual && state.gameActive && state.processingMode === "after_game"
+          ? "waiting_for_game_to_finish"
+          : capacity.availableMemoryBytes < 1024 ** 3
+            ? "memory_pressure"
+            : realtime && (capacity.cpuBusyRatio ?? 0) > 0.95
+              ? "cpu_pressure"
+              : undefined;
   if (reason) return { runnable: false, reason, resourceMode: "low" };
   const low =
     state.processingMode === "low_resource" ||

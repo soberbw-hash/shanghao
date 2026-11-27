@@ -36,6 +36,7 @@ export interface RoomClientOptions {
     privateRoom?: import("@private-voice/shared").PrivateRoomInfo,
   ) => void;
   onConnectionState: (state: RoomConnectionState) => void;
+  canPlayRoomAudio?: () => boolean;
   onRemoteStream: (peerId: string, stream: MediaStream | undefined) => void;
   onChatMessage: (message: ChatMessage) => void;
   onChatRecall: (event: ChatRecallEvent) => void;

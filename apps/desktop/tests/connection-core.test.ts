@@ -167,7 +167,7 @@ test("room joining uses acknowledgement and snapshot recovery without logging ra
   assert.equal(client.includes('case "join_ack"'), true);
   assert.equal(client.includes('type: "request_snapshot"'), true);
   assert.equal(client.includes("RoomConnectionState.WaitingSnapshot"), true);
-  assert.equal(client.includes('new Error(this.wsOpened ? "join_ack_timeout"'), true);
+  assert.match(client, /"room_snapshot_timeout"\s*:\s*"join_ack_timeout"/);
   assert.equal(client.includes("this.lastSnapshotRevision = 0;"), true);
   assert.equal(hook.includes("summarizeSignalingEvent"), true);
   assert.equal(hook.includes("ROUTINE_SIGNAL_MESSAGE_TYPES"), true);
@@ -200,7 +200,16 @@ test("windows executable and shortcut use approved v4 icons", () => {
   const identity = read("apps/desktop/src/main/development-shortcuts.ts");
   assert.match(identity, /app.isPackaged\s*\?\s*APP_ID/);
   assert.equal(identity.includes("`${APP_ID}.dev`"), true);
-  assert.equal(identity.includes("`${APP_ID}.capture`"), true);
+  assert.match(mainWindow, /skipTaskbar: isVisualCapture\(\)/);
+  assert.match(mainWindow, /platformService\.isWindows && !isVisualCapture\(\)/);
+  assert.match(
+    read("apps/desktop/src/main/index.ts"),
+    /platformService\.isWindows && !isVisualCapture\(\)\)\s+app\.setAppUserModelId/,
+  );
+  assert.match(
+    read("apps/desktop/src/main/index.ts"),
+    /if \(!isVisualCapture\(\)\) \{\s+if \(process\.defaultApp\) \{\s+app\.removeAsDefaultProtocolClient/,
+  );
 });
 
 test("AI voice memory remains local and legacy server LLM proxy paths stay removed", () => {
@@ -359,7 +368,10 @@ test("native notifications and recording markers use main process IPC", () => {
   const markers = read("apps/desktop/src/main/recording-marker-ipc.ts");
   const roomState = read("apps/desktop/src/renderer/src/hooks/useRoomState.ts");
   const room = read("apps/desktop/src/renderer/src/pages/RoomPage.tsx");
-  assert.equal(ipc.includes("Notification.isSupported"), true);
+  const desktopNotices = read("apps/desktop/src/main/desktop-notifications.ts");
+  assert.match(ipc, /showDesktopNotification\(/);
+  assert.match(desktopNotices, /Notification\.isSupported\(\)/);
+  assert.match(desktopNotices, /new Notification\(/);
   assert.equal(ipc.includes("silent: payload.silent === true"), true);
   assert.equal(ipc.includes("mainWindow.flashFrame(true)"), true);
   assert.equal(ipc.includes('mainWindow.setAlwaysOnTop(true, "floating")'), true);

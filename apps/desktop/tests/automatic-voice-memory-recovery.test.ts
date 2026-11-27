@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import type { VoiceMemoryProcessRequest } from "@private-voice/shared";
+import type { VoiceMemoryProcessRequest, VoiceMemoryRecord } from "@private-voice/shared";
 import { AiVoiceMemoryService } from "../src/main/ai-voice-memory-service";
 import { VoiceMemoryStore } from "../src/main/voice-memory-store";
 import { AiTextGateway } from "../src/main/ai-text-gateway";
@@ -38,6 +38,7 @@ const fixture = async () => {
   };
   const services: AiVoiceMemoryService[] = [];
   const failures: string[] = [];
+  const pending = new Set<Promise<VoiceMemoryRecord>>();
   const open = async () => {
     const store = new VoiceMemoryStore(path.join(directory, "records"));
     await store.initialize();
@@ -94,11 +95,16 @@ const fixture = async () => {
     );
     services.push(service);
     const process = service.process.bind(service);
-    service.process = (request) =>
-      process(request).catch((error) => {
-        failures.push(String(error));
-        throw error;
-      });
+    service.process = (request) => {
+      const operation = process(request)
+        .catch((error) => {
+          failures.push(String(error));
+          throw error;
+        })
+        .finally(() => pending.delete(operation));
+      pending.add(operation);
+      return operation;
+    };
     return {
       store,
       service,
@@ -120,6 +126,7 @@ const fixture = async () => {
     request,
     close: async () => {
       services.forEach((service) => service.stop());
+      await Promise.allSettled(pending);
       await rm(directory, { recursive: true, force: true });
     },
   };
@@ -247,7 +254,7 @@ test("deferred ASR preserves each recording's organization opt-out across store 
   }
 });
 
-test("a foreground transcription always follows with a summary even for a legacy false choice", async () => {
+test("a foreground transcription respects an explicit choice to skip organization", async () => {
   const f = await fixture();
   try {
     f.state.asrReady = true;
@@ -255,18 +262,18 @@ test("a foreground transcription always follows with a summary even for a legacy
     const { service, store } = await f.open();
     const finished = new Promise<void>((resolve) => {
       const stop = service.onStatus((record) => {
-        if (record.phase === "ready" && record.organization?.status === "completed") {
+        if (record.phase === "ready" && record.taskStatus === "success") {
           stop();
           resolve();
         }
       });
     });
     const accepted = await service.start({ ...f.request, manual: true, organize: false });
-    assert.equal(accepted.autoOrganizeRequested, true);
+    assert.equal(accepted.autoOrganizeRequested, false);
     await finished;
-    assert.equal((await store.get("synthetic"))?.organization?.status, "completed");
+    assert.notEqual((await store.get("synthetic"))?.organization?.status, "completed");
     assert.equal(f.state.asrCalls, 1);
-    assert.ok(f.state.textCalls > 0);
+    assert.equal(f.state.textCalls, 0);
   } finally {
     await f.close();
   }

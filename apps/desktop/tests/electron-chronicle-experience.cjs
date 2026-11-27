@@ -105,6 +105,9 @@ app.whenReady().then(async () => {
         await new Promise(r=>setTimeout(r,20));
         if(getComputedStyle(tooltip).visibility!=='visible'||!tooltip.textContent.includes('参与：林小川'))
           throw Error('room memory alias not shown in the explanation: '+tooltip.textContent+' / '+getComputedStyle(tooltip).visibility+' / '+(document.activeElement===info));
+        const description=tooltip.querySelector('.chronicle-source-tooltip-line');
+        if(description.getBoundingClientRect().height>Math.ceil(parseFloat(getComputedStyle(description).lineHeight)))
+          throw Error('transcription explanation wrapped');
         info.blur();
         if(status.querySelector('input, summary')) throw Error('obsolete status controls remain');
         if(!panel.querySelector('article p').textContent.startsWith('林小川说这把稳了'))
@@ -147,7 +150,8 @@ app.whenReady().then(async () => {
       `(async()=>{ document.querySelectorAll('[role="tab"]')[1].click(); await new Promise(r=>setTimeout(r,250)); })()`,
     );
     await fs.writeFile(
-      path.join(app.getPath("userData"), "chronicle-experience.png"),
+      process.env.SHANGHAO_CHRONICLE_SCREENSHOT ||
+        path.join(app.getPath("userData"), "chronicle-experience.png"),
       lastFrame.toPNG(),
     );
     const dailyHistory = await view.webContents.executeJavaScript(`(async()=>{
@@ -165,6 +169,41 @@ app.whenReady().then(async () => {
       exportButton.click();
       await pause(50);
       if(fixture.result.exportedDay?.entries[0]?.id!==entry.id) throw Error('export did not use the server day');
+      const entries=n=>Array.from({length:n},(_,i)=>({...entry,id:'chronicle-'+i,at:entry.at-60000+i,text:'纪事 '+i}));
+      const checkScroll=async(list,append)=>{
+        await pause(120);
+        if(list.scrollHeight<=list.clientHeight) throw Error('fixture did not overflow: '+list.className);
+        list.scrollTop=0; append(); await pause(160);
+        if(list.scrollHeight-list.scrollTop-list.clientHeight>2) throw Error('did not follow the latest entry: '+list.className);
+      };
+      fixture.setServerDay(day,entries(29));
+      await checkScroll(panel.querySelector('.room-chronicle-entries'),()=>fixture.setServerDay(day,entries(30)));
+      const [chatTab, chronicleTab] = document.querySelectorAll('[role="tab"]');
+      chatTab.click();
+      fixture.setChatCount(45); await pause(220);
+      const chatList = document.querySelector('.chat-message-list');
+      await checkScroll(chatList,()=>fixture.setChatCount(46));
+      const input = document.querySelector('.chat-composer input[aria-label="聊天消息"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '先留个草稿');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      chronicleTab.click(); await pause(35);
+      chatTab.click(); await pause(35);
+      chronicleTab.click(); await pause(35);
+      chatTab.click(); await pause(250);
+      const chatPage = chatList.closest('[role="tabpanel"]');
+      const chroniclePage = panel.closest('[role="tabpanel"]');
+      if (chatPage.inert || getComputedStyle(chatPage).visibility !== 'visible' ||
+          !chroniclePage.inert || getComputedStyle(chroniclePage).visibility !== 'hidden')
+        throw Error('interrupting tab transitions left the wrong pane visible or interactive: ' +
+          JSON.stringify([chatPage, chroniclePage].map(page => ({
+            inert: page.inert,
+            visibility: getComputedStyle(page).visibility,
+            opacity: getComputedStyle(page).opacity,
+            style: page.style.cssText,
+          }))));
+      if (input !== document.querySelector('.chat-composer input[aria-label="聊天消息"]') ||
+          input.value !== '先留个草稿') throw Error('rapid tab switching lost the draft');
+      chronicleTab.click();
       fixture.setServerDay(following, []);
       await pause(80);
       if(stories().length||!panel.textContent.includes('今天还没有纪事')) throw Error('midnight reused previous room entries');

@@ -6,7 +6,6 @@
   background: transparent !important;
   box-shadow: none !important;
 }
-
 .settings-page .settings-item-row:last-child {
   border-bottom: 0 !important;
 }
@@ -58,27 +57,6 @@
 .phone-mode-shortcut-control {
   width: min(100%, 300px);
   min-width: 0;
-}
-
-.settings-reset-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
-  border: 1px solid rgba(216, 151, 159, 0.3);
-  border-radius: 16px;
-  background: rgba(255, 249, 250, 0.72);
-}
-
-.settings-reset-section strong {
-  color: #4b5669;
-  font-size: 13px;
-}
-.settings-reset-section p {
-  margin: 4px 0 0;
-  color: #60728a;
-  font-size: 12px;
 }
 
 .ai-model-filter-bar {
@@ -349,11 +327,4 @@
 .recording-date-item:hover .recording-item-show-in-folder,
 .recording-date-item:focus-within .recording-item-show-in-folder {
   opacity: 1;
-}
-
-@media (max-width: 700px) {
-  .settings-reset-section {
-    align-items: flex-start;
-    flex-direction: column;
-  }
 }

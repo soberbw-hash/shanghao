@@ -155,6 +155,7 @@ export interface AiModelStatus {
   optionalDependencies?: AiSupportModelId[];
   /** Concise hardware warning shown without silently changing the official runtime. */
   hardwareNote?: string;
+  hardwareFit?: { blocked: boolean; message: string };
   /** Inference backend used by organizer models. */
   inferenceBackend?: "builtin" | "freetoken";
   /** Live sidecar information. Missing when the model is stopped or not installed. */

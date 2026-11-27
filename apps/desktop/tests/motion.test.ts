@@ -136,14 +136,18 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(homeSource.includes("hasPlayedHomeEntrance"), true);
   assert.equal(roomSource.includes("data-gsap-room"), false);
   assert.equal(settingsSource.includes("data-gsap-settings"), true);
-  assert.equal(chatSource.includes("data-gsap-chat-message"), true);
+  const rows = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/chat/ChatMessageRows.tsx"),
+    "utf8",
+  );
+  assert.equal(rows.includes("data-gsap-chat-message"), true);
   assert.equal(sceneCharacterSource.includes("data-gsap-character"), true);
   assert.equal(hookSource.includes("prefers-reduced-motion: reduce"), false);
   assert.equal(hookSource.includes("return appReduceMotion"), true);
   assert.equal(stylesSource.includes("[data-gsap-entry],"), false);
   assert.equal(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), true);
   assert.equal(appStoreSource.includes("startTransition"), true);
-  assert.equal(appSource.includes("initial={{ opacity: 0, y: 4 }}"), true);
+  assert.match(appSource, /initial=\{reduceMotion \? false : \{ opacity: 0\.78, y: 3 \}\}/);
   assert.equal(appSource.includes("animate={{ opacity: 1, y: 0 }}"), true);
   assert.equal(animalSource.includes("layered-animal"), true);
   assert.equal(animalSource.includes("avatarLayerAssets"), true);
@@ -263,14 +267,10 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(sharedButtonSource.includes("getBoundingClientRect"), false);
   assert.equal(sharedButtonSource.includes("requestAnimationFrame"), false);
   assert.equal(sharedButtonSource.includes("linear-gradient(180deg"), true);
-  assert.equal(
-    chatSource.includes(
-      'shouldReduceMotion || previous === 0 || latestMessage?.isLocal ? "auto" : "smooth"',
-    ),
-    true,
-  );
+  assert.match(chatSource, /shouldReduceMotion \|\|\s+alternateContentActive \|\|/);
+  assert.match(chatSource, /previous === newestKey \|\|\s+previous !== priorKey/);
   assert.equal(chatSource.includes("motionEase.jelly"), true);
-  assert.equal(chatSource.includes("latestMessage?.isLocal ? 10 : -8"), true);
+  assert.equal(chatSource.includes("isLocalMessage ? 10 : -8"), true);
   assert.equal(chatSource.includes("scaleX: 0.72"), false);
   assert.equal(chatSource.includes("duration: motionDuration.message"), true);
   assert.equal(chatSource.includes('data-icon-motion="send"'), true);

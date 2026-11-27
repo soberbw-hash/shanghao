@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, Coffee, History, RefreshCw } from "lucide-react";
+import { ChevronDown, Coffee, Globe, History, RefreshCw } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
+import { OFFICIAL_WEBSITE_URL } from "@private-voice/shared";
 import type { RuntimeInfo, UpdateCheckResult, UpdateStatus } from "@private-voice/shared";
 
 import brandMark from "../../assets/brand-mark.png";
@@ -17,9 +18,12 @@ import { DialogCloseButton } from "../base/DialogCloseButton";
 import { ReleaseDetailModal } from "../status/ReleaseDetailModal";
 import { RECENT_RELEASE_HISTORY, type ReleaseHistoryEntry } from "../status/releaseHistory";
 import { SettingsSection } from "./SettingsSection";
+import { StorageSettingsCard } from "./StorageSettingsCard";
+import { SettingsDiagnosticsSection } from "./SettingsDiagnosticsSection";
 import { AssetStudioSettingsCard } from "./AssetStudioSettingsCard";
 
 interface AboutSettingsCardProps {
+  isActive?: boolean;
   runtimeInfo?: RuntimeInfo;
   updateInfo?: UpdateCheckResult;
   updateStatus: UpdateStatus;
@@ -87,6 +91,7 @@ const DonationDialog = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
 };
 
 export const AboutSettingsCard = ({
+  isActive = true,
   runtimeInfo,
   updateInfo,
   updateStatus,
@@ -119,15 +124,27 @@ export const AboutSettingsCard = ({
               {updateMessage}
             </span>
           </div>
-          <Button
-            className="about-check-update"
-            variant="secondary"
-            disabled={isChecking}
-            onClick={() => void onCheckUpdates()}
-          >
-            <RefreshCw className={`size-4 ${isChecking ? "animate-spin" : ""}`} />
-            {isChecking ? "正在检查" : "检查更新"}
-          </Button>
+          <div className="about-product-actions">
+            <Button
+              variant="ghost"
+              onClick={() => void window.desktopApi.app.openExternal(OFFICIAL_WEBSITE_URL)}
+            >
+              <Globe className="size-4" aria-hidden="true" />
+              官方网站
+            </Button>
+            <Button
+              className="about-check-update"
+              variant="secondary"
+              disabled={isChecking}
+              onClick={() => void onCheckUpdates()}
+            >
+              <RefreshCw
+                className={`size-4 ${isChecking ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {isChecking ? "正在检查" : "检查更新"}
+            </Button>
+          </div>
         </section>
 
         <div className="about-info-grid">
@@ -179,6 +196,13 @@ export const AboutSettingsCard = ({
             ))}
           </div>
         </details>
+      </SettingsSection>
+
+      <SettingsSection title="维护工具">
+        <div className="about-info-grid about-maintenance-grid">
+          <SettingsDiagnosticsSection />
+          <StorageSettingsCard isActive={isActive} />
+        </div>
       </SettingsSection>
 
       <DonationDialog isOpen={isDonationOpen} onClose={() => setIsDonationOpen(false)} />

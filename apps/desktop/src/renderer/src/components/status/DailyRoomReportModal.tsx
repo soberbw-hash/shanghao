@@ -76,7 +76,7 @@ export const DailyRoomReportModal = ({
           <section className="daily-report-moments" aria-labelledby="daily-room-moments-title">
             <h3 id="daily-room-moments-title">
               <MessageCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
-              聊了什么
+              房间概况
             </h3>
             <ul>
               {highlights.map(({ id, value, detail }) => (
@@ -94,7 +94,11 @@ export const DailyRoomReportModal = ({
             </ul>
           </section>
         ) : (
-          <p className="mt-4 text-sm text-[#516985]">这天没有可回顾的对话片段。</p>
+          <p className="mt-4 text-sm text-[#516985]">
+            {report.chronicleRecaps?.length || report.recordingRecaps?.length
+              ? "已有部分时段的对话记录，全天概述暂未生成。"
+              : "昨天只记录了房间活动，可在下方查看。"}
+          </p>
         )}
         {facts.length ? (
           <ul className="daily-report-facts" aria-label="房间活动">

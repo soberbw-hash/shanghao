@@ -435,7 +435,6 @@ export const captureUi = async (
         ["录音库", "recordings"],
         ["AI 功能", "ai"],
         ["关于上号", "about"],
-        ["诊断", "diagnostics"],
       ] as const;
       for (const [label, slug] of tabs) {
         if (!(await clickButtonByLabel(window, label))) throw new Error(`设置页缺少 ${label} Tab`);

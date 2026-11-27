@@ -133,7 +133,10 @@ export class CloudAiRuntime {
     return this.requests.handleSignal(socket, message, send);
   }
 
-  getDailyReports(roomId: DailyRoomReport["roomId"]): Promise<DailyRoomReport[]> {
-    return this.commentary.getReports(roomId);
+  getDailyReports(
+    roomId: DailyRoomReport["roomId"],
+    onUpdated?: (reports: DailyRoomReport[]) => void,
+  ): Promise<DailyRoomReport[]> {
+    return this.commentary.getReports(roomId, onUpdated);
   }
 }

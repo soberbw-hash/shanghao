@@ -8,11 +8,11 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看最近版本更新](#最近版本更新) · [v3.4.23 完整说明](./docs/release-notes/v3.4.23.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看最近版本更新](#最近版本更新) · [v3.4.24 完整说明](./docs/release-notes/v3.4.24.md) · [看技术结构](#声音到底经过了什么)
 
-![上号二号房：人物、天气、日历、聊天与语音控制](./docs/readme/hero-room.webp)
+![私人房间中的人物、聊天和语音控制](./docs/assets/releases/v3.4.24/release-room.png)
 
-<sub>此前固定房间的场景演示，成员为本机隔离环境中的模拟数据。3.4.0 保留房间场景，入口升级为私人房间。</sub>
+<sub>3.4.24 的私人房间演示，使用隔离环境中的模拟成员和消息。</sub>
 
 ## 如果一群朋友整晚都挂在语音里
 
@@ -231,7 +231,11 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 ## 最近版本更新
 
-这里仅列出最近三个正式版本。更早版本的功能已按主题整合进上方的功能总览，不再逐版重复；完整历史仍可在 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases) 查看。
+更早版本的功能按主题收录在上方的功能介绍。完整历史见 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases)。
+
+### 3.4.24
+
+重新梳理进出房间的语音边界，改善聊天、纪事和放歌面板的切换。Windows 桌面通知可以直达房间、消息和录音。录音库、AI 设置和维护工具也做了整理。[完整说明](./docs/release-notes/v3.4.24.md)
 
 ### 3.4.23
 
@@ -241,13 +245,9 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 改进屏幕分享选源、房间转录与记忆称呼。更新进度窗可以拖动，单链接消息合为一张带站点图标的卡片。新增 8 段快捷音乐，上号素材支持按包试听。[完整说明](./docs/release-notes/v3.4.22.md)
 
-### 3.4.21
-
-改善房间纪事、成员状态和房间管理，修复开发版热更新时可能影响屏幕分享的问题。[完整说明](./docs/release-notes/v3.4.21.md)
-
 ## 下载与使用
 
-当前仓库版本为 **3.4.23**，正式支持 **Windows 10 / 11 x64**。[到 GitHub Releases 下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest)，同页提供安装包、自动更新元数据与 SHA-256 校验文件。[查看 v3.4.23 更新公告](./docs/release-notes/v3.4.23.md)。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。
+当前仓库版本为 **3.4.24**，正式支持 **Windows 10 / 11 x64**。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。安装包、自动更新元数据和 SHA-256 校验文件见 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases/latest) · [v3.4.24 更新公告](./docs/release-notes/v3.4.24.md)。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 
@@ -255,7 +255,7 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 ## 想自己运行代码
 
-> 私人房间需要兼容的服务器及持久化目录，不能直接按旧固定房间部署。实现与验证见 [本轮记录](./docs/private-rooms-and-hardening-2026-10-01.md)，启用顺序见 [服务器操作说明](./docs/private-room-server-operations.md)。通用设置还提供按需存储占用查看；清理只处理明确属于缓存的过期 ASR 临时文件，不删除模型或录音。
+> 私人房间需要兼容的服务器及持久化目录。实现与验证见 [本轮记录](./docs/private-rooms-and-hardening-2026-10-01.md) · [服务器操作说明](./docs/private-room-server-operations.md)。在「关于上号 → 维护工具」可查看存储占用、清理过期 ASR 临时文件、导出诊断日志和安全重置设置。
 
 ```powershell
 corepack pnpm install

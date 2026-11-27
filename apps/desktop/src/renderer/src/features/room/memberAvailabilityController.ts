@@ -47,6 +47,20 @@ export class MemberAvailabilityController {
     if (!this.running) void this.run();
   }
 
+  resumeMicrophone(): boolean {
+    if (
+      this.closed ||
+      !this.deps.ownsRoom() ||
+      !((this.running && this.intent) || this.deps.status() || this.deps.audio().phoneModeActive)
+    )
+      return false;
+    this.baseline = { isMuted: false, isDeafened: false, isManuallyMuted: false };
+    this.intent = undefined;
+    this.pending = {};
+    if (!this.running) void this.run();
+    return true;
+  }
+
   private async run(): Promise<void> {
     this.running = true;
     const unlock = this.deps.hold();

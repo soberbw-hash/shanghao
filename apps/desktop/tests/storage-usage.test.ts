@@ -102,3 +102,34 @@ test("recording post-processing runs once and retries marker failure before clea
   await finishSavedRoomRecording(options);
   assert.deepEqual(events, ["origin", "markers", "origin", "markers", "cleanup", "toast"]);
 });
+
+test("only a sealed recording with verified group attendance starts background ASR", async () => {
+  const queued: unknown[] = [];
+  const api = {
+    recording: {
+      saveOrigin: async () => {},
+      applyAutomaticCleanup: async () => ({ deletedCurrentRecording: false }),
+    },
+    ai: {
+      processRecording: async (request: unknown) => {
+        queued.push(request);
+      },
+    },
+  } as unknown as DesktopApi;
+  for (const joined of [false, undefined, true]) {
+    const options = {
+      result: { filePath: String(joined) },
+      markers: [],
+      roomId: "main",
+      roomName: "一号房",
+      speakingTimeline: [],
+      hadMultipleParticipants: joined,
+      autoOrganize: false,
+      api,
+      toast: () => {},
+    };
+    await Promise.all([finishSavedRoomRecording(options), finishSavedRoomRecording(options)]);
+  }
+  assert.equal(queued.length, 1);
+  assert.equal((queued[0] as { organize: boolean }).organize, false);
+});

@@ -4,7 +4,6 @@ import { TraySettingsRows } from "./TraySettingsRows";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsItemRow } from "./SettingsItemRow";
 import { WeatherSettingsCard } from "./WeatherSettingsCard";
-import { StorageSettingsCard } from "./StorageSettingsCard";
 import { InterfaceSoundVolumeRow } from "./InterfaceSoundVolumeRow";
 
 export const GeneralSettingsCard = ({
@@ -13,14 +12,12 @@ export const GeneralSettingsCard = ({
   windowsStatus,
   loadingWindows,
   onIconOverlayChange,
-  isActive,
 }: {
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
   windowsStatus?: WindowsIntegrationStatus;
   loadingWindows: boolean;
   onIconOverlayChange: (hidden: boolean) => void;
-  isActive: boolean;
 }) => (
   <div className="space-y-4">
     <SettingsSection title="通用" description="管理窗口与天气位置。">
@@ -55,6 +52,5 @@ export const GeneralSettingsCard = ({
         <WeatherSettingsCard settings={settings} onChange={(patch) => void onChange(patch)} />
       </div>
     </SettingsSection>
-    <StorageSettingsCard isActive={isActive} />
   </div>
 );

@@ -1,13 +1,4 @@
-import {
-  Activity,
-  Headphones,
-  Info,
-  Library,
-  MonitorCog,
-  Sparkles,
-  UserRound,
-  Zap,
-} from "lucide-react";
+import { Headphones, Info, Library, MonitorCog, Sparkles, UserRound, Zap } from "lucide-react";
 import { LayoutGroup, motion } from "framer-motion";
 import { motionCurve, motionDuration } from "../../features/motion/motionSystem";
 import type { SettingsSectionId } from "../../features/settings/settingsSectionState";
@@ -27,7 +18,6 @@ const sectionGroups = [
     label: "进阶与支持",
     sections: [
       { id: "ai", label: "AI 功能", icon: Sparkles },
-      { id: "diagnostics", label: "诊断", icon: Activity },
       { id: "about", label: "关于上号", icon: Info },
     ],
   },

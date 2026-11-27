@@ -369,6 +369,7 @@ test("historical queue keeps room identity and skips completed text, manual paus
     recordingId: id,
     filePath: `${id}.wav`,
     roomId: `room-${id}`,
+    hadMultipleParticipants: true,
     fileSize: 1,
   }));
   const record = (id: string) =>
@@ -423,16 +424,26 @@ test("historical queue keeps room identity and skips completed text, manual paus
 test("switching automatic transcription off stops historical admission immediately", async () => {
   let enabled = true;
   let started = 0;
-  await queueUntranscribedRecordings([{ filePath: "a" }, { filePath: "b" }], false, {
-    enabled: () => enabled,
-    get: async () => undefined,
-    pending: () => false,
-    reconcile: async () => {},
-    start: async () => {
-      started++;
-      enabled = false;
+  await queueUntranscribedRecordings(
+    [
+      { filePath: "solo", hadMultipleParticipants: false },
+      { filePath: "legacy" },
+      { filePath: "a", hadMultipleParticipants: true },
+      { filePath: "b", hadMultipleParticipants: true },
+    ],
+    false,
+    {
+      enabled: () => enabled,
+      get: async () => undefined,
+      pending: () => false,
+      reconcile: async () => {},
+      start: async (request) => {
+        assert.equal(request.filePath, "a");
+        started++;
+        enabled = false;
+      },
     },
-  });
+  );
   assert.equal(started, 1);
 });
 
@@ -469,8 +480,8 @@ test("startup scan is deferred until initialization, coalesced, and discards a c
   await backlog.settled();
   assert.deepEqual(queued, ["B"]);
   assert.equal(scans, 2);
-  settings = { ...settings, isAiAutoTranscribeEnabled: false };
-  backlog.refresh();
+  settings = { ...settings, isAiAutoOrganizeEnabled: true };
+  backlog.refreshCached();
   await backlog.settled();
   assert.equal(scans, 2);
 });

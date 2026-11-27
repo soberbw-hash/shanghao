@@ -72,9 +72,14 @@ try {
   await run("electron-member-availability-smoke.cjs");
   await run("electron-collection-preview-smoke.cjs");
   await run("electron-settings-feedback-smoke.cjs");
+  await run("electron-about-maintenance.cjs");
+  await run("electron-settings-hierarchy.cjs");
+  await run("electron-room-voice-lifecycle.cjs");
   await run("electron-microphone-level.cjs");
   await run("electron-microphone-level.cjs", ["--reduce-motion"]);
   await run("electron-automatic-settings-optout.cjs");
+  await run("electron-chronicle-experience.cjs");
+  await run("electron-room-effects.cjs");
   await run("electron-recording-library-feedback.cjs");
   await run("electron-recording-model-sync.cjs");
   await run("electron-text-selection-smoke.cjs");

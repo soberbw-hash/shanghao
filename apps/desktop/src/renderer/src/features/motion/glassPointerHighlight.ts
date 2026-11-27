@@ -1,9 +1,9 @@
 interface GlassPointerState {
   bounds: DOMRect;
   frame: number | undefined;
+  visible: boolean;
   clientX: number;
   clientY: number;
-  resizeObserver?: ResizeObserver;
 }
 
 const pointerStates = new WeakMap<HTMLElement, GlassPointerState>();
@@ -14,15 +14,10 @@ const ensureState = (element: HTMLElement): GlassPointerState => {
   const state: GlassPointerState = {
     bounds: element.getBoundingClientRect(),
     frame: undefined,
+    visible: element.querySelector(".room-glass-light")?.checkVisibility() ?? false,
     clientX: 0,
     clientY: 0,
   };
-  if (typeof ResizeObserver !== "undefined") {
-    state.resizeObserver = new ResizeObserver(() => {
-      state.bounds = element.getBoundingClientRect();
-    });
-    state.resizeObserver.observe(element);
-  }
   pointerStates.set(element, state);
   return state;
 };
@@ -38,6 +33,7 @@ export const updateGlassPointerHighlight = (
   clientY: number,
 ): void => {
   const state = ensureState(element);
+  if (!state.visible) return;
   state.clientX = clientX;
   state.clientY = clientY;
   if (state.frame !== undefined) return;
@@ -45,14 +41,14 @@ export const updateGlassPointerHighlight = (
     state.frame = undefined;
     element.style.setProperty("--glass-pointer-x", `${state.clientX - state.bounds.left}px`);
     element.style.setProperty("--glass-pointer-y", `${state.clientY - state.bounds.top}px`);
-    element.dataset.glassPointerActive = "true";
+    if (!element.hasAttribute("data-glass-pointer-active"))
+      element.dataset.glassPointerActive = "true";
   });
 };
 
 export const clearGlassPointerHighlight = (element: HTMLElement): void => {
   const state = pointerStates.get(element);
   if (state?.frame !== undefined) window.cancelAnimationFrame(state.frame);
-  state?.resizeObserver?.disconnect();
   pointerStates.delete(element);
   delete element.dataset.glassPointerActive;
 };
