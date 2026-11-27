@@ -512,7 +512,7 @@ test("locally sent link previews stay fully visible above the composer", () => {
   );
   const styles = readRendererCss();
 
-  assert.equal(chatSource.includes("if (list && newestId)"), true);
+  assert.equal(chatSource.includes("if (list && newestKey)"), true);
   assert.equal(chatSource.includes("list.scrollTop = list.scrollHeight"), true);
   assert.match(styles, /\.chat-message-list \{[\s\S]*?padding-bottom: 12px;/);
   assert.equal(styles.includes("contain-intrinsic-size: auto 64px"), false);

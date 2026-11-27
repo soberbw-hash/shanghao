@@ -83,7 +83,7 @@ test("high-frequency chat, telemetry, and pressure paths avoid broad invalidatio
   assert.equal(room.includes("<RoomChatPanel"), true);
   assert.equal(chat.includes("latestMessageElementRef"), true);
   assert.match(read("components/chat/ChatMessageRows.tsx"), /memo\(function ChatMessageRows/);
-  assert.equal(chat.includes("[newestId, listRef]"), true);
+  assert.equal(chat.includes("[newestKey, listRef]"), true);
   assert.equal(chat.includes('querySelectorAll("[data-gsap-chat-message]")'), false);
   assert.equal(store.includes("hasSameVisibleConnectionHealth"), true);
   assert.equal(store.includes("const canAppend ="), true);

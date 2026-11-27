@@ -22,7 +22,7 @@ const examples = [
   "声音刚好。",
   "打完这把再换下一首吧。",
 ];
-const messages: ChatMessage[] = Array.from({ length: 32 }, (_, index) => ({
+const initialMessages: ChatMessage[] = Array.from({ length: 32 }, (_, index) => ({
   id: `demo-${index}`,
   peerId: index % 2 ? "local" : "friend",
   nickname: index % 2 ? "小屿" : "小川",
@@ -32,6 +32,7 @@ const messages: ChatMessage[] = Array.from({ length: 32 }, (_, index) => ({
 }));
 
 function RoomEffectsFixture() {
+  const [messages, setMessages] = useState(initialMessages);
   const [draft, setDraft] = useState("");
   const [open, setOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -78,12 +79,35 @@ function RoomEffectsFixture() {
           <Music2 size={16} /> 放歌
         </Button>
       </div>
+      <button
+        hidden
+        data-testid="confirm-chat-message"
+        onClick={() =>
+          setMessages((previous) => [
+            ...previous.slice(0, -1),
+            { ...previous.at(-1)!, id: "confirmed", deliveryState: "sent" },
+          ])
+        }
+      />
       <TemporaryChatPanel
         messages={messages}
         chatInput={draft}
         onChatInputChange={setDraft}
         onSend={() => {
           setSent(draft);
+          setMessages((previous) => [
+            ...previous,
+            {
+              id: "pending",
+              clientMessageId: "fixture-send",
+              peerId: "local",
+              nickname: "小屿",
+              content: draft,
+              isLocal: true,
+              createdAt: "2026-11-19T23:30:00+08:00",
+              deliveryState: "sending",
+            },
+          ]);
           setDraft("");
         }}
         onSendImage={async (file) => setImage(file.name)}

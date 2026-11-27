@@ -12,11 +12,12 @@ import { preloadChatImage } from "../../features/chat/chatImagePreload";
 const urlPattern = /https?:\/\/[^\s<，。！？；：）】》」]+/gi;
 const trailingUrlPunctuation = /[.,!?，。！？;；:：)\]}>》」】]+$/;
 
-const formatMessageDate = (value?: string) => {
-  const date = value ? new Date(value) : new Date();
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
-};
+const messageDateFormat = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric" });
+const localDay = (date: Date) =>
+  date.getFullYear() * 10_000 + date.getMonth() * 100 + date.getDate();
+
+export const chatMessageKey = (message: ChatMessage) =>
+  message.clientMessageId ? `client:${message.clientMessageId}` : `server:${message.id}`;
 
 const renderMessageContent = (content: string, onCopyLink: (url: string) => void) => {
   const result: ReactNode[] = [];
@@ -79,32 +80,36 @@ export const ChatMessageRows = memo(function ChatMessageRows({
   onRecall,
   onRetry,
 }: ChatMessageRowsProps) {
+  let previousDate = new Date(NaN);
   return messages.slice(listStart).map((message, index, visibleMessages) => {
     const previousMessage = visibleMessages[index - 1];
-    const showDate =
-      !previousMessage ||
-      formatMessageDate(previousMessage.createdAt) !== formatMessageDate(message.createdAt);
+    const date = new Date(message.createdAt);
+    const previousCreatedAt = previousDate.getTime();
+    const createdAt = date.getTime();
+    const sameDay = Object.is(localDay(previousDate), localDay(date));
+    const showDate = !previousMessage || !sameDay;
+    previousDate = date;
     const linkCard =
       message.content && !isGameAssistantMessage(message)
         ? messageLinkCard(message.content)
         : undefined;
     const shouldShowMessageBubble = Boolean(message.content && !linkCard);
-    const previousCreatedAt = Date.parse(previousMessage?.createdAt ?? "");
-    const createdAt = Date.parse(message.createdAt);
     const isGrouped = Boolean(
       previousMessage &&
       previousMessage.kind !== "system" &&
       previousMessage.peerId === message.peerId &&
       isGameAssistantMessage(previousMessage) === isGameAssistantMessage(message) &&
-      formatMessageDate(previousMessage.createdAt) === formatMessageDate(message.createdAt) &&
+      sameDay &&
       Number.isFinite(previousCreatedAt) &&
       Number.isFinite(createdAt) &&
       createdAt - previousCreatedAt <= 5 * 60 * 1_000,
     );
     return (
-      <Fragment key={message.id}>
+      <Fragment key={chatMessageKey(message)}>
         {showDate ? (
-          <div className="chat-date-divider">{formatMessageDate(message.createdAt)}</div>
+          <div className="chat-date-divider">
+            {Number.isFinite(createdAt) ? messageDateFormat.format(date) : ""}
+          </div>
         ) : null}
         {message.kind === "system" ? (
           <div

@@ -18,13 +18,14 @@ export function ChatContentSwitcher({
 }) {
   if (!alternate) return children;
   return (
-    <div className="chat-content-stage">
+    <div className="chat-content-stage" data-reduce-motion={reduceMotion}>
       {(["chat", "chronicle"] as const).map((tab) => {
         const visible = (tab === "chronicle") === active;
         return (
           <motion.div
             key={tab}
             className="chat-content-page"
+            data-active={visible}
             id={idPrefix ? `${idPrefix}-panel-${tab}` : undefined}
             role={idPrefix ? "tabpanel" : undefined}
             aria-labelledby={idPrefix ? `${idPrefix}-tab-${tab}` : undefined}
@@ -32,16 +33,13 @@ export function ChatContentSwitcher({
             inert={!visible}
             initial={false}
             animate={{
-              visibility: "visible",
               opacity: visible ? 1 : 0,
               x: reduceMotion || visible ? 0 : tab === "chat" ? -5 : 5,
-              transitionEnd: { visibility: visible ? "visible" : "hidden" },
             }}
             transition={{
               duration: reduceMotion ? motionDuration.instant : motionDuration.compact,
               ease: motionCurve.enter,
             }}
-            style={{ pointerEvents: visible ? "auto" : "none", zIndex: visible ? 1 : 0 }}
           >
             {tab === "chat" ? children : alternate}
           </motion.div>

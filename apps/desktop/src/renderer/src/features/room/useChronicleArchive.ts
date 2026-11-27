@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalChronicleEntry, RoomChronicleDay } from "@private-voice/shared";
 import { useAccountStore } from "../../store/accountStore";
 import { useSettingsStore } from "../../store/settingsStore";
+
+const EMPTY_ENTRIES: LocalChronicleEntry[] = [];
 
 export function useChronicleArchive(
   roomId: string,
@@ -34,11 +36,12 @@ export function useChronicleArchive(
       active = false;
     };
   }, [api, account, roomId, scope, incoming, serverDay]);
-  const retained = !serverDay && saved?.scope === scope ? saved.entries : [];
-  const reactions = new Map(retained.map((entry) => [entry.id, entry.reaction]));
-  const entries =
-    serverDay?.entries ??
-    [
+  const retained = !serverDay && saved?.scope === scope ? saved.entries : EMPTY_ENTRIES;
+  const serverEntries = serverDay?.entries;
+  const entries = useMemo(() => {
+    if (serverEntries) return serverEntries;
+    const reactions = new Map(retained.map((entry) => [entry.id, entry.reaction]));
+    return [
       ...new Map(
         [...retained, ...incoming].map((entry) => [
           entry.id,
@@ -46,6 +49,7 @@ export function useChronicleArchive(
         ]),
       ).values(),
     ].sort((a, b) => a.at - b.at);
+  }, [serverEntries, retained, incoming]);
   const react = async (id: string, reaction: LocalChronicleEntry["reaction"]) => {
     if (!api) return;
     try {

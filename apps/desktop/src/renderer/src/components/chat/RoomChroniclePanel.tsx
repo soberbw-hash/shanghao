@@ -1,4 +1,12 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useScrollEdgeFade } from "../../features/motion/useScrollEdgeFade";
 import {
   applyRoomMemoryNames,
@@ -13,6 +21,10 @@ import { useChronicleArchive } from "../../features/room/useChronicleArchive";
 
 const EMPTY_ENTRIES: [] = [];
 const EMPTY_NAMES = new Map<string, string>();
+const chronicleTimeFormat = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 export function RoomChroniclePanel({
   transport,
@@ -70,11 +82,25 @@ export function RoomChroniclePanel({
   const listRef = useRef<HTMLDivElement>(null);
   useScrollEdgeFade(listRef, archive.entries.length > 0);
   const newest = archive.entries.at(-1)?.id;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const list = listRef.current;
     if (list && newest) list.scrollTop = list.scrollHeight;
   }, [newest]);
   const names = memoryNames?.roomId === room.roomId ? memoryNames.names : EMPTY_NAMES;
+  const stories = useMemo(
+    () =>
+      archive.entries.slice(-shown).map((entry) => (
+        <article key={entry.id}>
+          <time dateTime={new Date(entry.at).toISOString()}>
+            {chronicleTimeFormat.format(entry.at)}
+          </time>
+          <div>
+            <p>{applyRoomMemoryNames(entry.text, names)}</p>
+          </div>
+        </article>
+      )),
+    [archive.entries, names, shown],
+  );
   const members = room.members.filter((member) => !member.isEmptySlot);
   const heard = members.filter((member) => state?.participants.includes(member.id));
   const act = async () => {
@@ -212,19 +238,7 @@ export function RoomChroniclePanel({
                   查看更早的纪事（共{archive.entries.length}条）
                 </button>
               ) : null}
-              {archive.entries.slice(-shown).map((entry) => (
-                <article key={entry.id}>
-                  <time dateTime={new Date(entry.at).toISOString()}>
-                    {new Date(entry.at).toLocaleTimeString("zh-CN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </time>
-                  <div>
-                    <p>{applyRoomMemoryNames(entry.text, names)}</p>
-                  </div>
-                </article>
-              ))}
+              {stories}
             </>
           ) : (
             <div className="room-chronicle-empty">

@@ -267,12 +267,10 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(sharedButtonSource.includes("getBoundingClientRect"), false);
   assert.equal(sharedButtonSource.includes("requestAnimationFrame"), false);
   assert.equal(sharedButtonSource.includes("linear-gradient(180deg"), true);
-  assert.equal(
-    chatSource.includes("if (shouldReduceMotion || messages.length <= previous) return;"),
-    true,
-  );
+  assert.match(chatSource, /shouldReduceMotion \|\|\s+alternateContentActive \|\|/);
+  assert.match(chatSource, /previous === newestKey \|\|\s+previous !== priorKey/);
   assert.equal(chatSource.includes("motionEase.jelly"), true);
-  assert.equal(chatSource.includes("latestMessage?.isLocal ? 10 : -8"), true);
+  assert.equal(chatSource.includes("isLocalMessage ? 10 : -8"), true);
   assert.equal(chatSource.includes("scaleX: 0.72"), false);
   assert.equal(chatSource.includes("duration: motionDuration.message"), true);
   assert.equal(chatSource.includes('data-icon-motion="send"'), true);

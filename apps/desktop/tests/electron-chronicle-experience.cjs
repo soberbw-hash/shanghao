@@ -177,10 +177,32 @@ app.whenReady().then(async () => {
       };
       fixture.setServerDay(day,entries(29));
       await checkScroll(panel.querySelector('.room-chronicle-entries'),()=>fixture.setServerDay(day,entries(30)));
-      document.querySelectorAll('[role="tab"]')[0].click();
+      const [chatTab, chronicleTab] = document.querySelectorAll('[role="tab"]');
+      chatTab.click();
       fixture.setChatCount(45); await pause(220);
-      await checkScroll(document.querySelector('.chat-message-list'),()=>fixture.setChatCount(46));
-      document.querySelectorAll('[role="tab"]')[1].click();
+      const chatList = document.querySelector('.chat-message-list');
+      await checkScroll(chatList,()=>fixture.setChatCount(46));
+      const input = document.querySelector('.chat-composer input[aria-label="聊天消息"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '先留个草稿');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      chronicleTab.click(); await pause(35);
+      chatTab.click(); await pause(35);
+      chronicleTab.click(); await pause(35);
+      chatTab.click(); await pause(250);
+      const chatPage = chatList.closest('[role="tabpanel"]');
+      const chroniclePage = panel.closest('[role="tabpanel"]');
+      if (chatPage.inert || getComputedStyle(chatPage).visibility !== 'visible' ||
+          !chroniclePage.inert || getComputedStyle(chroniclePage).visibility !== 'hidden')
+        throw Error('interrupting tab transitions left the wrong pane visible or interactive: ' +
+          JSON.stringify([chatPage, chroniclePage].map(page => ({
+            inert: page.inert,
+            visibility: getComputedStyle(page).visibility,
+            opacity: getComputedStyle(page).opacity,
+            style: page.style.cssText,
+          }))));
+      if (input !== document.querySelector('.chat-composer input[aria-label="聊天消息"]') ||
+          input.value !== '先留个草稿') throw Error('rapid tab switching lost the draft');
+      chronicleTab.click();
       fixture.setServerDay(following, []);
       await pause(80);
       if(stories().length||!panel.textContent.includes('今天还没有纪事')) throw Error('midnight reused previous room entries');

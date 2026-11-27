@@ -19,7 +19,7 @@ import {
   type ChatMessage,
 } from "@private-voice/shared";
 
-import { ChatMessageRows } from "./ChatMessageRows";
+import { ChatMessageRows, chatMessageKey } from "./ChatMessageRows";
 import { QuickMessageRow } from "./QuickMessageRow";
 import { preloadAdjacentChatImages } from "../../features/chat/chatImagePreload";
 import { quickMessageCooldownMs } from "../../features/chat/quickReplies";
@@ -113,15 +113,12 @@ export const TemporaryChatPanel = ({
     alternateContentActive,
   );
   const latestMessageElementRef = useRef<HTMLDivElement>(null);
-  const sendControlRef = useRef<HTMLSpanElement>(null);
   const imagePicker = useRef<HTMLInputElement>(null);
   const hasDraft = chatInput.trim().length > 0;
   const attachImage = !hasDraft && Boolean(onSendImage);
   useScrollEdgeFade(listRef, !alternateContentActive && messages.length > 0);
   const dragDepthRef = useRef(0);
-  // The first render can already contain restored history. Treat it as an
-  // initial batch so the chat opens at the newest message rather than the top.
-  const previousMessageCount = useRef(0);
+  const previousNewestKey = useRef<string | null | undefined>(undefined);
   const [isSendingImage, setIsSendingImage] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [previewMessageId, setPreviewMessageId] = useState<string | null>(null);
@@ -193,24 +190,33 @@ export const TemporaryChatPanel = ({
     [],
   );
 
-  const newestId = messages.at(-1)?.id;
+  const latestMessage = messages.at(-1);
+  const priorMessage = messages.at(-2);
+  const newestKey = latestMessage ? chatMessageKey(latestMessage) : null;
+  const priorKey = priorMessage ? chatMessageKey(priorMessage) : null;
+  const isSystemMessage = latestMessage?.kind === "system";
+  const isLocalMessage = latestMessage?.isLocal === true;
+
   useLayoutEffect(() => {
     const list = listRef.current;
-    if (list && newestId) list.scrollTop = list.scrollHeight;
-  }, [newestId, listRef]);
+    if (list && newestKey) list.scrollTop = list.scrollHeight;
+  }, [newestKey, listRef]);
+
   useLayoutEffect(() => {
+    const previous = previousNewestKey.current;
+    previousNewestKey.current = newestKey;
     const list = listRef.current;
-    if (!list) return;
-
-    const previous = previousMessageCount.current;
-    previousMessageCount.current = messages.length;
-    const latestMessage = messages.at(-1);
-    if (shouldReduceMotion || messages.length <= previous) return;
-
     const latest = latestMessageElementRef.current;
-    if (!latest) return;
+    if (
+      !list ||
+      !latest ||
+      shouldReduceMotion ||
+      alternateContentActive ||
+      previous === newestKey ||
+      previous !== priorKey
+    )
+      return;
 
-    const isSystemMessage = latestMessage?.kind === "system";
     const copy = latest.querySelector<HTMLElement>(".chat-message-copy");
     const avatar = latest.querySelector<HTMLElement>(".chat-message-avatar");
     const context = gsap.context(() => {
@@ -219,7 +225,7 @@ export const TemporaryChatPanel = ({
         latest,
         {
           autoAlpha: isSystemMessage ? 1 : 0,
-          x: isSystemMessage ? 0 : latestMessage?.isLocal ? 10 : -8,
+          x: isSystemMessage ? 0 : isLocalMessage ? 10 : -8,
           y: isSystemMessage ? 3 : 6,
           scale: isSystemMessage ? 0.99 : 0.94,
           transformOrigin: isSystemMessage ? "50% 100%" : "0% 65%",
@@ -239,7 +245,7 @@ export const TemporaryChatPanel = ({
         timeline.fromTo(
           copy,
           {
-            x: latestMessage?.isLocal ? 7 : -5,
+            x: isLocalMessage ? 7 : -5,
             scale: 0.96,
             transformOrigin: "0% 65%",
           },
@@ -272,50 +278,32 @@ export const TemporaryChatPanel = ({
     }, list);
     // Restore inline styles when message updates interrupt the entry animation.
     return () => context.revert();
-  }, [messages, shouldReduceMotion, listRef]);
+  }, [
+    newestKey,
+    priorKey,
+    isSystemMessage,
+    isLocalMessage,
+    shouldReduceMotion,
+    alternateContentActive,
+    listRef,
+  ]);
 
-  const animateSendFeedback = (source?: HTMLElement) => {
+  const animateSendFeedback = (source: HTMLButtonElement) => {
     if (shouldReduceMotion) return;
-    if (source) {
-      gsap.fromTo(
-        source,
-        { scale: 0.955 },
-        {
-          scale: 1,
-          duration: motionDuration.feedback,
-          ease: motionEase.spatial,
-          clearProps: "transform",
-        },
-      );
-    }
-
-    const sendIcon = sendControlRef.current?.querySelector("svg");
-    if (!sendIcon) return;
-    const timeline = gsap.timeline({ defaults: { overwrite: true } });
-    timeline
-      .to(sendIcon, {
-        x: 5,
-        y: -5,
-        scale: 0.82,
-        autoAlpha: 0,
-        duration: motionDuration.color,
-        ease: "power2.in",
-      })
-      .set(sendIcon, { x: -4, y: 4, scale: 0.88 })
-      .to(sendIcon, {
-        x: 0,
-        y: 0,
+    gsap.fromTo(
+      source,
+      { scale: 0.955 },
+      {
         scale: 1,
-        autoAlpha: 1,
-        duration: motionDuration.icon,
+        duration: motionDuration.feedback,
         ease: motionEase.spatial,
-        clearProps: "transform,opacity,visibility",
-      });
+        clearProps: "transform",
+      },
+    );
   };
 
   const handleSend = () => {
     if (!canSend || !chatInput.trim()) return;
-    animateSendFeedback();
     onSend();
   };
 
@@ -594,7 +582,7 @@ export const TemporaryChatPanel = ({
                 }}
               />
             )}
-            <span ref={sendControlRef} className="inline-flex shrink-0">
+            <span className="inline-flex shrink-0">
               <Button
                 onClick={attachImage ? () => imagePicker.current?.click() : handleSend}
                 disabled={!canSend || (attachImage ? isSendingImage : !hasDraft)}

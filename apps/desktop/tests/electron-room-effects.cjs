@@ -103,7 +103,17 @@ app.whenReady().then(async () => {
       if (composer.querySelector('[aria-label="发送消息"]') !== attach || !input.value)
         throw Error('typing replaced the action instead of transitioning its state');
       attach.click();
-      await pause(240);
+      for (let i = 0; i < 25 && !$('[data-message-id="pending"]'); i++) await pause(20);
+      const sendGlyph = attach.querySelector('.chat-send-icon');
+      const iconOwnsItsTransition = !sendGlyph.style.opacity && !sendGlyph.style.transform;
+      const optimistic = list.querySelector('[data-message-id="pending"]');
+      if (!optimistic) throw Error('message did not appear before confirmation: ' + JSON.stringify({sent: $('main').dataset.sent, label: attach.ariaLabel, disabled: attach.disabled, latest: list.lastElementChild?.dataset.messageId}));
+      list.scrollTop = 0;
+      $('[data-testid="confirm-chat-message"]').click();
+      await pause(320);
+      if (optimistic !== list.querySelector('[data-message-id="confirmed"]') || list.scrollTop > 2)
+        throw Error('confirmation replaced the row or jumped to the latest message: ' + JSON.stringify({replaced: optimistic !== list.querySelector('[data-message-id="confirmed"]'), scrollTop: list.scrollTop, iconOwnsItsTransition}));
+      if (!iconOwnsItsTransition) throw Error('send animation overrides the composer icon transition');
       if ($('main').dataset.sent !== '发个测试' || input.value)
         throw Error('sending the draft failed');
       if (composer.querySelector('[aria-label="选择并发送图片"]') !== attach)
