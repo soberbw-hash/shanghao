@@ -1,4 +1,8 @@
-# ShangHao 3.4.23 发布候选
+# ShangHao 3.4.24 发布候选
+
+GitHub Release、GitHub Pages 下载清单与旧 CloudBase 清单均以 3.4.23 为基线。3.4.24 包含房间语音准入、Windows 桌面通知、聊天与纪事交互、录音转录以及设置维护的改进。正式发布的下载与画面见 [3.4.24 更新说明](release-notes/v3.4.24.md)。
+
+## 3.4.23 历史记录
 
 > 这是 3.4.23 的历史发布记录。当前正式版、开发行为与验证结果见 [上号当前状态](current-state.md)。
 

@@ -24,6 +24,7 @@ app.whenReady().then(async () => {
   let observed;
   const window = new BrowserWindow({
     show: true,
+    skipTaskbar: true,
     title: "上号 · 动画回归检查",
     width: 520,
     height: 640,

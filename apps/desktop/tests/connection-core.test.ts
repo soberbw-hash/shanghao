@@ -200,7 +200,12 @@ test("windows executable and shortcut use approved v4 icons", () => {
   const identity = read("apps/desktop/src/main/development-shortcuts.ts");
   assert.match(identity, /app.isPackaged\s*\?\s*APP_ID/);
   assert.equal(identity.includes("`${APP_ID}.dev`"), true);
-  assert.equal(identity.includes("`${APP_ID}.capture`"), true);
+  assert.match(mainWindow, /skipTaskbar: isVisualCapture\(\)/);
+  assert.match(mainWindow, /platformService\.isWindows && !isVisualCapture\(\)/);
+  assert.match(
+    read("apps/desktop/src/main/index.ts"),
+    /platformService\.isWindows && !isVisualCapture\(\)\)\s+app\.setAppUserModelId/,
+  );
 });
 
 test("AI voice memory remains local and legacy server LLM proxy paths stay removed", () => {

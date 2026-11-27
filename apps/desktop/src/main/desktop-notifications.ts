@@ -9,6 +9,7 @@ import {
   type NotificationFailureReason,
 } from "./notification-delivery";
 import { windowsToastXml, type WindowsToastContent } from "./windows-toast";
+import { isVisualCapture } from "./development-shortcuts";
 
 interface DesktopNotice {
   title: string;
@@ -59,7 +60,7 @@ function stageThumbnail(image: Electron.NativeImage) {
 }
 
 export function canShowDesktopNotification(): boolean {
-  return Notification.isSupported();
+  return !isVisualCapture() && Notification.isSupported();
 }
 
 export function showDesktopNotification(

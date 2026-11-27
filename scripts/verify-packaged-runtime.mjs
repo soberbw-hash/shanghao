@@ -80,15 +80,37 @@ if (
   throw new Error("Packaged official icon original does not match the approved source");
 }
 const icon = await readFile(path.join(brandDirectory, "shanghao-icon-v4.ico"));
-const executable = await readFile(path.join(unpackedDirectory, "ShangHao.exe"));
-if (icon.readUInt16LE(4) !== 9)
+const shortcutIcon = await readFile(path.join(brandDirectory, "shanghao-shortcut-v4.ico"));
+if (!shortcutIcon.equals(icon)) throw new Error("Packaged shortcut icon differs from the app icon");
+
+const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
+if (icon.readUInt16LE(4) !== sizes.length)
   throw new Error("Official Windows icon must contain nine DPI sizes");
-for (let index = 0; index < icon.readUInt16LE(4); index++) {
+const frames = sizes.map((pixels, index) => {
   const entry = 6 + index * 16;
-  const size = icon.readUInt32LE(entry + 8),
-    offset = icon.readUInt32LE(entry + 12);
-  if (!executable.includes(icon.subarray(offset, offset + size))) {
-    throw new Error(`EXE is missing official icon frame ${index}`);
+  const length = icon.readUInt32LE(entry + 8);
+  const offset = icon.readUInt32LE(entry + 12);
+  if (
+    (icon[entry] || 256) !== pixels ||
+    (icon[entry + 1] || 256) !== pixels ||
+    length === 0 ||
+    offset + length > icon.length
+  ) {
+    throw new Error(`Invalid official ${pixels}px icon frame`);
+  }
+  return icon.subarray(offset, offset + length);
+});
+const executables = [path.join(unpackedDirectory, "ShangHao.exe")];
+if (process.argv[3]) {
+  executables.push(path.resolve(process.argv[3]));
+} else if (!process.argv[2]) {
+  executables.push(path.join(releaseDirectory, `ShangHao-${desktopPackage.version}-Setup-x64.exe`));
+}
+for (const file of executables) {
+  const executable = await readFile(file);
+  for (const [index, frame] of frames.entries()) {
+    if (!executable.includes(frame))
+      throw new Error(`${path.basename(file)} is missing the official ${sizes[index]}px icon`);
   }
 }
 

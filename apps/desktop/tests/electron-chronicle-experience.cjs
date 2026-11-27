@@ -150,7 +150,8 @@ app.whenReady().then(async () => {
       `(async()=>{ document.querySelectorAll('[role="tab"]')[1].click(); await new Promise(r=>setTimeout(r,250)); })()`,
     );
     await fs.writeFile(
-      path.join(app.getPath("userData"), "chronicle-experience.png"),
+      process.env.SHANGHAO_CHRONICLE_SCREENSHOT ||
+        path.join(app.getPath("userData"), "chronicle-experience.png"),
       lastFrame.toPNG(),
     );
     const dailyHistory = await view.webContents.executeJavaScript(`(async()=>{

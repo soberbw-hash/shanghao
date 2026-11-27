@@ -23,6 +23,7 @@ import { createTrayController } from "./tray";
 import { UpdateService } from "./updates";
 import { createMainWindow } from "./window";
 import {
+  isVisualCapture,
   repairDevelopmentShortcuts,
   watchDevelopmentShortcuts,
   windowsAppUserModelId,
@@ -969,7 +970,7 @@ const bootstrap = async (): Promise<void> => {
   });
 };
 
-if (platformService.isWindows) app.setAppUserModelId(windowsAppUserModelId());
+if (platformService.isWindows && !isVisualCapture()) app.setAppUserModelId(windowsAppUserModelId());
 protocol.registerSchemesAsPrivileged([
   {
     scheme: RECORDING_MEDIA_PROTOCOL,

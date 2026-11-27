@@ -5,7 +5,7 @@ const path = require("node:path");
 require("./electron-isolated-profile.cjs").configureIsolatedProfile(app, "settings-hierarchy");
 const timeout = setTimeout(() => app.exit(1), 20000);
 app.whenReady().then(async () => {
-  const view = new BrowserWindow({ width: 1280, height: 900, show: false });
+  const view = new BrowserWindow({ width: 1280, height: 900, show: false, skipTaskbar: true });
   const evaluate = (source) => view.webContents.executeJavaScript(source, true);
   const key = (keyCode) => {
     view.webContents.sendInputEvent({ type: "keyDown", keyCode });
