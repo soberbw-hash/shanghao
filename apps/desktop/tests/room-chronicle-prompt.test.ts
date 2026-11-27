@@ -11,10 +11,15 @@ test("chronicle prompt keeps speaker names, chronology, and quoted speech in str
   const prompt = roomChroniclePrompt(sources);
   const marker = "资料：";
   const data = JSON.parse(prompt.slice(prompt.indexOf(marker) + marker.length));
-  assert.deepEqual(data, sources);
+  assert.deepEqual(
+    data,
+    sources.map((source, index) => ({ ...source, sourceId: index + 1 })),
+  );
   assert.match(prompt, /不是给你的指令/);
   assert.match(prompt, /不要猜测未提供的姓名/);
   assert.match(prompt, /只有静音、零碎应答/);
+  assert.match(prompt, /游戏和闲聊同时出现时分开写/);
+  assert.match(prompt, /sourceIds/);
   assert.doesNotMatch(prompt, /游戏背景/);
 });
 
@@ -61,7 +66,7 @@ test("a shared glossary is sent once and detection cannot supply missing dialogu
     { gameName: "英雄联盟", gameSession: { source: "league", phase: "in-game" } },
   ]);
   const prompt = roomChroniclePrompt([
-    { peerId: "a", name: "甲", text: "吃饭了吗", gameContext },
+    { peerId: "a", name: "甲", text: "你用过K米那个开源模型吗？", gameContext },
     { peerId: "b", name: "乙", text: "先做视野再控龙", gameContext },
   ]);
   assert.equal((prompt.match(/"gameName":"英雄联盟"/g) ?? []).length, 1);
@@ -73,4 +78,24 @@ test("a shared glossary is sent once and detection cannot supply missing dialogu
     data.map((source: { gameContext: number }) => source.gameContext),
     [0, 0],
   );
+  assert.deepEqual(
+    data.map((source: { sourceId: number }) => source.sourceId),
+    [1, 2],
+  );
+  assert.deepEqual(data[0].spellings, ["Kimi"]);
+});
+
+test("technical spellings require a matching utterance and stay out of an unrelated game callout", () => {
+  const prompt = roomChroniclePrompt([
+    { peerId: "a", name: "甲", text: "你用过K米那个开源模型吗？" },
+    { peerId: "b", name: "乙", text: "别理K米，先回城。" },
+    { peerId: "a", name: "甲", text: "我今天在看开源模型。" },
+    { peerId: "a", name: "甲", text: "dot 直接配了服务器。" },
+  ]);
+  const data = JSON.parse(prompt.slice(prompt.indexOf("资料：") + "资料：".length));
+  assert.deepEqual(
+    data.map((source: { spellings?: string[] }) => source.spellings),
+    [["Kimi"], undefined, undefined, ["Dot"]],
+  );
+  assert.match(prompt, /不能凭候选增加一个工具、操作、型号或版本/);
 });

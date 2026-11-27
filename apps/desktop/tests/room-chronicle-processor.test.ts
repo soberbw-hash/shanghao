@@ -380,3 +380,52 @@ test("simultaneous chunks are bounded and canceled summary work cannot publish a
     processor.dispose();
   }
 });
+
+test("one organizer request publishes concise topics at their own source times and ignores filler", async () => {
+  const { sessions, id } = setup();
+  const now = Date.now();
+  const responses = ["🎼 <|BGM|> 嗯。呃。", "想周六晚上再开黑，可以吗？", "大龙先做视野。"];
+  let prompts = 0;
+  const updates: string[][] = [];
+  const processor = new RoomChronicleProcessor(
+    sessions,
+    {
+      isConfigured: () => true,
+      transcribe: async () => ({ text: responses.shift()!, modelName: "fixture" }),
+    },
+    {
+      isConfigured: () => true,
+      execute: async ({ prompt }) => {
+        prompts++;
+        assert.doesNotMatch(prompt, /🎼|<\|BGM\|>/);
+        assert.match(prompt, /"sourceId":1,"peerId":"a"/);
+        assert.match(prompt, /"sourceId":2,"peerId":"b"/);
+        return JSON.stringify({
+          stories: [
+            { text: "乙提议先给大龙做视野。", sourceIds: [2] },
+            { text: "甲问周六晚上能不能再开黑。", sourceIds: [1] },
+            { text: "甲说“已经赢了”。", sourceIds: [1, 2] },
+          ],
+        });
+      },
+    },
+    (_roomId, entries) => {
+      if (entries?.length) updates.push(entries.map((entry) => entry.text));
+    },
+    10,
+  );
+  try {
+    await processor.submit({ ...part(id, "a", "filler"), startedAt: now - 90000 }, "甲");
+    await processor.submit({ ...part(id, "a", "date"), startedAt: now - 60000 }, "甲");
+    await processor.submit({ ...part(id, "b", "objective"), startedAt: now - 30000 }, "乙");
+    await until(() => updates.length === 1);
+    assert.equal(prompts, 1);
+    assert.deepEqual(updates, [["甲问周六晚上能不能再开黑。", "乙提议先给大龙做视野。"]]);
+    assert.deepEqual(
+      sessions.read("main", id, "a").map(({ at }) => at),
+      [now - 60000, now - 30000],
+    );
+  } finally {
+    processor.dispose();
+  }
+});

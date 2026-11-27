@@ -35,9 +35,9 @@ export class RoomChronicleController {
       this.sessions,
       runtime.speechService,
       runtime.textService,
-      (roomId, entry) => {
+      (roomId, entries) => {
         changed(roomId);
-        if (entry) this.broadcastChronicleEntry(roomId, entry);
+        if (entries?.length) this.broadcastChronicleEntries(roomId, entries);
       },
       undefined,
       reports,
@@ -132,13 +132,14 @@ export class RoomChronicleController {
     }
   }
 
-  private broadcastChronicleEntry(roomId: string, entry: ChronicleEntry): void {
+  private broadcastChronicleEntries(roomId: string, stories: ChronicleEntry[]): void {
     const history = this.history;
     if (!history || isTemporaryRoomSessionId(roomId)) return;
     const date = getRoomChronicleDate();
-    if (getRoomChronicleDate(entry.at) !== date) return;
+    const entries = stories.filter((entry) => getRoomChronicleDate(entry.at) === date);
+    if (!entries.length) return;
     for (const peer of history.rooms.getRoom(roomId)?.peers.listConnectedPeers() ?? [])
-      history.send(peer.socket, { type: "chronicle_history", roomId, date, entries: [entry] });
+      history.send(peer.socket, { type: "chronicle_history", roomId, date, entries });
   }
 
   private scheduleChronicleRollover(): void {
