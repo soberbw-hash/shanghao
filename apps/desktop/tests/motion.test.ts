@@ -143,7 +143,7 @@ test("gsap motion is scoped to intentional surfaces with the full visual present
   assert.equal(stylesSource.includes("[data-gsap-entry],"), false);
   assert.equal(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), true);
   assert.equal(appStoreSource.includes("startTransition"), true);
-  assert.equal(appSource.includes("initial={{ opacity: 0, y: 4 }}"), true);
+  assert.match(appSource, /initial=\{reduceMotion \? false : \{ opacity: 0\.78, y: 3 \}\}/);
   assert.equal(appSource.includes("animate={{ opacity: 1, y: 0 }}"), true);
   assert.equal(animalSource.includes("layered-animal"), true);
   assert.equal(animalSource.includes("avatarLayerAssets"), true);

@@ -24,6 +24,11 @@ test("repeated settings initialization preserves the requested section until the
     assert.equal(values.get(SETTINGS_SECTION_REQUEST_KEY), "account");
     assert.equal(readRequestedSettingsSection(), "account");
     assert.equal(readRequestedSettingsSection(), undefined);
+
+    values.set(SETTINGS_SECTION_REQUEST_KEY, "diagnostics");
+    assert.equal(getInitialSettingsSection(), "about");
+    assert.equal(readRequestedSettingsSection(), "about");
+    assert.equal(readRequestedSettingsSection(), undefined);
   } finally {
     if (previous) Object.defineProperty(globalThis, "window", previous);
     else Reflect.deleteProperty(globalThis, "window");

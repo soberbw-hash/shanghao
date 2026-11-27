@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { RoomLifecycleState } from "@private-voice/shared";
 
 import { useAudioStore } from "../../store/audioStore";
 import { useRoomStore } from "../../store/roomStore";
@@ -8,6 +9,7 @@ import { hasPlayableAudioTrack } from "./remoteAudioTrack";
 import { sameRemoteAudioSyncInputs, type RemoteAudioSyncInput } from "./remoteAudioSync";
 
 export const RemoteAudioRenderer = () => {
+  const roomOpen = useRoomStore((state) => state.room.lifecycleState === RoomLifecycleState.Open);
   const remoteStreams = useRoomStore((state) => state.remoteStreams);
   const members = useRoomStore((state) => state.room.members);
   const isDeafened = useAudioStore((state) => state.isDeafened);
@@ -20,7 +22,7 @@ export const RemoteAudioRenderer = () => {
   const lastSyncedInputs = useRef<RemoteAudioSyncInput[] | null>(null);
 
   useEffect(() => {
-    const inputs = Object.entries(remoteStreams).map(([peerId, stream]) => ({
+    const inputs = (roomOpen ? Object.entries(remoteStreams) : []).map(([peerId, stream]) => ({
       peerId,
       stream,
       audioTrackId: stream.getAudioTracks()[0]?.id,
@@ -32,7 +34,7 @@ export const RemoteAudioRenderer = () => {
     }
     lastSyncedInputs.current = inputs;
     mixer.sync(inputs);
-  }, [members, mixer, remoteStreams]);
+  }, [members, mixer, remoteStreams, roomOpen]);
 
   useEffect(() => {
     mixer.setPeerSpeakingStates(

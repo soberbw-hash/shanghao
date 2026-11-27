@@ -66,7 +66,7 @@ const Fixture = () => {
     aiOrganizerProvider: "custom",
     aiRoomAskProvider: "custom",
     aiTextModelPreset: "glm",
-    aiTranscriptionProvider: "custom",
+    aiTranscriptionProvider: coldAiOpen ? "cloud" : "custom",
     isAiAutoTranscribeEnabled: true,
     isAiAutoOrganizeEnabled: true,
     isAiAutoUploadEnabled: false,

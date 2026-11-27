@@ -53,9 +53,6 @@ test("runtime health uses real Electron and animation-frame measurements", () =>
   const diagnosticsSection = readDesktop(
     "src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx",
   );
-  const diagnosticsRefresh = readDesktop(
-    "src/renderer/src/components/settings/useDiagnosticsRefresh.ts",
-  );
   const rendererMonitor = readDesktop(
     "src/renderer/src/features/diagnostics/rendererPerformanceMonitor.ts",
   );
@@ -72,10 +69,8 @@ test("runtime health uses real Electron and animation-frame measurements", () =>
   assert.doesNotMatch(appSource, /rendererPerformanceMonitor\.start\(\)/);
   assert.match(settingsSource, /rendererPerformanceMonitor\.start\(\)/);
   assert.match(appSource, /runtimeHealthCollector\.start\(\)/);
-  assert.match(diagnosticsSection, /useDiagnosticsRefresh\(/);
-  assert.match(diagnosticsRefresh, /runtimeHealthCollector\.observeDetailed\(\)/);
-  assert.match(diagnosticsRefresh, /正在检查系统权限/);
-  assert.match(diagnosticsRefresh, /系统权限检查失败/);
+  assert.match(diagnosticsSection, /exportBundle\(buildRendererDiagnostics\(\)\)/);
+  assert.doesNotMatch(diagnosticsSection, /observeDetailed|setInterval/);
   assert.doesNotMatch(settingsSource, /useRoomStore|getRoomRuntimeDiagnostics/);
 });
 
@@ -83,7 +78,7 @@ test("diagnostic IPC and bundle expose health without ordinary fault-lab UI", ()
   const channels = readRepo("packages/shared/src/constants/ipc.ts");
   const ipc = readDesktop("src/main/ipc.ts");
   const diagnosticsCard = readDesktop(
-    "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+    "src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx",
   );
   assert.match(channels, /runtimeHealth: "diagnostics:runtime-health"/);
   assert.match(ipc, /runtime-health\.json/);
@@ -91,20 +86,19 @@ test("diagnostic IPC and bundle expose health without ordinary fault-lab UI", ()
   assert.match(ipc, /ai-scheduler\.json/);
   assert.match(ipc, /ai-compute-timeline\.json/);
   assert.doesNotMatch(diagnosticsCard, /开发测试入口|onInjectFault/);
-  assert.match(diagnosticsCard, /遇到了什么问题/);
+  assert.match(diagnosticsCard, /导出日志/);
   assert.doesNotMatch(diagnosticsCard, /Realtime Fault Lab/);
 });
 
-test("diagnostics keep screen-share status readable without exposing raw metrics", () => {
+test("diagnostic exports retain screen-share metrics without exposing them in settings", () => {
   const diagnosticsCard = readDesktop(
-    "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+    "src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx",
   );
   const healthProjection = readDesktop("src/renderer/src/features/diagnostics/healthProjection.ts");
 
-  assert.match(diagnosticsCard, /共享画面异常/);
+  assert.match(diagnosticsCard, /screenShare: runtime\?\.screenShare/);
   assert.match(healthProjection, /尚无屏幕分享画面可检查/);
   assert.match(healthProjection, /屏幕分享可能暂时卡住/);
-  assert.match(diagnosticsCard, /回到房间/);
   assert.doesNotMatch(diagnosticsCard, /hasScreenShareMetrics/);
   assert.doesNotMatch(diagnosticsCard, /Requested \/ Capture/);
   assert.doesNotMatch(diagnosticsCard, /Encode \/ Bitrate/);
@@ -112,9 +106,8 @@ test("diagnostics keep screen-share status readable without exposing raw metrics
 
 test("a collected runtime sample is not counted as proof of healthy audio or devices", () => {
   const diagnosticsCard = readDesktop(
-    "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+    "src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx",
   );
-  assert.match(diagnosticsCard, /连接异常会自动尝试恢复/);
   assert.match(
     readDesktop("src/renderer/src/features/diagnostics/healthProjection.ts"),
     /请让好友确认/,

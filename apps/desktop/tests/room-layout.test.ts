@@ -774,7 +774,7 @@ test("entering a channel uses one lightweight route transition without replaying
   assert.equal(appSource.includes('basePage === "room" ? { opacity: 0 } : false'), false);
   assert.equal(appSource.includes("<motion.div"), true);
   assert.equal(appSource.includes("key={basePage}"), true);
-  assert.equal(appSource.includes("{ opacity: 0, y: 4 }"), true);
+  assert.match(appSource, /reduceMotion \? false : \{ opacity: 0\.78, y: 3 \}/);
   assert.equal(roomSource.includes("[data-gsap-room='island']"), false);
 });
 

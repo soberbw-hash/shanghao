@@ -93,7 +93,6 @@
   "apps/desktop/src/main/voice-memory-transcription-units.ts": 288,
   "apps/desktop/src/main/voice-memory-observation.ts": 74,
   "apps/desktop/src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx": 231,
-  "apps/desktop/src/renderer/src/components/settings/useDiagnosticsRefresh.ts": 113,
   "apps/desktop/src/main/voice-memory-organizer.ts": 670,
   "apps/desktop/src/main/voice-memory-transcription-preparation.ts": 230,
   "apps/desktop/src/main/voice-memory-transcription-retry.ts": 187,

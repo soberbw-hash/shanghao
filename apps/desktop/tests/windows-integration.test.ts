@@ -131,18 +131,17 @@ test("startup runs background recovery but a failed inspection cannot request el
   assert.equal(outcome.repairAttempted, false);
 });
 
-test("firewall repair UI blocks repeated clicks while the serialized repair is running", async () => {
+test("firewall repair remains guarded after the settings entry is removed", async () => {
   const settings = await read("../src/renderer/src/pages/SettingsPage.tsx");
   const diagnosticsCard = await read(
-    "../src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+    "../src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx",
   );
-  assert.match(settings, /if \(isRepairingFirewall\) return/);
-  assert.match(settings, /\.finally\(\(\) => setIsRepairingFirewall\(false\)\)/);
-  assert.match(settings, /TCP\/UDP 双向规则已正常启用。/);
-  assert.match(diagnosticsCard, /修复网络权限/);
-  assert.doesNotMatch(diagnosticsCard, /actionLabel:.*"自动修复"/);
-  assert.match(diagnosticsCard, /disabled=\{props\.isRepairingFirewall \|\| busy\}/);
-  assert.match(diagnosticsCard, /修复中…/);
+  const ipc = await read("../src/main/windows-integration-ipc.ts");
+  assert.doesNotMatch(settings + diagnosticsCard, /repairFirewall|修复网络权限/);
+  assert.match(
+    ipc,
+    /IPC_CHANNELS\.windows\.repairFirewall[\s\S]*?assertSystemOperationSender\(event, getWindow\(\)\)/,
+  );
 });
 
 test("uninstaller removes only ShangHao startup and firewall integration", async () => {

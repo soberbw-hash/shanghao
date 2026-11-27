@@ -13,6 +13,9 @@ app.whenReady().then(async () => {
     height: 1000,
     webPreferences: { backgroundThrottling: false, offscreen: true },
   });
+  view.webContents.on("console-message", (event) => {
+    if (event.level === "error") console.error(event.message);
+  });
   try {
     const file = path.join(__dirname, "visual/settings-feedback.html").replaceAll("\\", "/");
     await view.loadURL(
@@ -46,7 +49,7 @@ app.whenReady().then(async () => {
       key.dispatchEvent(new Event('input',{bubbles:true}));await pause(50);save.click();await pause(100);
       check(select.value==='custom','saved custom API did not remain selected');
       check(document.querySelector('.ai-overview-grid').textContent.includes('deepseek-flash'),'current model summary did not follow saved provider');
-      for(const text of ['custom','cloud'])for(const asr of ['cloud','local','custom']){
+      for(const text of ['custom','cloud'])for(const asr of ['cloud','hybrid','custom']){
         select.value=text;select.dispatchEvent(new Event('change',{bubbles:true}));
         const source=document.querySelector('[aria-label="语音转录模型来源"]');source.value=asr;source.dispatchEvent(new Event('change',{bubbles:true}));await pause(40);
         const panels=[...document.querySelectorAll('.ai-model-provider-panel')].map(p=>p.getBoundingClientRect());
@@ -65,7 +68,7 @@ app.whenReady().then(async () => {
     );
     await view.webContents.executeJavaScript(`(()=>{
       const text=document.querySelector('select[aria-label="文本整理与问答模型"]');text.value='cloud';text.dispatchEvent(new Event('change',{bubbles:true}));
-      const asr=document.querySelector('[aria-label="语音转录模型来源"]');asr.value='cloud';asr.dispatchEvent(new Event('change',{bubbles:true}));
+      const asr=document.querySelector('[aria-label="语音转录模型来源"]');asr.value='hybrid';asr.dispatchEvent(new Event('change',{bubbles:true}));
       document.querySelector('.ai-model-provider-grid').scrollIntoView({block:'center'});
     })()`);
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -130,7 +133,7 @@ app.whenReady().then(async () => {
       await until(()=>overview().textContent.includes('0 个转录'),'model state never arrived');
       checkPosition('model state');
       window.dispatchEvent(new Event('fixture:ai-providers-ready'));
-      await until(()=>overview().textContent.includes('glm-4-flash-250414')&&document.body.textContent.includes('使用所选模型自动转录。'),'provider state never arrived');
+      await until(()=>overview().textContent.includes('glm-4-flash-250414')&&document.querySelector('[aria-label="语音转录模型来源"]').value==='hybrid','provider state never arrived');
       checkPosition('provider state');
       return true;
     })()`);
@@ -146,8 +149,18 @@ app.whenReady().then(async () => {
       if(document.elementFromPoint(point.x,point.y)!==composer)throw Error('required download blocks the composer');
       return { composer:point, handle:center(find('[title="拖动更新窗口"]')), card:center(find('.update-modal-surface')) };
     })()`);
-    view.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...geometry.composer });
-    view.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...geometry.composer });
+    view.webContents.sendInputEvent({
+      type: "mouseDown",
+      button: "left",
+      clickCount: 1,
+      ...geometry.composer,
+    });
+    view.webContents.sendInputEvent({
+      type: "mouseUp",
+      button: "left",
+      clickCount: 1,
+      ...geometry.composer,
+    });
     view.webContents.sendInputEvent({ type: "char", keyCode: "x" });
     const { x, y } = geometry.handle;
     view.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, x, y });
@@ -155,7 +168,13 @@ app.whenReady().then(async () => {
       view.webContents.sendInputEvent({ type: "mouseMove", x: x - 20 * i, y: y - 14 * i });
       await new Promise((resolve) => setTimeout(resolve, 24));
     }
-    view.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, x: x - 100, y: y - 70 });
+    view.webContents.sendInputEvent({
+      type: "mouseUp",
+      button: "left",
+      clickCount: 1,
+      x: x - 100,
+      y: y - 70,
+    });
     result.updateDuringChat = await view.webContents.executeJavaScript(`(()=>{
       const box=document.querySelector('.update-modal-surface').getBoundingClientRect();
       if(document.querySelector('input[aria-label="聊天消息"]').value!=='x')throw Error('typing during update failed');

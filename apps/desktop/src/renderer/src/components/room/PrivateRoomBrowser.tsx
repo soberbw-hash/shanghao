@@ -29,6 +29,7 @@ export const PrivateRoomBrowser = ({
   const serverUrl = useSettingsStore((state) => state.settings?.relayServerUrl);
   const pendingInvite = useAppStore((state) => state.pendingRoomInvite);
   const autoJoinInvite = useAppStore((state) => state.pendingRoomInviteAutoJoin);
+  const leaving = useAppStore((state) => state.roomAction === "leaving");
   const generation = useRef(0);
   const {
     history,
@@ -49,6 +50,7 @@ export const PrivateRoomBrowser = ({
   const historyRef = useRef(history);
   historyRef.current = history;
   const blocked = busy || joining;
+  const joinLabel = joining ? "正在进入…" : "加入房间";
   const renderedGeneration = generation.current;
   useEffect(() => {
     setFound(undefined);
@@ -115,16 +117,7 @@ export const PrivateRoomBrowser = ({
       if (current()) setBusy(false);
     }
   };
-  const join = (room: PrivateRoomInfo) =>
-    run(async (current) => {
-      const fresh = await shanghaoCore.rooms.get(room.roomId);
-      if (!current()) return;
-      if (fresh.onlineCount >= fresh.capacity) {
-        setError("房间已满，最多五人同时在线。");
-        return;
-      }
-      await onJoin(fresh);
-    });
+  const join = (room: PrivateRoomInfo) => run(() => onJoin(room));
   const toggleFavorite = (room: PrivateRoomInfo) =>
     run(async (current) => {
       const saved = await shanghaoCore.rooms.favorite(
@@ -144,7 +137,6 @@ export const PrivateRoomBrowser = ({
   const visibleRooms =
     tab === "recent" ? rooms.filter((room) => room.roomId !== last?.roomId) : rooms;
   const roomRow = (room: PrivateRoomInfo, preview = false, featured = false) => {
-    const RoomInformation = preview || featured ? "div" : "button";
     return (
       <div
         key={room.roomId}
@@ -159,19 +151,14 @@ export const PrivateRoomBrowser = ({
         >
           <PrivateRoomIcon icon={room.icon} className="size-full" />
         </span>
-        <RoomInformation
-          type={preview || featured ? undefined : "button"}
-          className="min-w-0 flex-1 text-left"
-          disabled={preview || featured ? undefined : blocked}
-          onClick={preview || featured ? undefined : () => void join(room)}
-        >
+        <div className="min-w-0 flex-1">
           <strong className={cn("block truncate text-[#263b56]", featured ? "text-lg" : "text-sm")}>
             {room.name}
           </strong>
           <span className="text-xs tabular-nums text-slate-500">
             频道 {room.channelCode} · {room.onlineCount}/{room.capacity} 在线
           </span>
-        </RoomInformation>
+        </div>
         <button
           type="button"
           disabled={blocked}
@@ -192,6 +179,17 @@ export const PrivateRoomBrowser = ({
             }
           />
         </button>
+        {!preview && !featured && (
+          <Button
+            variant="secondary"
+            className="h-8 shrink-0 px-2 text-xs"
+            aria-label={`进入房间：${room.name}`}
+            disabled={blocked}
+            onClick={() => void join(room)}
+          >
+            进入
+          </Button>
+        )}
       </div>
     );
   };
@@ -227,6 +225,11 @@ export const PrivateRoomBrowser = ({
           </Button>
         </div>
       </header>
+      {leaving && (
+        <p role="status" className="text-xs text-slate-500">
+          正在结束上一房间的连接…
+        </p>
+      )}
       {loading && !last && (
         <div className="private-room-placeholder" role="status">
           正在读取房间…
@@ -237,7 +240,7 @@ export const PrivateRoomBrowser = ({
           <span className="text-xs font-medium text-slate-500">上次一起玩的房间</span>
           {roomRow(last, false, true)}
           <Button className="w-full" disabled={blocked} onClick={() => void join(last)}>
-            {joining ? "正在进入…" : "进入上次房间"}
+            {joining && !leaving ? "正在进入…" : "进入上次房间"}
             <ArrowRight className="size-4" />
           </Button>
         </div>
@@ -281,7 +284,7 @@ export const PrivateRoomBrowser = ({
                   className="w-full"
                   onClick={() => void join(found)}
                 >
-                  {found.onlineCount >= found.capacity ? "房间已满" : "加入房间"}
+                  {found.onlineCount >= found.capacity ? "房间已满" : joinLabel}
                 </Button>
               </div>
             )}

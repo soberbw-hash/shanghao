@@ -1208,6 +1208,8 @@ dialog::backdrop {
 
 /* About keeps low-frequency product information out of the room controls. */
 .about-settings-page {
+  display: grid;
+  gap: 16px;
   min-width: 0;
   max-width: 1080px;
   margin-inline: auto;
@@ -1242,6 +1244,7 @@ dialog::backdrop {
 }
 
 .about-product-title-row,
+.about-product-actions,
 .about-card-actions,
 .donation-modal-heading {
   display: flex;
@@ -1302,10 +1305,15 @@ dialog::backdrop {
   box-shadow: 0 0 0 4px rgba(231, 116, 124, 0.1);
 }
 
+.about-product-actions,
 .about-card-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.about-product-actions {
+  justify-content: flex-end;
 }
 
 .about-release-history {
@@ -1453,9 +1461,9 @@ dialog::backdrop {
     gap: 12px;
   }
 
-  .about-check-update {
-    grid-column: 2;
-    justify-self: start;
+  .about-product-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
 
   .about-release-item {
@@ -1466,4 +1474,47 @@ dialog::backdrop {
     grid-column: 1 / -1;
     grid-row: 2;
   }
+}
+
+.about-info-grid.about-maintenance-grid {
+  margin-top: 0;
+  align-items: start;
+}
+
+.about-maintenance-card .about-card-actions,
+.about-storage-usage,
+.about-storage-feedback {
+  grid-column: 1 / -1;
+}
+
+.about-maintenance-card .about-card-actions {
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.about-maintenance-card .about-reset-action {
+  color: #a64652;
+}
+
+.about-storage-usage {
+  display: grid;
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #526681;
+}
+
+.about-storage-usage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid #dce7f3;
+}
+
+.about-storage-feedback {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #526681;
 }

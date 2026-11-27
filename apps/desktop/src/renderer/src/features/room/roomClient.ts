@@ -507,7 +507,12 @@ export class RoomClient {
       this.settlePendingConnection(new Error("signaling_session_superseded"));
       const timeout = window.setTimeout(() => {
         if (this.pendingConnection !== pending) return;
-        const error = new Error(this.wsOpened ? "join_ack_timeout" : "network_unreachable");
+        const code = this.wsOpened
+          ? this.joinAckReceived
+            ? "room_snapshot_timeout"
+            : "join_ack_timeout"
+          : "network_unreachable";
+        const error = new Error(code);
         this.settlePendingConnection(error);
         void this.signalingBridge.close();
       }, INITIAL_CONNECT_TIMEOUT_MS);
@@ -819,10 +824,9 @@ export class RoomClient {
     this.chronicle.capability(payload.chronicleSupported === true, payload.chronicleDay);
     this.replay.capability(payload.replaySupported === true);
     this.reconnectSessionToken = payload.sessionToken;
-    this.hasJoinedOnce = true;
     this.joinStage = "join_ack_received";
     this.options.onConnectionState(RoomConnectionState.WaitingSnapshot);
-    this.settlePendingConnection();
+    if (this.hasJoinedOnce) this.settlePendingConnection();
     this.startSnapshotRecovery();
     void this.presenceCoordinator.publish();
     this.chatTransport.retryPending();
@@ -849,6 +853,8 @@ export class RoomClient {
   private async handleRoomSnapshot(
     snapshot: RoomSnapshotMessage | ChannelSnapshotMessage,
   ): Promise<void> {
+    if (!this.joinAckReceived || snapshot.roomId !== this.options.roomId) return;
+    if (!snapshot.members.some((member) => member.id === this.options.peerId)) return;
     if (snapshot.revision <= this.lastSnapshotRevision) {
       void writeRendererLog("signaling", "warn", "Ignored stale room snapshot", {
         roomId: snapshot.roomId,
@@ -1139,7 +1145,9 @@ export class RoomClient {
       peerId: this.options.peerId,
       localStream: this.localStream,
       send: (message) => this.send(message),
-      shouldPlayPeer: (peerId) => !getRemoteAudioMixer().hasVerifiedWebRtcPlayback(peerId),
+      shouldPlayPeer: (peerId) =>
+        (this.options.canPlayRoomAudio?.() ?? true) &&
+        !getRemoteAudioMixer().hasVerifiedWebRtcPlayback(peerId),
       getTargetPeerIds: () => this.getAudioRelayTargetPeerIds(),
       getPeerVolume: (peerId) => this.peerVolumes.get(peerId) ?? 1,
       onLog: (level, message, context) => {

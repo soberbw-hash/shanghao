@@ -597,6 +597,7 @@ export const RoomPage = () => {
   const performLeave = async () => {
     if (isLeaving) return;
     setIsLeaving(true);
+    const leaving = leaveRoom();
     closeScreenSourcePicker();
 
     void Promise.allSettled([shutdownScreenShare(), window.desktopApi.overlay.close()]).then(
@@ -620,7 +621,7 @@ export const RoomPage = () => {
     );
 
     try {
-      await leaveRoom();
+      await leaving;
     } catch (error) {
       setIsLeaving(false);
       pushToast({
@@ -643,22 +644,7 @@ export const RoomPage = () => {
     if (isLeaving) return;
     if (recordingStatus.state === RecordingState.Recording) {
       if (recordingSource === "automatic") {
-        setIsFinalizingRecording(true);
-        try {
-          const result = await stopRecording();
-          await finishSavedRecording(result, recordingMarkers);
-          clearRecordingMarkers();
-          resetRecordingStatus();
-          playUiSound("record-stop");
-          await performLeave();
-        } catch (error) {
-          pushToast({
-            tone: "danger",
-            ...toUserFacingError(error, "recording"),
-          });
-        } finally {
-          setIsFinalizingRecording(false);
-        }
+        await performLeave();
         return;
       }
       setRecordingStopIntent("leave");

@@ -2,7 +2,7 @@ import { createUISFX, type CueName, type PackName, type PlayingSFX, type UISFXPl
 
 import { writeRendererLog } from "../../utils/logger";
 import { waitForVisualIdle } from "../visual-runtime/waitForVisualIdle";
-import { loadRoomEntryCue, loadRoomMemberJoinCue } from "./roomEntryCue";
+import { loadRoomEntryCue, loadRoomMemberJoinCue, loadUiCue } from "./roomEntryCue";
 
 export type UiSound =
   | "button-click"
@@ -170,7 +170,17 @@ const knockUrl = new URL("../../assets/sounds/knock-bell.wav", import.meta.url).
 
 const players = new Map<PackName, UISFXPlayer>();
 const activeSounds: PlayingSFX[] = [];
-const entryGains = new Set<GainNode>();
+const bufferedGains = new Map<GainNode, number>();
+const bufferedSounds = new Set<UiSound>([
+  "button-click",
+  "popup-open",
+  "settings-section",
+  "record-start",
+  "record-stop",
+  "leave-room",
+]);
+const lastBufferedRequests = new Map<string, number>();
+const bufferedPlaybacks = new Map<string, PlayingSFX>();
 type RoomFeedbackSound = "enter-room" | "member-join";
 const roomFeedbackPlaybacks = new Map<RoomFeedbackSound, PlayingSFX>();
 let entryCueRevision = 0;
@@ -193,8 +203,8 @@ export const setUiSoundVolume = (volume: number): void => {
   if (!Number.isFinite(volume)) return;
   masterVolume = Math.max(0, Math.min(1, volume));
   players.forEach((player) => player.setVolume(masterVolume));
-  entryGains.forEach((gain) => {
-    gain.gain.value = masterVolume * uiGain.roomEntry;
+  bufferedGains.forEach((volume, gain) => {
+    gain.gain.value = masterVolume * volume;
   });
 };
 export const setUiSoundFeedbackEnabled = (enabled: boolean): void => {
@@ -337,6 +347,8 @@ export const prepareUiSounds = async (signal = new AbortController().signal): Pr
       const recipe = soundRecipes[sound];
       if (sound === "enter-room" && audioContext) await loadRoomEntryCue(audioContext);
       else if (sound === "member-join" && audioContext) await loadRoomMemberJoinCue(audioContext);
+      else if (bufferedSounds.has(sound) && audioContext)
+        await loadUiCue(audioContext, recipe.pack, recipe.cue);
       else await ensurePlayer(recipe.pack)?.preload([recipe.cue], { signal });
       signal.throwIfAborted();
     }
@@ -354,6 +366,72 @@ const retainPlayback = (playback: PlayingSFX): void => {
     const index = activeSounds.indexOf(playback);
     if (index >= 0) activeSounds.splice(index, 1);
   });
+};
+
+const playBufferedCue = (
+  context: AudioContext,
+  buffer: AudioBuffer,
+  volume: number,
+  onEnded: (playback: PlayingSFX) => void,
+): PlayingSFX => {
+  const source = context.createBufferSource();
+  const gain = context.createGain();
+  source.buffer = buffer;
+  gain.gain.value = masterVolume * volume;
+  source.connect(gain);
+  gain.connect(context.destination);
+  bufferedGains.set(gain, volume);
+  const ended = new Promise<void>((resolve) =>
+    source.addEventListener(
+      "ended",
+      () => {
+        source.disconnect();
+        gain.disconnect();
+        bufferedGains.delete(gain);
+        onEnded(playback);
+        resolve();
+      },
+      { once: true },
+    ),
+  );
+  let stopped = false;
+  const playback = {
+    stop: () => {
+      if (stopped) return;
+      stopped = true;
+      source.stop();
+    },
+    ended,
+  };
+  retainPlayback(playback);
+  source.start();
+  return playback;
+};
+
+const playBufferedInteraction = (context: AudioContext, recipe: UiSoundRecipe): void => {
+  const key = `${recipe.pack}:${recipe.cue}`;
+  const requestedAt = performance.now();
+  if (requestedAt - (lastBufferedRequests.get(key) ?? -Infinity) < (recipe.cooldownMs ?? 40))
+    return;
+  const revision = feedbackRevision;
+  lastBufferedRequests.set(key, requestedAt);
+  void loadUiCue(context, recipe.pack, recipe.cue)
+    .then(({ buffer }) => {
+      if (
+        !feedbackEnabled ||
+        revision !== feedbackRevision ||
+        lastBufferedRequests.get(key) !== requestedAt ||
+        context.state !== "running" ||
+        performance.now() - requestedAt > 250
+      )
+        return;
+      bufferedPlaybacks.get(key)?.stop();
+      const playback = playBufferedCue(context, buffer, recipe.volume, (ended) => {
+        if (bufferedPlaybacks.get(key) === ended) bufferedPlaybacks.delete(key);
+      });
+      bufferedPlaybacks.set(key, playback);
+    })
+    .catch(() => undefined);
 };
 
 const playRoomFeedbackCue = (sound: RoomFeedbackSound): void => {
@@ -385,40 +463,11 @@ const playRoomFeedbackCue = (sound: RoomFeedbackSound): void => {
         performance.now() - requestedAt > 250
       )
         return;
-      const source = context.createBufferSource();
       roomFeedbackPlaybacks.get(sound)?.stop();
-      const gain = context.createGain();
-      source.buffer = buffer;
-      gain.gain.value = masterVolume * uiGain.roomEntry;
-      source.connect(gain);
-      gain.connect(context.destination);
-      entryGains.add(gain);
-      const ended = new Promise<void>((resolve) =>
-        source.addEventListener(
-          "ended",
-          () => {
-            source.disconnect();
-            gain.disconnect();
-            entryGains.delete(gain);
-            if (roomFeedbackPlaybacks.get(sound) === playback) roomFeedbackPlaybacks.delete(sound);
-            resolve();
-          },
-          { once: true },
-        ),
-      );
-      let stopped = false;
-      const playback = {
-        stop: () => {
-          if (!stopped) {
-            stopped = true;
-            source.stop();
-          }
-        },
-        ended,
-      };
+      const playback = playBufferedCue(context, buffer, uiGain.roomEntry, (ended) => {
+        if (roomFeedbackPlaybacks.get(sound) === ended) roomFeedbackPlaybacks.delete(sound);
+      });
       roomFeedbackPlaybacks.set(sound, playback);
-      retainPlayback(playback);
-      source.start();
     })
     .catch(() => undefined);
 };
@@ -465,6 +514,10 @@ export const playUiSound = (sound: UiSound): void => {
       playRoomFeedbackCue(sound);
       return;
     }
+    if (bufferedSounds.has(sound) && audioContext) {
+      playBufferedInteraction(audioContext, recipe);
+      return;
+    }
     const playback = activePlayer.play(recipe.cue, {
       volume: recipe.volume,
       playbackRate: recipe.playbackRate,
@@ -485,6 +538,7 @@ export const playGenericPressUnlessHandled = (clickStartedAt: number): void => {
 export const stopAllUiSounds = (): void => {
   cancelDelayedRoomEntryCue();
   players.forEach((player) => player.stopAll());
+  lastBufferedRequests.clear();
   activeSounds.forEach((playback) => playback.stop());
   activeSounds.length = 0;
 };

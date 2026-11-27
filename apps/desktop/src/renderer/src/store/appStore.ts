@@ -6,7 +6,7 @@ import { enqueueToast } from "../features/notifications/toastQueue";
 
 export type AppPage = "home" | "room" | "settings";
 export type SettingsReturnTarget = "home" | "room";
-export type RoomActionState = "idle" | "starting" | "joining";
+export type RoomActionState = "idle" | "starting" | "joining" | "leaving";
 export type ToastTone = "neutral" | "success" | "warning" | "danger";
 export type BootstrapPhase = "booting" | "checking-update" | "update-gate" | "recovery" | "ready";
 

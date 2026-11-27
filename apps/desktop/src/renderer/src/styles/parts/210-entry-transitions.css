@@ -50,3 +50,14 @@
     transition: none;
   }
 }
+@media (prefers-reduced-motion: no-preference) {
+  .room-dialog-motion[open] {
+    transition: 160ms var(--ease-out-soft);
+  }
+  @starting-style {
+    .room-dialog-motion[open] {
+      opacity: 0.72;
+      transform: translateY(5px) scale(0.992);
+    }
+  }
+}

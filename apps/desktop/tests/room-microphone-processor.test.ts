@@ -66,7 +66,7 @@ test("room processor retains dynamic remote reference and capture ownership on e
   );
   assert.equal(
     (roomSource.match(/await createRoomMicrophoneProcessor\(/g) ?? []).length,
-    2,
-    "initial capture and device replacement share the same configuration",
+    1,
+    "initial capture and device replacement share one processor path",
   );
 });

@@ -167,7 +167,7 @@ test("room joining uses acknowledgement and snapshot recovery without logging ra
   assert.equal(client.includes('case "join_ack"'), true);
   assert.equal(client.includes('type: "request_snapshot"'), true);
   assert.equal(client.includes("RoomConnectionState.WaitingSnapshot"), true);
-  assert.equal(client.includes('new Error(this.wsOpened ? "join_ack_timeout"'), true);
+  assert.match(client, /"room_snapshot_timeout"\s*:\s*"join_ack_timeout"/);
   assert.equal(client.includes("this.lastSnapshotRevision = 0;"), true);
   assert.equal(hook.includes("summarizeSignalingEvent"), true);
   assert.equal(hook.includes("ROUTINE_SIGNAL_MESSAGE_TYPES"), true);

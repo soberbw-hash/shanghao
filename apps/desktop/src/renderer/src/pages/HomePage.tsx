@@ -72,7 +72,6 @@ export const HomePage = () => {
   const [serverAddress, setServerAddress] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverTestResult, setServerTestResult] = useState<RelayStatusSnapshot>();
-  const [isCheckingAudio, setIsCheckingAudio] = useState(false);
   const [isMicrophoneMenuOpen, setIsMicrophoneMenuOpen] = useState(false);
   const [nicknameTouched, setNicknameTouched] = useState(false);
   const reduceMotion = usePrefersReducedMotion();
@@ -247,36 +246,6 @@ export const HomePage = () => {
     : inputDevices.length > 0;
   const hasAudioOutput = outputDevices.length > 0;
 
-  const verifyAudioDevices = async (): Promise<boolean> => {
-    setIsCheckingAudio(true);
-    try {
-      await refreshDevices();
-      const audioState = useAudioStore.getState();
-      const outputDeviceId = audioState.outputDevices.some(
-        (device) => device.id === settings.preferredOutputDeviceId,
-      )
-        ? settings.preferredOutputDeviceId
-        : undefined;
-      // The room connection acquires the real microphone stream immediately afterwards.
-      // Opening and closing a temporary stream here made one click initialize the device twice,
-      // which caused a visible renderer hitch on some Windows audio drivers.
-      await getRemoteAudioMixer().setOutputDevice(outputDeviceId);
-      return true;
-    } catch (error) {
-      pushToast({
-        tone: "warning",
-        title: "声音设备还没准备好",
-        description:
-          error instanceof DOMException && error.name === "NotAllowedError"
-            ? "请允许上号使用麦克风后再进入。"
-            : "无法打开所选麦克风或扬声器，请换一个设备重试。",
-      });
-      return true;
-    } finally {
-      setIsCheckingAudio(false);
-    }
-  };
-
   const enterChannel = async (target: PrivateRoomInfo) => {
     if (useAppStore.getState().roomAction !== "idle") return;
     const normalizedAddress = normalizeRelayServerUrl(serverAddress);
@@ -292,7 +261,7 @@ export const HomePage = () => {
       pushToast({
         tone: "warning",
         title: "频道连接还没准备好",
-        description: "请重启上号后重试；如果仍然失败，请打开诊断页查看详情。",
+        description: "请重启上号后重试。如果仍然失败，可在「关于上号」导出日志。",
       });
       return;
     }
@@ -306,14 +275,23 @@ export const HomePage = () => {
       void getRemoteAudioMixer().unlock("enter-channel");
       // Let React commit the pressed/loading state before device and signaling work starts.
       await waitForNextPaint();
-      if (!(await verifyAudioDevices())) return;
-      await saveSettings({
-        nickname: trimmedNickname.slice(0, 16),
-        avatarId,
-        avatarPath: undefined,
-        relayServerUrl: normalizedAddress,
-        hasCompletedProfileSetup: true,
-      });
+      const saved = useSettingsStore.getState().settings;
+      if (
+        !saved ||
+        saved.nickname !== trimmedNickname ||
+        saved.avatarId !== avatarId ||
+        saved.avatarPath ||
+        saved.relayServerUrl !== normalizedAddress ||
+        !saved.hasCompletedProfileSetup
+      ) {
+        await saveSettings({
+          nickname: trimmedNickname,
+          avatarId,
+          avatarPath: undefined,
+          relayServerUrl: normalizedAddress,
+          hasCompletedProfileSetup: true,
+        });
+      }
       await joinChannel(normalizedAddress, target.roomId);
     } finally {
       setIsSubmitting(false);
@@ -322,7 +300,7 @@ export const HomePage = () => {
     }
   };
 
-  const isJoining = isSubmitting || roomAction === "joining";
+  const isJoining = isSubmitting || roomAction !== "idle";
   const nicknameValidationError = nicknameTouched
     ? getNicknameValidationError(nickname.trim())
     : undefined;
@@ -503,9 +481,9 @@ export const HomePage = () => {
             {serverTestStatus ? (
               <div className="entry-server-status-slot">{serverTestStatus}</div>
             ) : null}
-            <PrivateRoomBrowser busy={isJoining || isCheckingAudio} onJoin={enterChannel} />
+            <PrivateRoomBrowser busy={isJoining} onJoin={enterChannel} />
             <TemporaryRoomEntry
-              busy={isJoining || isCheckingAudio}
+              busy={isJoining}
               onJoin={(room) => joinChannel(room.signalingUrl, room.roomId, room)}
             />
             <div data-gsap-entry="cta">

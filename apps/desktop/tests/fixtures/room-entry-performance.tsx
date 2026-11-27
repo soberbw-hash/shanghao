@@ -12,6 +12,7 @@ import {
 import {
   loadRoomEntryCue,
   loadRoomMemberJoinCue,
+  loadUiCue,
 } from "../../src/renderer/src/features/audio/roomEntryCue";
 import { createRecipe, renderRecipe } from "uisfx";
 import "../../src/renderer/src/styles/index.css";
@@ -38,6 +39,7 @@ Object.assign(window, {
     cancelDelayedRoomEntryCue,
     loadRoomEntryCue,
     loadRoomMemberJoinCue,
+    loadUiCue,
     setUiSoundFeedbackEnabled,
     stopAllUiSounds,
     createRecipe,

@@ -38,7 +38,7 @@ const weatherCityPickerPath = path.resolve(
 const homePagePath = path.resolve(process.cwd(), "src/renderer/src/pages/HomePage.tsx");
 const diagnosticsCardPath = path.resolve(
   process.cwd(),
-  "src/renderer/src/components/settings/DiagnosticsSettingsCard.tsx",
+  "src/renderer/src/components/settings/SettingsDiagnosticsSection.tsx",
 );
 const detailedReleaseNotesPath = path.resolve(
   process.cwd(),
@@ -406,7 +406,7 @@ test("settings keep only everyday voice controls and remove advanced connection"
   const sectionStateSource = readFileSync(settingsSectionStatePath, "utf8");
   const diagnosticsSource = readFileSync(diagnosticsCardPath, "utf8");
 
-  for (const label of ["通用", "语音", "关于上号", "诊断"]) {
+  for (const label of ["通用", "语音", "关于上号"]) {
     assert.equal(source.includes(label), true);
   }
   assert.equal(source.includes('{ id: "notifications"'), false);
@@ -423,25 +423,17 @@ test("settings keep only everyday voice controls and remove advanced connection"
   assert.equal(source.includes("useState(() => {"), true);
   assert.equal(source.includes("getInitialSettingsSection()"), true);
   assert.equal(sectionStateSource.includes('if (!import.meta.env.DEV) return "general"'), true);
-  for (const diagnostic of [
-    "朋友听不到我",
-    "听不到朋友",
-    "进不去房间",
-    "录音转不出文字",
-    "共享画面异常",
-  ]) {
-    assert.equal(diagnosticsSource.includes(diagnostic), true);
-  }
-  assert.equal(diagnosticsSource.includes("outputDeviceCount"), true);
-  assert.equal(diagnosticsSource.includes("onOpenAudioSettings"), true);
-  assert.equal(diagnosticsSource.includes("去语音设置"), true);
-  assert.equal(diagnosticsSource.includes("需要看看"), true);
-  assert.equal(diagnosticsSource.includes("系统状态 · 连接与设备"), false);
-  assert.equal(diagnosticsSource.includes("点击前往语音设置，检查输出设备和音量"), false);
-  assert.equal(diagnosticsSource.includes("实时诊断 HUD"), false);
-  assert.equal(diagnosticsSource.includes("技术参数"), false);
-  assert.equal(diagnosticsSource.includes('connectionHealth.voicePath === "unknown"'), false);
-  assert.equal(source.includes('onOpenAudioSettings={() => selectSection("audio")}'), true);
+  assert.doesNotMatch(source, /label: "诊断"|StorageSettingsCard/);
+  const aboutSource = readFileSync(
+    path.resolve(process.cwd(), "src/renderer/src/components/settings/AboutSettingsCard.tsx"),
+    "utf8",
+  );
+  assert.match(aboutSource, /维护工具/);
+  assert.match(aboutSource, /<SettingsDiagnosticsSection/);
+  assert.match(aboutSource, /<StorageSettingsCard/);
+  assert.match(diagnosticsSource, /导出日志/);
+  assert.match(diagnosticsSource, /安全重置/);
+  assert.doesNotMatch(diagnosticsSource, /朋友听不到我|其他帮助工具|技术参数/);
 });
 
 test("settings pages keep the shared header compact", () => {
@@ -843,8 +835,7 @@ test("AI voice memory exposes provider readiness and recovers interrupted compar
   assert.equal(source.includes("AI 处理状态"), false);
   assert.equal(source.includes("技术信息（排错时使用）"), false);
   const diagnosticsSource = readFileSync(diagnosticsCardPath, "utf8");
-  assert.equal(diagnosticsSource.includes("检查转录设置"), true);
-  assert.equal(diagnosticsSource.includes("onOpenAiSettings"), true);
+  assert.equal(diagnosticsSource.includes("检查转录设置"), false);
   assert.equal(diagnosticsSource.includes("AI 运行诊断"), false);
   assert.equal(diagnosticsSource.includes("技术参数"), false);
   assert.equal(diagnosticsSource.includes("模型位置"), false);

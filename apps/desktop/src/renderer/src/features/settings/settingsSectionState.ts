@@ -1,7 +1,7 @@
 import type { AppSettings } from "@private-voice/shared";
 
 export type SettingsSectionId =
-  "account" | "general" | "audio" | "quickMessages" | "recordings" | "ai" | "about" | "diagnostics";
+  "account" | "general" | "audio" | "quickMessages" | "recordings" | "ai" | "about";
 
 export const SETTINGS_SECTION_REQUEST_KEY = "shanghao.settings-section";
 
@@ -13,7 +13,6 @@ const settingsSectionIds: readonly SettingsSectionId[] = [
   "recordings",
   "ai",
   "about",
-  "diagnostics",
 ];
 
 const lightweightSections = new Set<SettingsSectionId>([
@@ -33,24 +32,25 @@ export const cacheSettingsSection = (
   return cached;
 };
 
+const resolveSettingsSection = (value: string | null): SettingsSectionId | undefined => {
+  if (value === "diagnostics") return "about";
+  return settingsSectionIds.find((section) => section === value);
+};
+
 export const readRequestedSettingsSection = (): SettingsSectionId | undefined => {
   const storedSection = window.sessionStorage.getItem(SETTINGS_SECTION_REQUEST_KEY);
   window.sessionStorage.removeItem(SETTINGS_SECTION_REQUEST_KEY);
-  return settingsSectionIds.includes(storedSection as SettingsSectionId)
-    ? (storedSection as SettingsSectionId)
-    : undefined;
+  return resolveSettingsSection(storedSection);
 };
 
 export const getInitialSettingsSection = (): SettingsSectionId => {
-  const storedSection = window.sessionStorage.getItem(
-    SETTINGS_SECTION_REQUEST_KEY,
-  ) as SettingsSectionId;
-  if (settingsSectionIds.includes(storedSection)) return storedSection;
+  const storedSection = resolveSettingsSection(
+    window.sessionStorage.getItem(SETTINGS_SECTION_REQUEST_KEY),
+  );
+  if (storedSection) return storedSection;
   if (!import.meta.env.DEV) return "general";
   const requestedSection = new URLSearchParams(window.location.search).get("settingsSection");
-  return settingsSectionIds.includes(requestedSection as SettingsSectionId)
-    ? (requestedSection as SettingsSectionId)
-    : "general";
+  return resolveSettingsSection(requestedSection) ?? "general";
 };
 
 export const settingsSectionSignature = (
@@ -92,8 +92,6 @@ export const settingsSectionSignature = (
         settings.isAiAutoOrganizeEnabled,
         settings.isAiAutoUploadEnabled,
       ]);
-    case "diagnostics":
-      return settings.relayServerUrl ?? "";
     default:
       return section;
   }

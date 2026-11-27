@@ -714,8 +714,8 @@ test("channel switching is exclusive and clears screen-share state before joinin
       roomPageSource.indexOf("await switchChannel(channelId)"),
     true,
   );
-  assert.equal(roomStateSource.includes("preserveLocalMedia: reuseLocalMedia"), true);
-  assert.equal(roomStateSource.includes("reuseExisting: reuseLocalMedia"), true);
+  assert.doesNotMatch(roomStateSource, /preserveLocalMedia|reuseExisting/);
+  assert.match(roomStateSource, /const placeholder = await createListenOnlyMicrophone\(\)/);
   assert.match(roomPageSource, /<RoomChatPanel\s+key=\{room\.roomId\}/);
   assert.doesNotMatch(roomPageSource, /<(?:RoomScene|RoomAudio)[^>]*key=\{room\.roomId\}/);
   assert.equal(
