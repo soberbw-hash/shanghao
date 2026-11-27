@@ -123,7 +123,7 @@ app.whenReady().then(async () => {
       const overview=()=>document.querySelector('.ai-overview-grid');
       await until(overview,'cold AI open did not paint the overview before loading data');
       await document.fonts.ready;
-      const selectors=['.ai-overview-grid','#transcription-settings-title','.cloud-local-assist','#ai-model-management'];
+      const selectors=['.ai-overview-grid','#transcription-settings-title','#ai-model-management'];
       const positions=()=>selectors.map(s=>document.querySelector(s).getBoundingClientRect().top);
       const initial=positions();
       const checkPosition=(step)=>{
@@ -135,8 +135,55 @@ app.whenReady().then(async () => {
       window.dispatchEvent(new Event('fixture:ai-providers-ready'));
       await until(()=>overview().textContent.includes('glm-4-flash-250414')&&document.querySelector('[aria-label="语音转录模型来源"]').value==='hybrid','provider state never arrived');
       checkPosition('provider state');
+      const source=document.querySelector('[aria-label="语音转录模型来源"]');
+      const local=document.querySelector('[aria-label="本地辅助模型"]');
+      if ([...source.options].filter(o=>!o.hidden).map(o=>o.value).join(',') !== 'cloud,hybrid,custom' ||
+          local.value !== 'qwen3-asr-0.6b-force' || !local.selectedOptions[0].textContent.includes('均衡识别'))
+        throw Error('fresh transcription settings did not use cloud with balanced local assistance');
       return true;
     })()`);
+    view.setContentSize(1120, 630);
+    await view.loadURL(
+      `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5173"}/@fs/${file}?full-settings`,
+    );
+    result.settingsNavigation = await view.webContents.executeJavaScript(`(async()=>{
+      const pause=ms=>new Promise(r=>setTimeout(r,ms));
+      const wait=async(check,error)=>{
+        for(let i=0;i<80;i++){if(check())return;await pause(50);}
+        throw Error(error);
+      };
+      const find=selector=>document.querySelector(selector);
+      const models=()=>find('#ai-model-management');
+      await wait(models,'AI settings did not render');
+      await document.fonts.ready;
+      await pause(420);
+      const nav=find('nav[aria-label="设置栏目"]');
+      const navTop=nav.getBoundingClientRect().top;
+      const scroller=find('[data-settings-content-scroll]');
+      const admin=()=>find('[aria-label="展开管理员功能"]');
+      if(admin())throw Error('administrator controls still available under AI settings');
+      models().querySelector('summary').click();
+      await wait(()=>scroller.scrollTop>0,'model section did not scroll on opening');
+      await pause(450);
+      const header=models().querySelector('summary').getBoundingClientRect();
+      const clip=scroller.getBoundingClientRect();
+      if(header.top<clip.top || header.bottom>clip.bottom)throw Error('model heading left the viewport');
+      scroller.scrollTop=scroller.scrollHeight;
+      await pause(100);
+      if(Math.abs(nav.getBoundingClientRect().top-navTop)>1)
+        throw Error('settings sidebar moved with the content');
+      const source=find('select[aria-label="语音转录模型来源"]');
+      if(source.value!=='local' || [...source.options].filter(o=>!o.hidden).map(o=>o.value).join(',')!=='cloud,hybrid,custom')
+        throw Error('legacy offline configuration changed the usual choices or its active mode');
+      source.value='hybrid';source.dispatchEvent(new Event('change',{bubbles:true}));
+      await wait(()=>find('[aria-label="本地辅助模型"]')?.value==='qwen3-asr-0.6b-force','hybrid mode did not reveal the balanced model');
+      [...nav.querySelectorAll('button')].find(b=>b.textContent==='关于上号').click();
+      await wait(admin,'administrator controls were not moved to About');
+      admin().click();
+      await wait(()=>document.body.textContent.includes('上传密钥文件'),'admin key gate missing');
+      return true;
+    })()`);
+    view.setContentSize(1120, 950);
     await view.loadURL(
       `${process.env.SHANGHAO_TEST_ORIGIN ?? "http://127.0.0.1:5173"}/@fs/${file}?update`,
     );

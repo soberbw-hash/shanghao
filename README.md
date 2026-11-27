@@ -8,11 +8,11 @@
 
 进房先看见人。谁在打游戏、听歌、接电话，谁暂时离开；聊天、分享的画面和昨晚的录音，也都在这间房里。
 
-[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看最近版本更新](#最近版本更新) · [v3.4.24 完整说明](./docs/release-notes/v3.4.24.md) · [看技术结构](#声音到底经过了什么)
+[下载最新版](https://github.com/soberbw-hash/shanghao/releases/latest) · [看最近版本更新](#最近版本更新) · [v3.4.25 完整说明](./docs/release-notes/v3.4.25.md) · [看技术结构](#声音到底经过了什么)
 
-![私人房间中的人物、聊天和语音控制](./docs/assets/releases/v3.4.24/release-room.png)
+![私人房间中的人物、聊天和语音控制](./docs/assets/releases/v3.4.25/release-room.png)
 
-<sub>3.4.24 的私人房间演示，使用隔离环境中的模拟成员和消息。</sub>
+<sub>3.4.25 的私人房间演示，使用隔离环境中的模拟成员和消息。</sub>
 
 ## 如果一群朋友整晚都挂在语音里
 
@@ -233,6 +233,10 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 更早版本的功能按主题收录在上方的功能介绍。完整历史见 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases)。
 
+### 3.4.25
+
+聊天与纪事的边缘过渡更柔和。放歌、屏幕分享和音频配置的弹窗交互更顺手，语音转文字默认用云端加均衡识别。[完整说明](./docs/release-notes/v3.4.25.md)
+
 ### 3.4.24
 
 重新梳理进出房间的语音边界，改善聊天、纪事和放歌面板的切换。Windows 桌面通知可以直达房间、消息和录音。录音库、AI 设置和维护工具也做了整理。[完整说明](./docs/release-notes/v3.4.24.md)
@@ -241,13 +245,9 @@ React/Zustand 管房间界面与状态，Electron 主进程管窗口、设备和
 
 修复 Windows 正式版选中显示器后无法启动采集的问题。聊天链接尺寸统一，房间纪事按日共享，设置和录音库减少了冗余信息。[完整说明](./docs/release-notes/v3.4.23.md)
 
-### 3.4.22
-
-改进屏幕分享选源、房间转录与记忆称呼。更新进度窗可以拖动，单链接消息合为一张带站点图标的卡片。新增 8 段快捷音乐，上号素材支持按包试听。[完整说明](./docs/release-notes/v3.4.22.md)
-
 ## 下载与使用
 
-当前仓库版本为 **3.4.24**，正式支持 **Windows 10 / 11 x64**。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。安装包、自动更新元数据和 SHA-256 校验文件见 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases/latest) · [v3.4.24 更新公告](./docs/release-notes/v3.4.24.md)。
+当前仓库版本为 **3.4.25**，正式支持 **Windows 10 / 11 x64**。安装后可通过 CloudBase 手机号验证注册并登录账号，创建私人房间或通过频道号找到朋友，再明确加入同一房间。安装包、自动更新元数据和 SHA-256 校验文件见 [GitHub Releases](https://github.com/soberbw-hash/shanghao/releases/latest) · [v3.4.25 更新公告](./docs/release-notes/v3.4.25.md)。
 
 录音、模型和已下载资源主要保存在本机。更新可在后台下载，安装并重启必须由用户点击。自行部署可参照 [Relay](./docs/deploy-relay-server.md)、[TURN](./docs/deploy-turn.md) 与[网络修复](./docs/network-repair.md)。
 

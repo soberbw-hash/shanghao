@@ -5,6 +5,8 @@ import type { ChatMessage } from "@private-voice/shared";
 import { Button } from "../../src/renderer/src/components/base/Button";
 import { TemporaryChatPanel } from "../../src/renderer/src/components/chat/TemporaryChatPanel";
 import { ApplicationAudioPicker } from "../../src/renderer/src/components/audio/ApplicationAudioPicker";
+import { ScreenSourcePicker } from "../../src/renderer/src/components/room/ScreenSourcePicker";
+import { useScreenSourcePicker } from "../../src/renderer/src/features/screen-share/useScreenSourcePicker";
 import {
   clearGlassPointerHighlight,
   updateGlassPointerHighlight,
@@ -39,11 +41,22 @@ function RoomEffectsFixture() {
   const [gain, setGain] = useState(0.72);
   const [sent, setSent] = useState("");
   const [image, setImage] = useState("");
+  const [screenStarted, setScreenStarted] = useState("");
+  const screen = useScreenSourcePicker(
+    async () => {
+      setScreenStarted(
+        document.querySelector(".screen-source-picker-confirm:modal") ? "visible" : "not-visible",
+      );
+      return [{ id: "screen:1", kind: "screen", name: "显示器", thumbnailDataUrl: "" }];
+    },
+    async () => {},
+  );
   return (
     <main
       className="room-page"
       data-sent={sent}
       data-image={image}
+      data-screen-started={screenStarted}
       style={
         {
           "--room-wallpaper": `url(${roomArt})`,
@@ -77,6 +90,9 @@ function RoomEffectsFixture() {
         </header>
         <Button variant="secondary" onClick={() => setOpen(true)} aria-label="打开音乐演示">
           <Music2 size={16} /> 放歌
+        </Button>
+        <Button variant="secondary" onClick={() => void screen.openScreenSourcePicker()}>
+          屏幕分享
         </Button>
       </div>
       <button
@@ -131,6 +147,17 @@ function RoomEffectsFixture() {
         }}
         onGain={setGain}
         onClose={() => setOpen(false)}
+      />
+      <ScreenSourcePicker
+        isOpen={screen.isScreenSourcePickerOpen}
+        reduceMotion={false}
+        sources={screen.screenSourcePickerSources}
+        status={screen.screenSourcePickerStatus}
+        includeSystemAudio={screen.pendingIncludeSystemAudio}
+        onIncludeSystemAudioChange={screen.setPendingIncludeSystemAudio}
+        onSelect={() => screen.closeScreenSourcePicker(false)}
+        onRetry={() => void screen.openScreenSourcePicker()}
+        onClose={() => screen.closeScreenSourcePicker()}
       />
     </main>
   );

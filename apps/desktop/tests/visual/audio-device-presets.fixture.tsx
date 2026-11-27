@@ -1,14 +1,15 @@
-import { StrictMode, useState } from "react";
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AudioDeviceState,
+  RecordingEncoderState,
+  RecordingState,
   RoomConnectionState,
   selectAudioDeviceSettings,
   type AppSettings,
   type RoomMember,
 } from "@private-voice/shared";
-import { AudioDevicePresets } from "../../src/renderer/src/components/audio/AudioDevicePresets";
-import { AudioControlPopover } from "../../src/renderer/src/components/audio/AudioControlPopover";
+import { RoomDock } from "../../src/renderer/src/components/room/RoomDock";
 import { AudioPresetShortcutSettings } from "../../src/renderer/src/components/settings/AudioPresetShortcutSettings";
 import { useSettingsStore } from "../../src/renderer/src/store/settingsStore";
 import { useAudioStore } from "../../src/renderer/src/store/audioStore";
@@ -183,31 +184,57 @@ const replace = async () => {
 };
 Object.assign(window, { audioPresetFixture: result, selectAudioDeviceSettings });
 function Fixture() {
-  const [host, setHost] = useState<HTMLDivElement | null>(null),
-    [menu, setMenu] = useState(false);
+  const muted = useAudioStore((state) => state.isMuted);
+  const inputDevices = useAudioStore((state) => state.inputDevices);
+  const outputDevices = useAudioStore((state) => state.outputDevices);
+  const ignore = () => {};
   return (
     <main style={{ padding: 30, background: "#eaf3fc", height: "100vh" }}>
-      <button onClick={() => setMenu(true)}>打开设备</button>
-      {menu && (
-        <div className="audio-control-anchor">
-          <AudioControlPopover
-            title="麦克风"
-            devices={[]}
-            volume={1}
-            min={0.5}
-            max={1.5}
-            onDeviceChange={() => {}}
-            onVolumePreview={() => {}}
-            onVolumeCommit={() => {}}
-            onReset={() => {}}
-            presetControlHost={setHost}
-          />
-        </div>
-      )}
-      <AudioDevicePresets
-        buttonHost={host}
-        replaceInput={replace}
-        isProcessingBusy={() => processingBusy}
+      <RoomDock
+        settings={settings}
+        inputDevices={inputDevices}
+        outputDevices={outputDevices}
+        isMuted={muted}
+        isDeafened={false}
+        isNoiseSuppressionSwitching={false}
+        microphoneTest={{
+          phase: "idle",
+          level: 0,
+          isClipping: false,
+          onToggle: ignore,
+          onPlaySystemCapture: ignore,
+          onPlayProcessed: ignore,
+        }}
+        recordingState={RecordingState.Idle}
+        recordingEncoderState={RecordingEncoderState.NativeAacAvailable}
+        localScreenShareActive={false}
+        isScreenShareStarting={false}
+        isOverlayOpen={false}
+        isLeaving={false}
+        onApplyAudioPresetInput={replace}
+        isAudioProcessingBusy={() => processingBusy}
+        onToggleMicrophone={ignore}
+        onToggleDeafen={ignore}
+        onSwitchInputDevice={ignore}
+        onMicrophoneVolumePreview={ignore}
+        onMicrophoneVolumeCommit={ignore}
+        onNoiseSuppressionChange={ignore}
+        onEchoCancellationChange={ignore}
+        onVoiceEnhancementChange={ignore}
+        onAutoGainChange={ignore}
+        onPushToTalkEnabledChange={ignore}
+        onPushToTalkShortcutChange={ignore}
+        onResetMicrophoneVolume={ignore}
+        onSwitchOutputDevice={ignore}
+        onSpeakerVolumePreview={ignore}
+        onSpeakerVolumeCommit={ignore}
+        onLoudnessBalanceChange={ignore}
+        onTestSpeaker={ignore}
+        onResetSpeakerVolume={ignore}
+        onToggleRecording={ignore}
+        onToggleScreenShare={ignore}
+        onToggleOverlay={ignore}
+        onLeave={ignore}
       />
       <div id="fixture-shortcut-settings">
         <AudioPresetShortcutSettings />

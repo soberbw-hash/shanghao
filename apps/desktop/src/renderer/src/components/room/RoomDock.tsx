@@ -137,12 +137,6 @@ export const RoomDock = ({
   onLeave,
 }: RoomDockProps) => {
   const microphoneStatus = useMicrophoneStatus(isMuted);
-  const [availabilityFeedback, setAvailabilityFeedback] = useState(0);
-  useEffect(() => {
-    const feedback = () => setAvailabilityFeedback((sequence) => sequence + 1);
-    window.addEventListener("shanghao:availability-audio-feedback", feedback);
-    return () => window.removeEventListener("shanghao:availability-audio-feedback", feedback);
-  }, []);
   const [activeAudioPanel, setActiveAudioPanel] = useState<AudioPanel>();
   const [presetControlHost, setPresetControlHost] = useState<HTMLDivElement | null>(null);
   const [mountedAudioPanels, setMountedAudioPanels] = useState<Set<Exclude<AudioPanel, undefined>>>(
@@ -168,7 +162,9 @@ export const RoomDock = ({
       setActiveAudioPanel(undefined);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setActiveAudioPanel(undefined);
+      if (event.key === "Escape" && !document.querySelector("dialog:modal")) {
+        setActiveAudioPanel(undefined);
+      }
     };
 
     document.addEventListener("pointerdown", closeOnOutsidePointer);
@@ -201,7 +197,6 @@ export const RoomDock = ({
             className="voice-segmented-main z-[1]"
             showLevelFill={false}
             status={microphoneStatus}
-            feedbackSequence={availabilityFeedback}
           />
           <button
             type="button"
@@ -264,13 +259,7 @@ export const RoomDock = ({
             )}
             onClick={onToggleDeafen}
           >
-            <span
-              key={availabilityFeedback}
-              className={cn(
-                "voice-availability-feedback",
-                availabilityFeedback > 0 && "is-animating",
-              )}
-            >
+            <span className="voice-main-label">
               <AnimatedControlIcon
                 name="speaker"
                 muted={isDeafened}

@@ -80,7 +80,11 @@ export function CloudLocalAssistControl({
                 );
                 return (
                   <option key={id} value={id}>
-                    {compact ? asrModelLabel(id, name) : name}
+                    {compact
+                      ? id === DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID
+                        ? "均衡识别 · 千问 0.6B"
+                        : asrModelLabel(id, name)
+                      : name}
                     {id === DEFAULT_CLOUD_LOCAL_ASR_MODEL_ID ? " · 默认" : ""}
                     {installed ? "" : " · 需准备"}
                   </option>

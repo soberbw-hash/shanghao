@@ -19,61 +19,59 @@
   scroll-padding-block-start: var(--room-list-top-edge-depth);
 }
 .room-list-viewport[data-content-above] {
-  --room-list-top-mask-depth: 18px;
+  --room-list-top-mask-depth: 26px;
 }
 .room-list-viewport[data-content-below] {
-  --room-list-bottom-mask-depth: 23px;
+  --room-list-bottom-mask-depth: 32px;
 }
 .room-list-viewport:is([data-content-above], [data-content-below])
   > :is(.chat-message-list, .room-chronicle-entries) {
+  --top-fade: var(--room-list-top-mask-depth, 0px);
+  --bottom-fade: var(--room-list-bottom-mask-depth, 0px);
   mask-image: linear-gradient(
     to bottom,
     transparent,
-    #000 var(--room-list-top-mask-depth, 0px),
-    #000 calc(100% - var(--room-list-bottom-mask-depth, 0px)),
+    rgb(0 0 0 / 18%) calc(var(--top-fade) * 0.28),
+    rgb(0 0 0 / 75%) calc(var(--top-fade) * 0.68),
+    #000 var(--top-fade),
+    #000 calc(100% - var(--bottom-fade)),
+    rgb(0 0 0 / 75%) calc(100% - var(--bottom-fade) * 0.68),
+    rgb(0 0 0 / 18%) calc(100% - var(--bottom-fade) * 0.28),
     transparent
   );
 }
 
-.room-list-top-edge {
-  display: contents;
-}
-
-.room-list-viewport[data-content-above] > .room-list-top-edge::before,
-.room-list-viewport[data-content-above] > .room-list-top-edge::after,
-.room-list-viewport[data-content-below]::before,
+.room-list-viewport[data-content-above]::before,
 .room-list-viewport[data-content-below]::after {
   position: absolute;
   z-index: 2;
   inset-inline: 0 8px;
-  bottom: 0;
-  height: var(--room-list-edge-depth);
-  backdrop-filter: blur(5px);
-  /* Taper the blur back to the real room background before the composer. */
+  backdrop-filter: blur(8px);
+  /* Blend one filtered layer into the clear list without an inner blur seam. */
   mask-image:
-    linear-gradient(var(--room-list-edge-direction, to bottom), transparent, #000 58%, transparent),
-    linear-gradient(to right, transparent, #000 8px calc(100% - 8px), transparent);
+    linear-gradient(
+      var(--room-list-edge-direction, to top),
+      #000,
+      rgb(0 0 0 / 84%) 24%,
+      rgb(0 0 0 / 44%) 54%,
+      rgb(0 0 0 / 9%) 81%,
+      transparent
+    ),
+    linear-gradient(to right, transparent, #000 14px calc(100% - 14px), transparent);
   mask-composite: intersect;
   pointer-events: none;
   content: "";
 }
 
-.room-list-viewport[data-content-below]::after {
-  height: calc(var(--room-list-edge-depth) * 0.62);
-  backdrop-filter: blur(15px);
-}
-
-.room-list-viewport[data-content-above] > .room-list-top-edge::before,
-.room-list-viewport[data-content-above] > .room-list-top-edge::after {
-  --room-list-edge-direction: to top;
+.room-list-viewport[data-content-above]::before {
+  --room-list-edge-direction: to bottom;
   top: 0;
-  bottom: auto;
-  height: var(--room-list-top-edge-depth);
+  height: min(42px, 45%);
 }
 
-.room-list-viewport[data-content-above] > .room-list-top-edge::after {
-  height: calc(var(--room-list-top-edge-depth) * 0.62);
-  backdrop-filter: blur(15px);
+.room-list-viewport[data-content-below]::after {
+  bottom: 0;
+  height: min(46px, 45%);
 }
 
 .temporary-chat-panel .chat-composer {
@@ -81,29 +79,21 @@
   align-items: center;
   flex-shrink: 0;
   gap: 6px;
-  width: min(86%, 480px);
-  max-width: 100%;
-  margin: 2px 0 0 auto;
+  margin: 2px 2px 0;
   padding: 3px;
   border: 1px solid rgb(166 196 230 / 65%);
-  border-radius: 28px;
+  border-radius: 18px;
   background: rgb(248 252 255 / 88%);
-  box-shadow: 0 3px 12px rgb(53 92 138 / 10%);
   transition:
-    width var(--duration-fast) var(--ease-out),
-    border-radius var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
     background-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out);
 }
 
-.temporary-chat-panel .chat-composer:is(:focus-within, [data-has-draft="true"]) {
-  width: 100%;
-  border-radius: 16px;
-  background: #f8fcff;
-}
-
 .temporary-chat-panel .chat-composer:focus-within {
-  box-shadow: 0 0 0 2px rgb(76 150 235 / 50%);
+  border-color: #85b2e5;
+  background: #f8fcff;
+  box-shadow: inset 0 0 0 1px rgb(76 150 235 / 23%);
 }
 
 .temporary-chat-panel .chat-composer input {
@@ -125,31 +115,8 @@
     opacity var(--duration-fast) var(--ease-out);
 }
 
-.chat-composer-glyphs {
-  display: grid;
-  place-items: center;
-}
-.chat-send-button :is(.chat-send-icon, .chat-attach-icon) {
-  grid-area: 1 / 1;
-  transition:
-    opacity 120ms ease,
-    transform 180ms var(--ease-out-soft);
-}
-.chat-send-button[data-attachment="true"] .chat-send-icon,
-.chat-send-button[data-attachment="false"] .chat-attach-icon {
-  opacity: 0;
-  transform: scale(0.72) rotate(-18deg);
-}
-.chat-send-button[data-attachment="true"]:not(:disabled) {
-  background: #e5f1ff;
-  color: #2b639e;
-}
-.chat-composer[data-reduce-motion="true"] .chat-send-button svg {
-  transition: none;
-}
-
 .temporary-chat-panel .chat-composer .chat-send-button:disabled {
-  transform: scale(0.9);
+  opacity: 0.4;
 }
 
 .temporary-chat-panel .chat-composer .chat-send-button:active:not(:disabled) {
@@ -163,8 +130,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .temporary-chat-panel .chat-composer,
-  .temporary-chat-panel .chat-composer .chat-send-button,
-  .chat-send-button :is(.chat-send-icon, .chat-attach-icon) {
+  .temporary-chat-panel .chat-composer .chat-send-button {
     transition: none;
   }
 }
@@ -172,6 +138,7 @@
 @media (forced-colors: active) {
   .temporary-chat-panel .chat-composer:focus-within {
     outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
 }
 
@@ -186,9 +153,7 @@
     mask-image: none;
   }
 
-  .room-list-viewport[data-content-below]::before,
-  .room-list-viewport[data-content-above] > .room-list-top-edge::before,
-  .room-list-viewport[data-content-above] > .room-list-top-edge::after,
+  .room-list-viewport[data-content-above]::before,
   .room-list-viewport[data-content-below]::after {
     display: none;
   }

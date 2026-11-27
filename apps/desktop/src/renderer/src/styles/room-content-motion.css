@@ -1,3 +1,35 @@
+.room-picker-dialog::backdrop {
+  background: rgb(27 53 80 / 21%);
+  backdrop-filter: blur(6px);
+  animation: room-picker-backdrop-in var(--duration-compact) var(--ease-out-soft) both;
+}
+
+@keyframes room-picker-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.room-picker-dialog.reduce-motion::backdrop {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-picker-dialog::backdrop {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .room-picker-dialog::backdrop {
+    background: rgb(27 53 80 / 34%);
+    backdrop-filter: none;
+  }
+}
+
 .chat-content-stage {
   position: relative;
   display: flex;

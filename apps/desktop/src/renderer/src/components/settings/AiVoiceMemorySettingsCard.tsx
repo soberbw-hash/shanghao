@@ -30,11 +30,12 @@ import {
 import { modelPhaseLabel, modelProgressPercent } from "../../features/ai/modelDownloadPresentation";
 import { playUiSound } from "../../features/audio/uiSound";
 import { useRenderProfiler } from "../../features/diagnostics/renderProfiler";
+import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { Button } from "../base/Button";
 import { DialogCloseButton } from "../base/DialogCloseButton";
 import { Switch } from "../base/Switch";
 import { SettingsItemRow } from "./SettingsItemRow";
-import { CloudAiAdminPanel } from "./CloudAiAdminPanel";
+import { TranscriptionSourceOptions } from "./TranscriptionSourceOptions";
 import { SettingsSection } from "./SettingsSection";
 import { CloudLocalAssistControl } from "./CloudLocalAssistControl";
 import type { ToastMessage } from "../../store/appStore";
@@ -242,6 +243,7 @@ export const AiVoiceMemorySettingsCard = ({
   onChange,
   pushToast,
 }: AiVoiceMemorySettingsCardProps) => {
+  const reduceMotion = usePrefersReducedMotion();
   const [snapshot, setSnapshot] = useState<AiVoiceMemorySnapshot | undefined>(
     cachedAiVoiceMemorySnapshot,
   );
@@ -886,18 +888,26 @@ export const AiVoiceMemorySettingsCard = ({
               onChange={(checked) => void onChange({ isAiAutoOrganizeEnabled: checked })}
             />
           </SettingsItemRow>
-          <CloudLocalAssistControl
-            settings={settings}
-            disabled={modelInUse}
-            models={models}
-            onChange={(patch) => void onChange(patch)}
-          />
         </div>
       </section>
 
       <details
         id="ai-model-management"
         className="ai-model-group ai-advanced-settings mt-3 scroll-mt-4"
+        onToggle={(event) => {
+          const section = event.currentTarget;
+          if (event.target !== section || !section.open) return;
+          const scroller = section.closest("[data-settings-content-scroll]");
+          if (!scroller) return;
+          const viewport = scroller.getBoundingClientRect();
+          const panel = section.getBoundingClientRect();
+          const offset =
+            panel.height > scroller.clientHeight - 16 || panel.top < viewport.top
+              ? panel.top - viewport.top - 8
+              : Math.max(0, panel.bottom - viewport.bottom + 8);
+          if (offset)
+            scroller.scrollBy({ top: offset, behavior: reduceMotion ? "instant" : "smooth" });
+        }}
       >
         <summary className="ai-advanced-summary" aria-label="模型与 API 配置">
           <strong>模型与 API 配置</strong>
@@ -1057,13 +1067,14 @@ export const AiVoiceMemorySettingsCard = ({
                 });
               }}
             >
-              <option value="cloud">云端</option>
-              <option value="hybrid">云端 + 本地辅助</option>
-              {transcriptionProvider === "local" && (
-                <option value="local">本地离线（当前配置）</option>
-              )}
-              <option value="custom">自定义语音 API</option>
+              <TranscriptionSourceOptions isOffline={transcriptionProvider === "local"} />
             </select>
+            <CloudLocalAssistControl
+              settings={settings}
+              disabled={modelInUse}
+              models={models}
+              onChange={(patch) => void onChange(patch)}
+            />
             {transcriptionProvider !== "local" && transcriptionConfigState !== "ready" ? (
               <div className="ai-provider-config-note" role="status">
                 <span>
@@ -1180,7 +1191,6 @@ export const AiVoiceMemorySettingsCard = ({
         </details>
       </details>
 
-      {snapshot ? <CloudAiAdminPanel /> : null}
       {pendingDeleteModel
         ? createPortal(
             <div className="modal-scrim fixed inset-0 z-50 flex items-center justify-center px-6">

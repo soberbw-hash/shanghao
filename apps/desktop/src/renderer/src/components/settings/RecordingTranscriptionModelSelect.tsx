@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { type AiModelStatus } from "@private-voice/shared";
 import { useSettingsStore } from "../../store/settingsStore";
 import { CloudLocalAssistControl } from "./CloudLocalAssistControl";
+import { TranscriptionSourceOptions } from "./TranscriptionSourceOptions";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 
 /** Both settings pages commit the same provider and local-model preferences. */
@@ -109,10 +110,7 @@ export function RecordingTranscriptionModelSelect({
             title={modelInUse ? "AI 任务进行中，结束后可切换模型" : undefined}
             onChange={(event) => void choose(event.target.value)}
           >
-            <option value="cloud">云端</option>
-            <option value="hybrid">云端 + 本地辅助</option>
-            <option value="custom">自定义语音 API</option>
-            {provider === "local" && <option value="local">离线模型</option>}
+            <TranscriptionSourceOptions isOffline={provider === "local"} />
           </select>
         </label>
         <CloudLocalAssistControl

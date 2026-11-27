@@ -6,12 +6,14 @@ import { MuteButton } from "../../src/renderer/src/components/audio/MuteButton";
 import { RecordingMarkerCue } from "../../src/renderer/src/components/settings/RecordingMarkerCue";
 import { UpdateModal } from "../../src/renderer/src/components/status/UpdateModal";
 import { useSettingsStore } from "../../src/renderer/src/store/settingsStore";
+import { SettingsPage } from "../../src/renderer/src/pages/SettingsPage";
 import "../../src/renderer/src/styles/index.css";
 
 const unconfigured = new URLSearchParams(window.location.search).has("unconfigured");
 const readError = new URLSearchParams(window.location.search).has("read-error");
 const showUpdate = new URLSearchParams(window.location.search).has("update");
 const coldAiOpen = new URLSearchParams(window.location.search).has("cold-ai-open");
+const fullSettings = new URLSearchParams(window.location.search).has("full-settings");
 const waitForFixture = (name: string) =>
   coldAiOpen
     ? new Promise<void>((resolve) => window.addEventListener(name, () => resolve(), { once: true }))
@@ -40,6 +42,9 @@ let saved = {
 };
 window.desktopApi = {
   app: { writeLog: async () => {} },
+  recording: {
+    list: async () => ({ directory: "", items: [], totalBytes: 0, quotaBytes: 0 }),
+  },
   ai: {
     getCustomProvider: async () => {
       await providersReady;
@@ -104,4 +109,16 @@ const Fixture = () => {
     </main>
   );
 };
-createRoot(document.getElementById("root")!).render(<Fixture />);
+if (fullSettings) {
+  window.sessionStorage.setItem("shanghao.settings-section", "ai");
+  const store = useSettingsStore.getState();
+  useSettingsStore.setState({
+    settings: { ...store.settings!, aiTranscriptionProvider: "local" },
+    saveSettings: async (patch) => {
+      const settings = { ...useSettingsStore.getState().settings!, ...patch };
+      useSettingsStore.setState({ settings });
+      return settings;
+    },
+  });
+}
+createRoot(document.getElementById("root")!).render(fullSettings ? <SettingsPage /> : <Fixture />);

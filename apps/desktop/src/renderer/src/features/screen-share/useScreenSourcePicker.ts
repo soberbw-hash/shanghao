@@ -36,6 +36,13 @@ export const useScreenSourcePicker = (
     }
     setStatus("loading");
     setOpen(true);
+    // Paint the picker before Windows starts enumerating capture sources.
+    if (!document.hidden) {
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+      });
+    }
+    if (id !== request.current) return;
     try {
       const sources = await prepare((withPreviews) => {
         if (id === request.current) setSources(withPreviews);

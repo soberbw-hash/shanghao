@@ -78,6 +78,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
   const [isChangingIconOverlays, setIsChangingIconOverlays] = useState(false);
   const [saveNotice, setSaveNotice] = useState("设置会自动保存");
   const pageRef = useRef<HTMLDivElement>(null);
+  const sectionScrollRef = useRef<HTMLDivElement>(null);
   const entranceActiveRef = useRef(false);
   const reduceMotion = usePrefersReducedMotion();
   const isSettingsReady = Boolean(settings);
@@ -170,6 +171,10 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
       },
     );
   }, [activeSection, isActive]);
+
+  useLayoutEffect(() => {
+    sectionScrollRef.current?.scrollTo(0, 0);
+  }, [activeSection]);
 
   useLayoutEffect(() => {
     const opening = isActive && !entranceActiveRef.current;
@@ -331,7 +336,7 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
         className={`settings-page ${
           activeSection === "recordings"
             ? "settings-page--recording-library overflow-hidden"
-            : "overflow-y-auto"
+            : "overflow-hidden"
         }`}
       >
         <div
@@ -346,11 +351,15 @@ export const SettingsPage = ({ isActive = true }: { isActive?: boolean }) => {
           </div>
           <div
             className={`mt-2 grid gap-5 lg:grid-cols-[168px_minmax(0,1fr)] ${
-              activeSection === "recordings" ? "settings-recording-layout" : ""
+              activeSection === "recordings" ? "settings-recording-layout" : "settings-fixed-layout"
             }`}
           >
             <SettingsNavigation activeSection={activeSection} onSelect={selectSection} />
-            <div className="min-w-0">
+            <div
+              ref={sectionScrollRef}
+              className="min-w-0"
+              data-settings-content-scroll={activeSection !== "recordings" ? "" : undefined}
+            >
               {sections.map(({ id }) => {
                 if (!settingsView.visitedSections.has(id)) return null;
                 const isCurrentSection = id === activeSection;
